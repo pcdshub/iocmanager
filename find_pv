@@ -17,7 +17,7 @@ if [ $# -eq 0 ];
     echo "Hard IOC boot directories are shown with the nfs mount name."
     echo "Typically this is /iocs mounting /reg/g/pcds/package/epics/ioc"
     exit 1;
-fi 
+fi
 for pv in $@;
   do
   echo PV: $pv
@@ -87,7 +87,7 @@ for pv in $@;
                         # Look for IocManager Configs
     echo "  IocManager Configs:"
     $mydir/find_ioc --name $ioc
-    
+
 
   done
 done

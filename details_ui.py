@@ -6,6 +6,7 @@
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+
 class Ui_Dialog:
     def setupUi(self, Dialog):
         Dialog.setObjectName("Dialog")
@@ -35,7 +36,9 @@ class Ui_Dialog:
         self.gridLayout.addWidget(self.delayEdit, 3, 1, 1, 1)
         self.buttonBox = QtWidgets.QDialogButtonBox(Dialog)
         self.buttonBox.setOrientation(QtCore.Qt.Horizontal)
-        self.buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Cancel|QtWidgets.QDialogButtonBox.Ok)
+        self.buttonBox.setStandardButtons(
+            QtWidgets.QDialogButtonBox.Cancel | QtWidgets.QDialogButtonBox.Ok
+        )
         self.buttonBox.setObjectName("buttonBox")
         self.gridLayout.addWidget(self.buttonBox, 4, 0, 1, 2)
 
@@ -51,4 +54,3 @@ class Ui_Dialog:
         self.label.setText(_translate("Dialog", "Command:"))
         self.flagCheckBox.setText(_translate("Dialog", "Append IOC Name to Command"))
         self.label_2.setText(_translate("Dialog", "Delay after Start (sec):"))
-

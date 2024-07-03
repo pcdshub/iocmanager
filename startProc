@@ -26,7 +26,7 @@ source $IOC_COMMON/All/${cfg}_env.sh
 
 dir=`python $SCRIPTROOT/getDirectory.py $ioc $cfg`
 if test $dir == NO_DIRECTORY; then
-    if test X$PROCSERVPID != X; then 
+    if test X$PROCSERVPID != X; then
         kill -9 $PROCSERVPID;
 	exit 0;
     else
