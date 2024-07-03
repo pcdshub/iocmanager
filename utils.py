@@ -164,7 +164,7 @@ def getBaseName(ioc):
             if pv[-10:] == ":HEARTBEAT":
                 return pv[:-10]
     except:
-        print "Error parsing %s for base PV name!" % (pvInfoPath)
+        print("Error parsing %s for base PV name!" % (pvInfoPath))
     return None
 
 #
@@ -331,17 +331,17 @@ def checkTelnetMode(host, port, onOK=True, offOK=False, oneshotOK=False, verbose
     while True:
         tn = openTelnet(host, port)
         if not tn:
-            print 'ERROR: checkTelnetMode() telnet to %s port %s failed' % (host, port)
+            print('ERROR: checkTelnetMode() telnet to %s port %s failed' % (host, port))
             return False
         try:
             statd = readLogPortBanner(tn)
         except:
-            print 'ERROR: checkTelnetMode() failed to readLogPortBanner on %s port %s' % (host, port)
+            print('ERROR: checkTelnetMode() failed to readLogPortBanner on %s port %s' % (host, port))
             tn.close()
             return False
         try:
             if verbose:
-                print 'checkTelnetMode: %s port %s status is %s' % (host, port, statd['status'])
+                print('checkTelnetMode: %s port %s status is %s' % (host, port, statd['status']))
             if statd['autorestart']:
                 if onOK:
                     tn.close()
@@ -355,7 +355,7 @@ def checkTelnetMode(host, port, onOK=True, offOK=False, oneshotOK=False, verbose
                     tn.close()
                     return True
             if verbose:
-                print 'checkTelnetMode: turning off autorestart on %s port %s' % (host, port)
+                print('checkTelnetMode: turning off autorestart on %s port %s' % (host, port))
             # send ^T to toggle off auto restart.
             tn.write("\x14")
             # wait for toggled message
@@ -366,12 +366,12 @@ def checkTelnetMode(host, port, onOK=True, offOK=False, oneshotOK=False, verbose
             time.sleep(0.25)
             tn.close()
         except:
-            print 'ERROR: checkTelnetMode() failed to turn off autorestart on %s port %s' % (host, port)
+            print('ERROR: checkTelnetMode() failed to turn off autorestart on %s port %s' % (host, port))
             tn.close()
             return False
 
 def killProc(host, port, verbose=False):
-    print "Killing IOC on host %s, port %s..." % (host, port)
+    print("Killing IOC on host %s, port %s..." % (host, port))
     if not checkTelnetMode(host, port, onOK=False, offOK=True, oneshotOK=False, verbose=verbose):
         return
     # Now, reconnect to actually kill it!
@@ -381,31 +381,31 @@ def killProc(host, port, verbose=False):
         if statd['status'] == STATUS_RUNNING:
             try:
                 if verbose:
-                    print 'killProc: Sending Ctrl-X to %s port %s' % (host, port)
+                    print('killProc: Sending Ctrl-X to %s port %s' % (host, port))
                 # send ^X to kill child process
                 tn.write("\x18");
                 # wait for killed message
                 r = tn.read_until(MSG_KILLED, 1)
                 time.sleep(0.25)
             except:
-                print 'ERROR: killProc() failed to kill process on %s port %s' % (host, port)
+                print('ERROR: killProc() failed to kill process on %s port %s' % (host, port))
                 tn.close()
                 return
         try:
             if verbose:
-                print 'killProc: Sending Ctrl-Q to %s port %s' % (host, port)
+                print('killProc: Sending Ctrl-Q to %s port %s' % (host, port))
             # send ^Q to kill procServ
             tn.write("\x11");
         except:
-            print 'ERROR: killProc() failed to kill procServ on %s port %s' % (host, port)
+            print('ERROR: killProc() failed to kill procServ on %s port %s' % (host, port))
             tn.close()
             return
         tn.close()
     else:
-        print 'ERROR: killProc() telnet to %s port %s failed' % (host, port)
+        print('ERROR: killProc() telnet to %s port %s failed' % (host, port))
 
 def restartProc(host, port):
-    print "Restarting IOC on host %s, port %s..." % (host, port)
+    print("Restarting IOC on host %s, port %s..." % (host, port))
     # Can't deal with ONESHOT mode!
     if not checkTelnetMode(host, port, onOK=True, offOK=True, oneshotOK=False):
         return
@@ -431,13 +431,13 @@ def restartProc(host, port):
         # wait for restart message
         r = tn.read_until(MSG_RESTART, 1)
         if not r.count(MSG_RESTART):
-            print 'ERROR: no restart message... '
+            print('ERROR: no restart message... ')
         else:
             started = True
 
         tn.close()
     else:
-        print 'ERROR: restartProc() telnet to %s port %s failed' % (host, port)
+        print('ERROR: restartProc() telnet to %s port %s failed' % (host, port))
 
     return started
 
@@ -474,14 +474,14 @@ def startProc(cfg, entry, local=False):
     cmd = "%sstartProc %s %d %s %s" % (sr, name, port, cfg, cmd)
     log = LOGBASE % name
     ctrlport = BASEPORT + 2 * (int(platform) - 1)
-    print "Starting %s on port %s of host %s, platform %s..." % (name, port, host, platform)
+    print("Starting %s on port %s of host %s, platform %s..." % (name, port, host, platform))
     cmd = '%s --logfile %s --name %s --allow --coresize 0 --savelog %d %s' % \
           (PROCSERV_EXE, log, name, port, cmd)
     try:
         tn = telnetlib.Telnet(host, ctrlport, 1)
     except:
-        print "ERROR: telnet to procmgr (%s port %d) failed" % (host, ctrlport)
-        print ">>> Please start the procServ process on host %s!" % host
+        print("ERROR: telnet to procmgr (%s port %d) failed" % (host, ctrlport))
+        print(">>> Please start the procServ process on host %s!" % host)
     else:
         # telnet succeeded
 
@@ -491,7 +491,7 @@ def startProc(cfg, entry, local=False):
         # wait for prompt (procServ)
         statd = tn.read_until(MSG_PROMPT, 2)
         if not string.count(statd, MSG_PROMPT):
-            print 'ERROR: no prompt at %s port %s' % (host, ctrlport)
+            print('ERROR: no prompt at %s port %s' % (host, ctrlport))
             
         # send command
         tn.write('%s\n' % cmd);
@@ -499,7 +499,7 @@ def startProc(cfg, entry, local=False):
         # wait for prompt
         statd = tn.read_until(MSG_PROMPT, 2)
         if not string.count(statd, MSG_PROMPT):
-            print 'ERR: no prompt at %s port %s' % (host, ctrlport)
+            print('ERR: no prompt at %s port %s' % (host, ctrlport))
 
         # close telnet connection
         tn.close()
@@ -526,9 +526,9 @@ def readConfig(cfg, time=None, silent=False, do_os=False):
         cfgfn = CONFIG_FILE % cfg
     try:
         f = open(cfgfn, "r")
-    except Exception, msg:
+    except Exception as msg:
         if not silent:
-            print "readConfig file error: %s" % str(msg)
+            print("readConfig file error: %s" % str(msg))
         return None
 
     try:
@@ -536,28 +536,28 @@ def readConfig(cfg, time=None, silent=False, do_os=False):
         if time != None and time == mtime:
             res = None
         else:
-            execfile(cfgfn, {}, config)
+            exec(compile(open(cfgfn, "rb").read(), cfgfn, 'exec'), {}, config)
             newvars = set(config.keys()).difference(vars)
             vdict = {}
             for v in newvars:
                 vdict[v] = config[v]
             res = (mtime, config['procmgr_config'], config['hosts'], vdict)
-    except Exception, msg:
+    except Exception as msg:
         if not silent:
-            print "readConfig error: %s" % str(msg)
+            print("readConfig error: %s" % str(msg))
         res = None
     f.close()
     if res == None:
         return None
     for l in res[1]:
         # Add defaults!
-        if not 'disable' in l.keys():
+        if not 'disable' in list(l.keys()):
             l['disable'] = False
-        if not 'hard' in l.keys():
+        if not 'hard' in list(l.keys()):
             l['hard'] = False
-        if not 'history' in l.keys():
+        if not 'history' in list(l.keys()):
             l['history'] = []
-        if not 'alias' in l.keys():
+        if not 'alias' in list(l.keys()):
             l['alias'] = ""
         l['cfgstat'] = CONFIG_NORMAL
         if l['hard']:
@@ -594,7 +594,7 @@ def writeConfig(hutch, hostlist, cfglist, vars, f=None):
     if f == None:
         raise Exception("Must specify output file!")
     f.truncate()
-    for (k, v) in vars.items():
+    for (k, v) in list(vars.items()):
         try:
             if not v in ["True", "False"]:
                 n = int(v)
@@ -696,19 +696,19 @@ def readStatusDir(cfg, readfile=lambda fn, f: open(fn).readlines()):
                     if d[(stat[1], int(stat[2]))]['mtime'] < mtime:
                         # Duplicate, but newer, so replace!
                         try:
-                            print "Deleting obsolete %s in favor of %s" % (d[(stat[1], int(stat[2]))]['rid'], f)
+                            print("Deleting obsolete %s in favor of %s" % (d[(stat[1], int(stat[2]))]['rid'], f))
                             os.unlink((STATUS_DIR % cfg) + "/" + d[(stat[1], int(stat[2]))]['rid'])
                         except:
-                            print "Error while trying to delete file %s" % (STATUS_DIR % cfg) + "/" + d[(stat[1], int(stat[2]))]['rid'] + "!"
+                            print("Error while trying to delete file %s" % (STATUS_DIR % cfg) + "/" + d[(stat[1], int(stat[2]))]['rid'] + "!")
                         # Leave this here to make sure file is updated.
                         raise Exception( "Need to update cfg file." )
                     else:
                         # Duplicate, but older, so ignore!
                         try:
-                            print "Deleting obsolete %s in favor of %s" % (f, d[(stat[1], int(stat[2]))]['rid'])
+                            print("Deleting obsolete %s in favor of %s" % (f, d[(stat[1], int(stat[2]))]['rid']))
                             os.unlink(fn)
                         except:
-                            print "Error while trying to delete file %s!" % fn
+                            print("Error while trying to delete file %s!" % fn)
                 except:
                     try:
                         d[(stat[1], int(stat[2]))] = {'rid' : f,
@@ -720,15 +720,15 @@ def readStatusDir(cfg, readfile=lambda fn, f: open(fn).readlines()):
                                                   'mtime': mtime,
                                                   'hard': False}
                     except:
-                        print "Status dir failure!"
-                        print f
-                        print stat
+                        print("Status dir failure!")
+                        print(f)
+                        print(stat)
             else:
                 try:
                     os.unlink(fn)
                 except:
-                    print "Error while trying to delete file %s!" % fn
-    return d.values()
+                    print("Error while trying to delete file %s!" % fn)
+    return list(d.values())
 
 #
 # Apply the current configuration.
@@ -736,7 +736,7 @@ def readStatusDir(cfg, readfile=lambda fn, f: open(fn).readlines()):
 def applyConfig(cfg, verify=None, ioc=None):
   result = readConfig(cfg)
   if result == None:
-      print "Cannot read configuration for %s!" % cfg
+      print("Cannot read configuration for %s!" % cfg)
       return -1
   (mtime, cfglist, hostlist, vdict) = result
 
@@ -763,8 +763,8 @@ def applyConfig(cfg, verify=None, ioc=None):
           else:
               notrunning[l['rid']] = l
 
-  running = current.keys()
-  wanted  = config.keys()
+  running = list(current.keys())
+  wanted  = list(config.keys())
 
   # Double-check for old-style IOCs that don't have an indicator file!
   for l in wanted:
@@ -776,7 +776,7 @@ def applyConfig(cfg, verify=None, ioc=None):
                              'newstyle': False})
               current[l] = result
 
-  running = current.keys()
+  running = list(current.keys())
   neww = []
   notw = []
   for l in wanted:
@@ -864,7 +864,7 @@ def applyConfig(cfg, verify=None, ioc=None):
         # This is dead, so get rid of the status file!
         os.unlink((STATUS_DIR % cfg) + "/" + l)
     except:
-        print "Error while trying to delete file %s" % (STATUS_DIR % cfg) + "/" + l + "!"
+        print("Error while trying to delete file %s" % (STATUS_DIR % cfg) + "/" + l + "!")
 
   for l in start_list:
     startProc(cfg, config[l])
@@ -1023,7 +1023,7 @@ def find_iocs(**kwargs):
     for cfg in cfgs:
         config = readConfig(cfg)[1]
         for ioc in config:
-            for k in kwargs.items():
+            for k in list(kwargs.items()):
                 if ioc.get(k[0])!=k[1]:
                     break
             else:
@@ -1054,7 +1054,7 @@ def getHardIOCDir(host, silent=False):
         lines = [l.strip() for l in open(HIOC_STARTUP % host).readlines()]
     except:
         if not silent:
-            print "Error while trying to read HIOC startup file for %s!" % host
+            print("Error while trying to read HIOC startup file for %s!" % host)
         return "Unknown"
     for l in lines:
         if l[:5] == "chdir":
@@ -1073,12 +1073,12 @@ def restartHIOC(host):
             if l[:7] == 'cn=digi':
                 host = l[3:]
     except:
-        print "Error parsing netconfig for HIOC %s console info!" % host
+        print("Error parsing netconfig for HIOC %s console info!" % host)
         return False
     try:
         tn = telnetlib.Telnet(host, port, 1)
     except:
-        print "Error making telnet connection to HIOC %s!" % host
+        print("Error making telnet connection to HIOC %s!" % host)
         return False
     tn.write("\x0a")
     tn.read_until("> ", 2)
@@ -1094,10 +1094,10 @@ def rebootHIOC(host):
         env = copy.deepcopy(os.environ)
         del env['LD_LIBRARY_PATH']
         p = subprocess.Popen([HIOC_POWER, host, 'cycle'], env=env, stdout=subprocess.PIPE)
-        print p.communicate()[0]
+        print(p.communicate()[0])
         return True
     except:
-        print "Error while trying to power cycle HIOC %s!" % host
+        print("Error while trying to power cycle HIOC %s!" % host)
         return False
 
 def findPV(regexp, ioc):
@@ -1105,7 +1105,7 @@ def findPV(regexp, ioc):
         lines = [l.split(",")[0] for l in open(PVFILE % ioc).readlines()]
     except:
         return []
-    return filter(regexp.search, lines)
+    return list(filter(regexp.search, lines))
 
 def getHutchList():
     try:

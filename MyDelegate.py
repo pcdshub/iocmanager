@@ -2,9 +2,9 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 import os
-import MyModel
-import hostname_ui
-import utils
+from . import MyModel
+from . import hostname_ui
+from . import utils
 
 class hostnamedialog(QDialog):
     def __init__(self, parent=None):
@@ -105,7 +105,7 @@ class MyDelegate(QStyledItemDelegate):
                     try:
                         r=utils.EPICS_SITE_TOP + r[:r.rindex('/')]
                     except:
-                        print "Error picking new directory!"
+                        print("Error picking new directory!")
                 row = index.row()
                 id = model.getID(row)
                 d=QFileDialog(self.parent, "New Version for %s" % id, r)

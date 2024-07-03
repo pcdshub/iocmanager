@@ -1,11 +1,11 @@
 from PyQt5 import QtCore, QtGui, Qt, QtWidgets
-import MyModel
-from MyDelegate import MyDelegate
-from ioc_ui import Ui_MainWindow
-import auth_ui
+from . import MyModel
+from .MyDelegate import MyDelegate
+from .ioc_ui import Ui_MainWindow
+from . import auth_ui
 from psp.Pv import Pv
 import pyca
-import utils
+from . import utils
 import os
 import sys
 import pty
@@ -26,10 +26,10 @@ def caput(pvname,value,timeout=1.0):
         pv.get(ctrl=False, timeout=timeout)
         pv.put(value, timeout)
         pv.disconnect()
-    except pyca.pyexc, e:
-        print 'pyca exception: %s' %(e)
-    except pyca.caexc, e:
-        print 'channel access exception: %s' %(e)
+    except pyca.pyexc as e:
+        print('pyca exception: %s' %(e))
+    except pyca.caexc as e:
+        print('channel access exception: %s' %(e))
 
 ######################################################################
  
@@ -435,7 +435,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
                         os.execv("/usr/bin/ssh", ["ssh", utils.COMMITHOST, "/bin/tcsh", "-if"])
             except:
                 pass
-            print "Say what?  execv failed?"
+            print("Say what?  execv failed?")
             sys.exit(0)
         l = utils.read_until(fd, "(assphrase for key '[a-zA-Z0-9._/]*':|assword:|> )").group(1)
         password = None
@@ -497,7 +497,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             try:
                 self.authenticate_user(user)
             except:
-                print "Authentication as %s failed!" % user
+                print("Authentication as %s failed!" % user)
                 self.unauthenticate()
 
     def unauthenticate(self):
@@ -505,7 +505,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         try:
             self.authenticate_user(self.myuid)
         except:
-            print "Authentication as self failed?!?"
+            print("Authentication as self failed?!?")
 
     def authorize_action(self, file_action):
         # The user might be OK.

@@ -1,9 +1,9 @@
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
-import utils
-import details_ui
-import commit_ui
+from . import utils
+from . import details_ui
+from . import commit_ui
 import os
 import time
 import fcntl
@@ -106,7 +106,7 @@ class StatusPoll(threading.Thread):
             # NFS weirdness.  If we don't open it, file status doesn't update!
             f = open(fn)
             mtime = os.stat(fn).st_mtime
-            if not ioc in self.rmtime.keys() or mtime > self.rmtime[ioc]:
+            if not ioc in list(self.rmtime.keys()) or mtime > self.rmtime[ioc]:
                 l = f.readlines()
                 if l != []:
                     self.rmtime[ioc] = mtime
@@ -155,7 +155,7 @@ class MyModel(QAbstractTableModel):
         self.children = []
         config = utils.readConfig(hutch, do_os=True)
         if config == None:
-            print "Cannot read configuration for %s!" % hutch
+            print("Cannot read configuration for %s!" % hutch)
             sys.exit(-1)
         (self.poll.mtime, self.cfglist, self.hosts, self.vdict) = config
         try:
@@ -403,8 +403,8 @@ class MyModel(QAbstractTableModel):
             try:
                 return entry[self.field[c]]
             except:
-                print "No %s in entry:" % self.field[c]
-                print entry
+                print("No %s in entry:" % self.field[c])
+                print(entry)
                 return ""
  
     def data(self, index, role=Qt.DisplayRole):
@@ -533,7 +533,7 @@ class MyModel(QAbstractTableModel):
 
     def applyAddList(self, i, config, current, pfix, d, lst, verb):
         for l in lst:
-            if l in config.keys():
+            if l in list(config.keys()):
                 try:
                     a = config[l]['alias']
                     if a == "":
@@ -715,7 +715,7 @@ class MyModel(QAbstractTableModel):
             try:
                 utils.commit_config(self.hutch, comment, self.userIO)
             except:
-                print "Error committing config file!"
+                print("Error committing config file!")
         return True
 
     def doRevert(self):
@@ -740,7 +740,7 @@ class MyModel(QAbstractTableModel):
 
     def isChanged(self, index):
         entry = self.cfglist[index.row()]
-        keys = entry.keys()
+        keys = list(entry.keys())
         try:
             if entry['cfgstat'] == utils.CONFIG_DELETED:
                 return True
@@ -882,7 +882,7 @@ class MyModel(QAbstractTableModel):
                 else:
                     entry['cmd'] = newcmd
                 
-                if 'cmd' in entry.keys() and self.detailsdialog.ui.flagCheckBox.isChecked():
+                if 'cmd' in list(entry.keys()) and self.detailsdialog.ui.flagCheckBox.isChecked():
                     newflags = 'u'
                     entry['flags'] = 'u'
                 else:
@@ -915,11 +915,11 @@ class MyModel(QAbstractTableModel):
 
             if details != [newcmd, newdelay, newflags]:
                 # We're changed, so flag this with a fake ID change!
-                if not 'newid' in entry.keys():
+                if not 'newid' in list(entry.keys()):
                     entry['newid'] = entry['id'] + ' '
             else:
                 # We're not changed, so remove any fake ID change!
-                if 'newid' in entry.keys() and entry['newid'] == entry['id'] + ' ':
+                if 'newid' in list(entry.keys()) and entry['newid'] == entry['id'] + ' ':
                     del entry['newid']
 
     def addIOC(self, id, alias, host, port, dir):
@@ -977,9 +977,9 @@ class MyModel(QAbstractTableModel):
                 port = entry['port']
             self.runCommand(None, entry['id'], "unsetenv LD_LIBRARY_PATH ; telnet %s %s" % (host, port))
         except KeyError:
-            print "Dict key error while setting up telnet interface for: %s" % entry
+            print("Dict key error while setting up telnet interface for: %s" % entry)
         except:
-            print "Unspecified error while setting up telnet interface"
+            print("Unspecified error while setting up telnet interface")
 
     def viewlogIOC(self, index):
         if isinstance(index, QModelIndex):
@@ -989,7 +989,7 @@ class MyModel(QAbstractTableModel):
         try:
             self.runCommand("128x30", id, "tail -1000lf `ls -t " + (utils.LOGBASE % id) + "* |head -1`")
         except:
-            print "Error while trying to view log file!"
+            print("Error while trying to view log file!")
 
     # index is either an IOC name or an index!
     def rebootIOC(self, index):

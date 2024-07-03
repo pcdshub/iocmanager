@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import sys, argparse, socket, tempfile, pwd, os
-import utils
+from . import utils
 from psp.caput import caput
 
 def match_hutch(h, hlist):
@@ -25,21 +25,21 @@ def get_hutch(ns):
     return v
 
 def usage():
-    print "Usage: imgr IOCNAME [--hutch HUTCH] --status"
-    print "       imgr IOCNAME [--hutch HUTCH] --info"
-    print "       imgr IOCNAME [--hutch HUTCH] --connect"
-    print "       imgr IOCNAME [--hutch HUTCH] --reboot soft"
-    print "       imgr IOCNAME [--hutch HUTCH] --reboot hard"
-    print "       imgr IOCNAME [--hutch HUTCH] --enable"
-    print "       imgr IOCNAME [--hutch HUTCH] --disable"
-    print "       imgr IOCNAME [--hutch HUTCH] --upgrade/dir RELEASE_DIR"
-    print "       imgr IOCNAME [--hutch HUTCH] --move/loc HOST"
-    print "       imgr IOCNAME [--hutch HUTCH] --move/loc HOST:PORT"
-    print "       imgr IOCNAME [--hutch HUTCH] --add --loc HOST:PORT --dir RELEASE_DIR --enable/disable"
-    print "       imgr [--hutch HUTCH] --list [--host HOST] [--enabled_only|--disabled_only]"
-    print ""
-    print "Note that '/' denotes a choice between two possible command names."
-    print "Also, --add, PORT may also be specified as 'open' or 'closed'."
+    print("Usage: imgr IOCNAME [--hutch HUTCH] --status")
+    print("       imgr IOCNAME [--hutch HUTCH] --info")
+    print("       imgr IOCNAME [--hutch HUTCH] --connect")
+    print("       imgr IOCNAME [--hutch HUTCH] --reboot soft")
+    print("       imgr IOCNAME [--hutch HUTCH] --reboot hard")
+    print("       imgr IOCNAME [--hutch HUTCH] --enable")
+    print("       imgr IOCNAME [--hutch HUTCH] --disable")
+    print("       imgr IOCNAME [--hutch HUTCH] --upgrade/dir RELEASE_DIR")
+    print("       imgr IOCNAME [--hutch HUTCH] --move/loc HOST")
+    print("       imgr IOCNAME [--hutch HUTCH] --move/loc HOST:PORT")
+    print("       imgr IOCNAME [--hutch HUTCH] --add --loc HOST:PORT --dir RELEASE_DIR --enable/disable")
+    print("       imgr [--hutch HUTCH] --list [--host HOST] [--enabled_only|--disabled_only]")
+    print("")
+    print("Note that '/' denotes a choice between two possible command names.")
+    print("Also, --add, PORT may also be specified as 'open' or 'closed'.")
     sys.exit(1)
 
 # Convert the port string to an integer.
@@ -52,12 +52,12 @@ def port_to_int(port, host, cl):
         if c['host'] == host:
             plist.append(int(c['port']))
     if port == 'closed':
-        r = range(30001, 39000)
+        r = list(range(30001, 39000))
     else:
-        r = range(39100, 39200)
+        r = list(range(39100, 39200))
     for i in r:
         if i not in plist:
-            print "Choosing %s port %d" % (port, i)
+            print("Choosing %s port %d" % (port, i))
             return i
     raise ValueError('No available %s port?!?' % port)
 
@@ -77,25 +77,25 @@ def info(hutch, ioc, verbose):
                     pass
                 try:
                     if c['alias'] != "":
-                        print "%s (%s):" % (ioc, c['alias'])
+                        print("%s (%s):" % (ioc, c['alias']))
                     else:
-                        print "%s:" % (ioc)
+                        print("%s:" % (ioc))
                 except:
-                    print "%s:" % (ioc)
-                print "    host  : %s" % c['host']
-                print "    port  : %s" % c['port']
-                print "    dir   : %s" % c['dir']
-                print "    status: %s" % d['status']
+                    print("%s:" % (ioc))
+                print("    host  : %s" % c['host'])
+                print("    port  : %s" % c['port'])
+                print("    dir   : %s" % c['dir'])
+                print("    status: %s" % d['status'])
             else:
-                print d['status']
+                print(d['status'])
             sys.exit(0)
-    print "IOC %s not found in hutch %s!" % (ioc, hutch)
+    print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
 
 def soft_reboot(hutch, ioc):
     base = utils.getBaseName(ioc)
     if base is None:
-        print "IOC %s not found!" % ioc
+        print("IOC %s not found!" % ioc)
         sys.exit(1)
     caput(base + ":SYSRESET", 1)
     sys.exit(0)
@@ -106,7 +106,7 @@ def hard_reboot(hutch, ioc):
         if c['id'] == ioc:
             utils.restartProc(c['host'], c['port'])
             sys.exit(0)
-    print "IOC %s not found in hutch %s!" % (ioc, hutch)
+    print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
 
 def do_connect(hutch, ioc):
@@ -114,9 +114,9 @@ def do_connect(hutch, ioc):
     for c in cl:
         if c['id'] == ioc:
             os.execvp("telnet", ["telnet", c['host'], str(c['port'])])
-            print "Exec failed?!?"
+            print("Exec failed?!?")
             sys.exit(1)
-    print "IOC %s not found in hutch %s!" % (ioc, hutch)
+    print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
 
 def do_commit(hutch, cl, hl, vs):
@@ -134,7 +134,7 @@ def do_commit(hutch, cl, hl, vs):
 
 def set_state(hutch, ioc, enable):
     if not utils.check_special(ioc, hutch) and not utils.check_auth(pwd.getpwuid(os.getuid())[0], hutch):
-        print "Not authorized!"
+        print("Not authorized!")
         sys.exit(1)
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     try:
@@ -147,15 +147,15 @@ def set_state(hutch, ioc, enable):
             do_commit(hutch, cl, hl, vs)
             utils.applyConfig(hutch, None, ioc)
             sys.exit(0)
-    print "IOC %s not found in hutch %s!" % (ioc, hutch)
+    print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
 
 def add(hutch, ioc, version, hostport, disable):
     if not utils.check_auth(pwd.getpwuid(os.getuid())[0], hutch):
-        print "Not authorized!"
+        print("Not authorized!")
         sys.exit(1)
     if not utils.validateDir(version, ioc):
-        print "%s does not have an st.cmd for %s!" % (version, ioc)
+        print("%s does not have an st.cmd for %s!" % (version, ioc))
         sys.exit(1)
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     try:
@@ -166,11 +166,11 @@ def add(hutch, ioc, version, hostport, disable):
     host = hp[0].lower()
     port = hp[1].lower()
     if len(hp) != 2:
-        print "Must specify host and port!"
+        print("Must specify host and port!")
         sys.exit(1)
     for c in cl:
         if c['id'] == ioc:
-            print "IOC %s already exists in hutch %s!" % (ioc, hutch)
+            print("IOC %s already exists in hutch %s!" % (ioc, hutch))
             sys.exit(1)
     port = port_to_int(port, host, cl)
     d = {'id': ioc, 'host': host, 'port': port, 'dir': version,
@@ -191,10 +191,10 @@ def upgrade(hutch, ioc, version):
     allow_upgrade = utils.check_auth(pwd.getpwuid(os.getuid())[0], hutch)
 
     if not (allow_upgrade or allow_toggle):
-        print "Not authorized!"
+        print("Not authorized!")
         sys.exit(1)
     if not utils.validateDir(version, ioc):
-        print "%s does not have an st.cmd for %s!" % (version, ioc)
+        print("%s does not have an st.cmd for %s!" % (version, ioc))
         sys.exit(1)
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     try:
@@ -207,12 +207,12 @@ def upgrade(hutch, ioc, version):
             do_commit(hutch, cl, hl, vs)
             utils.applyConfig(hutch, None, ioc)
             sys.exit(0)
-    print "IOC %s not found in hutch %s!" % (ioc, hutch)
+    print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
 
 def move(hutch, ioc, hostport):
     if not utils.check_auth(pwd.getpwuid(os.getuid())[0], hutch):
-        print "Not authorized!"
+        print("Not authorized!")
         sys.exit(1)
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     try:
@@ -226,12 +226,12 @@ def move(hutch, ioc, hostport):
             if len(hp) > 1:
                 c['newport'] = port_to_int(hp[1], hp[0], cl)
             if not utils.validateConfig(cl):
-                print "Port conflict when moving %s to %s, not moved!" % (ioc, hostport)
+                print("Port conflict when moving %s to %s, not moved!" % (ioc, hostport))
                 sys.exit(1)
             do_commit(hutch, cl, hl, vs)
             utils.applyConfig(hutch, None, ioc)
             sys.exit(0)
-    print "IOC %s not found in hutch %s!" % (ioc, hutch)
+    print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
 
 def do_list(hutch, ns):
@@ -245,9 +245,9 @@ def do_list(hutch, ns):
         if not (show_disabled if c['disable'] else show_enabled):
             continue
         if c['alias'] != "":
-            print("%s (%s)" % (c['id'], c['alias']))
+            print(("%s (%s)" % (c['id'], c['alias'])))
         else:
-            print("%s" % c['id'])
+            print(("%s" % c['id']))
     sys.exit(0)
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import sys
-import utils
+from . import utils
 
 host = None
 def verify_host(current, config, kill_list, start_list, restart_list):

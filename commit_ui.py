@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 # Form implementation generated from reading ui file 'commit.ui'
 #
 # Created by: PyQt5 UI code generator 5.6
@@ -8,7 +6,7 @@
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-class Ui_Dialog(object):
+class Ui_Dialog:
     def setupUi(self, Dialog):
         Dialog.setObjectName("Dialog")
         Dialog.resize(385, 203)
