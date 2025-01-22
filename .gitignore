@@ -2,3 +2,5 @@
 .svn
 .pdbrc
 *~
+__pycache__
+core.*
