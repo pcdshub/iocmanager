@@ -1,4 +1,5 @@
-from PyQt5 import QtCore, QtGui, Qt, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtCore import Qt
 from . import MyModel
 from .MyDelegate import MyDelegate
 from .ioc_ui import Ui_MainWindow
@@ -49,10 +50,10 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
 
         d = sys.path[0]
         while os.path.islink(d):
-            l = os.readlink(d)
-            if l[0] != "/":
-                l = os.path.join(os.path.dirname(d), l)
-            d = l
+            real_path = os.readlink(d)
+            if real_path[0] != "/":
+                real_path = os.path.join(os.path.dirname(d), real_path)
+            d = real_path
         version = os.path.basename(d)
         if len(version) > 1 and version[0] == "R":
             version = " %s" % version
@@ -105,7 +106,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         for pv in self.pvlist:
             try:
                 pv.disconnect()
-            except:
+            except Exception:
                 pass
         self.pvlist = []
 
@@ -113,7 +114,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         try:
             if e is None:
                 pv.gui.setText(pv.format % pv.value)
-        except:
+        except Exception:
             pass
 
     def doApply(self):
@@ -158,15 +159,15 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         result = self.model.findPV(
             str(self.ui.findpv.text())
         )  # Return list of (pv, ioc, alias)
-        if type(result) == list:
-            for l in result:
-                if l[2] != "":
-                    te.appendPlainText("%s --> %s (%s)" % l)
+        if isinstance(result, list):
+            for res in result:
+                if res[2] != "":
+                    te.appendPlainText("%s --> %s (%s)" % res)
                 else:
-                    te.appendPlainText("%s --> %s%s" % l)  # Since l[2] is empty!
+                    te.appendPlainText("%s --> %s%s" % res)  # Since l[2] is empty!
             if len(result) == 1:
                 sm = self.ui.tableView.selectionModel()
-                idx = self.model.createIndex(self.model.findid(l[1]), 0)
+                idx = self.model.createIndex(self.model.findid(res[1]), 0)
                 sm.select(idx, Qt.QItemSelectionModel.SelectCurrent)
                 self.ui.tableView.scrollTo(idx, Qt.QAbstractItemView.PositionAtCenter)
             elif len(result) == 0:
@@ -217,7 +218,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
 
     def dopv(self, name, gui, format):
         pv = Pv(name, initialize=True)
-        if pv != None:
+        if pv is not None:
             gui.setText("")
             pv.gui = gui
             pv.format = format
@@ -226,7 +227,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             try:
                 pv.wait_ready(0.5)
                 pv.monitor()
-            except:
+            except Exception:
                 pass
 
     def getSelection(self, selected, deselected):
@@ -245,7 +246,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             self.ui.IOCname.setText(ioc)
             base = utils.getBaseName(ioc)
             self.currentBase = base
-            if base != None:
+            if base is not None:
                 self.dopv(base + ":HEARTBEAT", self.ui.heartbeat, "%d")
                 self.dopv(base + ":TOD", self.ui.tod, "%s")
                 self.dopv(base + ":STARTTOD", self.ui.boottime, "%s")
@@ -253,13 +254,13 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             d = utils.netconfig(host)
             try:
                 self.ui.location.setText(d["location"])
-            except:
+            except Exception:
                 self.ui.location.setText("")
             try:
                 self.ui.description.setText(d["description"])
-            except:
+            except Exception:
                 self.ui.description.setText("")
-        except:
+        except Exception:
             pass
 
     def showContextMenu(self, pos):
@@ -281,7 +282,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             menu.addAction("Edit Details")
         gpos = self.ui.tableView.viewport().mapToGlobal(pos)
         selectedItem = menu.exec_(gpos)
-        if selectedItem != None:
+        if selectedItem is not None:
             txt = selectedItem.text()
             if txt == "Revert IOC":
                 self.model.revertIOC(index)
@@ -341,29 +342,29 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
                 QtCore.QUrl("file://" + utils.EPICS_DEV_TOP),
             ]
         )
-        l = d.layout()
+        dialog_layout = d.layout()
 
         tmp = QtWidgets.QLabel()
         tmp.setText("IOC Name *+")
-        l.addWidget(tmp, 4, 0)
+        dialog_layout.addWidget(tmp, 4, 0)
         namegui = QtWidgets.QLineEdit()
-        l.addWidget(namegui, 4, 1)
+        dialog_layout.addWidget(namegui, 4, 1)
 
         tmp = QtWidgets.QLabel()
         tmp.setText("Alias")
-        l.addWidget(tmp, 5, 0)
+        dialog_layout.addWidget(tmp, 5, 0)
         aliasgui = QtWidgets.QLineEdit()
-        l.addWidget(aliasgui, 5, 1)
+        dialog_layout.addWidget(aliasgui, 5, 1)
 
         tmp = QtWidgets.QLabel()
         tmp.setText("Host *")
-        l.addWidget(tmp, 6, 0)
+        dialog_layout.addWidget(tmp, 6, 0)
         hostgui = QtWidgets.QLineEdit()
-        l.addWidget(hostgui, 6, 1)
+        dialog_layout.addWidget(hostgui, 6, 1)
 
         tmp = QtWidgets.QLabel()
         tmp.setText("Port (-1 = HARD IOC) *+")
-        l.addWidget(tmp, 7, 0)
+        dialog_layout.addWidget(tmp, 7, 0)
         layout = QtWidgets.QHBoxLayout()
         portgui = QtWidgets.QLineEdit()
         layout.addWidget(portgui)
@@ -379,24 +380,26 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             lambda: self.selectPort(hostgui, portgui, 39100, 39200)
         )
         layout.addWidget(autoOpen)
-        l.addLayout(layout, 7, 1)
+        dialog_layout.addLayout(layout, 7, 1)
 
         tmp = QtWidgets.QLabel()
         tmp.setText("Parent")
-        l.addWidget(tmp, 8, 0)
+        dialog_layout.addWidget(tmp, 8, 0)
         parentgui = QtWidgets.QLineEdit()
         parentgui.setReadOnly(True)
-        l.addWidget(parentgui, 8, 1)
+        dialog_layout.addWidget(parentgui, 8, 1)
 
         tmp = QtWidgets.QLabel()
         tmp.setText("* = Required Fields for Soft IOCs.")
-        l.addWidget(tmp, 9, 0)
+        dialog_layout.addWidget(tmp, 9, 0)
 
         tmp = QtWidgets.QLabel()
         tmp.setText("+ = Required Fields for Hard IOCs.")
-        l.addWidget(tmp, 10, 0)
+        dialog_layout.addWidget(tmp, 10, 0)
 
-        fn = lambda dir: self.setParent(parentgui, namegui.text, dir)
+        def fn(dir):
+            self.setParent(parentgui, namegui.text, dir)
+
         d.directoryEntered.connect(fn)
         d.currentChanged.connect(fn)
 
@@ -409,11 +412,11 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             port = str(portgui.text()).strip()
             try:
                 dir = str(d.selectedFiles()[0]).strip()
-            except:
+            except Exception:
                 dir = ""
             try:
                 n = int(port)
-            except:
+            except Exception:
                 QtWidgets.QMessageBox.critical(
                     None,
                     "Error",
@@ -448,10 +451,10 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             user = self.myuid
         need_su = self.myuid != user
         if not utils.check_ssh(user, self.hutch):
-            if self.model.userIO != None:
+            if self.model.userIO is not None:
                 try:
                     os.close(self.model.userIO)
-                except:
+                except Exception:
                     pass
             self.model.userIO = None
             self.ui.userLabel.setText("User: " + self.myuid)
@@ -481,16 +484,16 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
                             "/usr/bin/ssh",
                             ["ssh", utils.COMMITHOST, "/bin/tcsh", "-if"],
                         )
-            except:
+            except Exception:
                 pass
             print("Say what?  execv failed?")
             sys.exit(0)
-        l = utils.read_until(
+        tty_text = utils.read_until(
             fd, "(assphrase for key '[a-zA-Z0-9._/]*':|assword:|> )"
         ).group(1)
         password = None
-        if l[:5] == "assph":
-            passphrase = self.getAuthField("Key for '%s':" % l[19:-2], True)
+        if tty_text[:5] == "assph":
+            passphrase = self.getAuthField("Key for '%s':" % tty_text[19:-2], True)
             if passphrase is None:
                 return
             os.write(fd, passphrase + "\n")
@@ -499,10 +502,10 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             # maybe it was empty (and now we're being asked for a password) or
             # maybe it worked.
             #
-            l = utils.read_until(fd, "(> |assword:|assphrase)").group(1)
-            if l == "assphrase":
+            tty_text = utils.read_until(fd, "(> |assword:|assphrase)").group(1)
+            if tty_text == "assphrase":
                 raise Exception("Passphrase not accepted")  # Life is cruel.
-        if l == "assword:":
+        if tty_text == "assword:":
             password = self.getAuthField("Password:", True)
             if password is None:
                 return
@@ -511,20 +514,20 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             # I don't *think* we can get a passphrase prompt.  But let's not
             # hang around here if we do...
             #
-            l = utils.read_until(fd, "(> |assword:|assphrase)").group(1)
-            if l != "> ":
+            tty_text = utils.read_until(fd, "(> |assword:|assphrase)").group(1)
+            if tty_text != "> ":
                 raise Exception("Password not accepted")
         #
         # Sigh.  Someone once had a file named time.py in their home
         # directory.  So let's go somewhere where we know the files.
         #
         os.write(fd, "cd %s\n" % utils.TMP_DIR)
-        l = utils.read_until(fd, "> ")
+        tty_text = utils.read_until(fd, "> ")
         self.model.user = user
-        if self.model.userIO != None:
+        if self.model.userIO is not None:
             try:
                 os.close(self.model.userIO)
-            except:
+            except Exception:
                 pass
         self.model.userIO = fd
         if need_su:
@@ -548,7 +551,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         if user is not None:
             try:
                 self.authenticate_user(user)
-            except:
+            except Exception:
                 print("Authentication as %s failed!" % user)
                 self.unauthenticate()
 
@@ -556,7 +559,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         self.utimer.stop()
         try:
             self.authenticate_user(self.myuid)
-        except:
+        except Exception:
             print("Authentication as self failed?!?")
 
     def authorize_action(self, file_action):
