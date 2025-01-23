@@ -1,0 +1,26 @@
+# TODO: find a consistent way to get procServ available without pkgmgr
+if [ -x /etc/pathinit ]; then
+    # TODO: figure out if this is actually used anywhere
+    source /etc/pathinit
+fi
+if [ -z "${PCDS_CONDA_VER}" ] then
+    export PCDS_CONDA_VER=pcds-5.9.1
+fi
+if [ -z "${PYPS_ROOT}" ]; then
+    export PYPS_ROOT=/cds/group/pcds/pyps
+fi
+if [ -z "${IOCMAN_PY_BIN}"]; then
+    export IOCMAN_PY_BIN="${PYPS_ROOT}"/conda/py39/envs/"${PCDS_CONDA_VER}"/bin
+fi
+if [ -z "${IOC_ROOT}" ]; then
+    export IOC_ROOT=/cds/group/pcds/package/epics/ioc
+fi
+if [ -z "${CAMRECORD_ROOT}" ]; then
+    export CAMRECORD_ROOT=/cds/group/pcds/controls/camrecord
+fi
+if [ -z "${IOC_DATA}" ]; then
+    export IOC_DATA=/cds/data/iocData
+fi
+if [ -z "${IOC_COMMON}" ]; then
+    export IOC_COMMON=/cds/data/iocCommon
+fi

@@ -1,3 +1,5 @@
-#!/bin/sh
-source /reg/g/pcds/setup/epicsenv-7.0.2-2.0.sh
+#!/usr/bin/bash
+if [ -x /cds/group/pcds/setup/epicsenv-cur.sh ]; then
+    source /cds/group/pcds/setup/epicsenv-cur.sh
+fi
 exec `which caRepeater`

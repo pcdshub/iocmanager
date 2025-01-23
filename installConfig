@@ -1,18 +1,5 @@
-#!/bin/sh
-if [ -x /etc/pathinit ]; then
-    source /etc/pathinit
-else
-    export PSPKG_ROOT=/reg/g/pcds/pkg_mgr
-    export PYPS_ROOT=/reg/g/pcds/pyps
-    export IOC_ROOT=/reg/g/pcds/package/epics/3.14/ioc
-    export CAMRECORD_ROOT=/reg/g/pcds/controls/camrecord
-    export IOC_DATA=/reg/d/iocData
-    export IOC_COMMON=/reg/d/iocCommon
-fi
+#!/usr/bin/bash
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+source "${THIS_DIR}"/default_env
 
-export PSPKG_RELEASE=controls-basic-0.0.1
-source $PSPKG_ROOT/etc/set_env.sh
-if [ X$SCRIPTROOT == X ]; then
-    export SCRIPTROOT=$PYPS_ROOT/config/$1/iocmanager
-fi
-python $SCRIPTROOT/installConfig.py "$@"
+"${IOCMAN_PY_BIN}"/python "${THIS_DIR}"/installConfig.py "$@"

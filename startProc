@@ -1,15 +1,7 @@
-#!/bin/sh
+#!/usr/bin/bash
 # Usage: startProc IOCNAME PORT HUTCH
-if [ -x /etc/pathinit ]; then
-    source /etc/pathinit
-else
-    export PSPKG_ROOT=/reg/g/pcds/pkg_mgr
-    export PYPS_ROOT=/reg/g/pcds/pyps
-    export IOC_ROOT=/reg/g/pcds/epics/ioc
-    export CAMRECORD_ROOT=/reg/g/pcds/controls/camrecord
-    export IOC_DATA=/reg/d/iocData
-    export IOC_COMMON=/reg/d/iocCommon
-fi
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+source "${THIS_DIR}"/default_env
 
 ioc=$1
 port=$2
@@ -26,7 +18,7 @@ source $IOC_COMMON/All/${cfg}_env.sh
 
 dir=`python $SCRIPTROOT/getDirectory.py $ioc $cfg`
 if test $dir == NO_DIRECTORY; then
-    if test X$PROCSERVPID != X; then 
+    if test X$PROCSERVPID != X; then
         kill -9 $PROCSERVPID;
 	exit 0;
     else
