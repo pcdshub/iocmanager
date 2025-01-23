@@ -1,6 +1,13 @@
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
+from PyQt5.QtWidgets import (
+    QWidget,
+    QDialog,
+    QStyledItemDelegate,
+    QComboBox,
+    QFileDialog,
+    QLabel,
+    QLineEdit,
+)
+from PyQt5.QtCore import Qt, QSize, QVariant, QUrl
 import os
 from . import MyModel
 from . import hostname_ui
@@ -39,7 +46,7 @@ class MyDelegate(QStyledItemDelegate):
             editor.lastitem = editor.count()
             if col == MyModel.HOST:
                 editor.addItem("New Host")
-                if self.boxsize == None:
+                if self.boxsize is None:
                     self.boxsize = QSize(150, 25)
             elif col == MyModel.VERSION:
                 editor.addItem("New Version")
@@ -55,7 +62,7 @@ class MyDelegate(QStyledItemDelegate):
             try:
                 idx = index.model().hosts.index(value)
                 editor.setCurrentIndex(idx)
-            except:
+            except Exception:
                 editor.setCurrentIndex(editor.lastitem)
         elif col == MyModel.VERSION:
             # We don't have anything to do here.  It is created pointing to 0 (the newest setting)
@@ -68,7 +75,7 @@ class MyDelegate(QStyledItemDelegate):
                 if idx >= len(MyModel.statecombolist):
                     idx = len(MyModel.statecombolist) - 1
                 editor.setCurrentIndex(idx)
-            except:
+            except Exception:
                 editor.setCurrentIndex(editor.lastitem)
         else:
             QStyledItemDelegate.setEditorData(self, editor, index)
@@ -106,7 +113,7 @@ class MyDelegate(QStyledItemDelegate):
                 if r[0] != "/" and r[0:3] != "../":
                     try:
                         r = utils.EPICS_SITE_TOP + r[: r.rindex("/")]
-                    except:
+                    except Exception:
                         print("Error picking new directory!")
                 row = index.row()
                 id = model.getID(row)
@@ -122,15 +129,17 @@ class MyDelegate(QStyledItemDelegate):
                         QUrl("file://" + utils.EPICS_DEV_TOP),
                     ]
                 )
-                l = d.layout()
+                dialog_layout = d.layout()
                 tmp = QLabel()
                 tmp.setText("Parent")
-                l.addWidget(tmp, 4, 0)
+                dialog_layout.addWidget(tmp, 4, 0)
                 parentgui = QLineEdit()
                 parentgui.setReadOnly(True)
-                l.addWidget(parentgui, 4, 1)
+                dialog_layout.addWidget(parentgui, 4, 1)
 
-                fn = lambda dir: self.setParent(parentgui, id, dir)
+                def fn(dir):
+                    self.setParent(parentgui, id, dir)
+
                 d.directoryEntered.connect(fn)
                 d.currentChanged.connect(fn)
 
@@ -140,7 +149,7 @@ class MyDelegate(QStyledItemDelegate):
                 try:
                     dir = str(d.selectedFiles()[0])
                     dir = utils.fixdir(dir, id)
-                except:
+                except Exception:
                     return
                 editor.setItemText(editor.lastitem, dir)
                 editor.addItem("New Version")
@@ -157,7 +166,7 @@ class MyDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
         col = index.column()
         if col == MyModel.HOST:
-            if self.boxsize == None:
+            if self.boxsize is None:
                 result = QSize(150, 25)
             else:
                 result = self.boxsize
