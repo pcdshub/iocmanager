@@ -1,6 +1,7 @@
 import os
 import pwd
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -231,9 +232,17 @@ class MyModel(QAbstractTableModel):
             cmdlist = ["gnome-terminal", "--app-id", appid]
         else:
             cmdlist = ["gnome-terminal", "--disable-factory"]
-        if geo is not None:
-            cmdlist.append("--geometry=%s" % geo)
-        cmdlist += ["-t", id, "--", "/bin/csh", "-c", cmd]
+
+        if shutil.which("gnome-terminal") is None:
+            # For non-gnome os like rocky9
+            cmdlist = ["xterm", "-bg", "black", "-fg", "white", "--hold"]
+            if geo is not None:
+                cmdlist += ["-geometry", geo]
+            cmdlist += ["-title", id, "-e", "/bin/csh", "-c", cmd]
+        else:
+            if geo is not None:
+                cmdlist.append("--geometry=%s" % geo)
+            cmdlist += ["-t", id, "--", "/bin/csh", "-c", cmd]
         x = subprocess.Popen(cmdlist)
         self.children.append(x)
 
