@@ -1,6 +1,16 @@
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
+from PyQt5.QtGui import QBrush, QColor
+from PyQt5.QtWidgets import (
+    QDialog,
+    QWidget,
+    QDialogButtonBox,
+    QCheckBox,
+    QMessageBox,
+    QVBoxLayout,
+    QLabel,
+    QScrollArea,
+    QFrame,
+)
+from PyQt5.QtCore import QAbstractTableModel, Qt, QVariant, QEvent, QModelIndex
 from . import utils
 from . import details_ui
 from . import commit_ui
@@ -54,42 +64,44 @@ class StatusPoll(threading.Thread):
                 last = now
 
             result = utils.readConfig(self.hutch, self.mtime, do_os=True)
-            if result != None:
+            if result is not None:
                 (self.mtime, cfglist, hosts, vdict) = result
                 self.rmtime = {}  # Force a re-read!
                 self.model.configuration(cfglist, hosts, vdict)
 
             result = utils.readStatusDir(self.hutch, self.readStatusFile)
-            for l in result:
-                rdir = l["rdir"]
-                l.update(utils.check_status(l["rhost"], l["rport"], l["rid"]))
-                l["stattime"] = time.time()
-                if l["rdir"] == "/tmp":
-                    l["rdir"] = rdir
+            for line in result:
+                rdir = line["rdir"]
+                line.update(
+                    utils.check_status(line["rhost"], line["rport"], line["rid"])
+                )
+                line["stattime"] = time.time()
+                if line["rdir"] == "/tmp":
+                    line["rdir"] = rdir
                 else:
-                    l["newstyle"] = False
-                self.model.running(l)
+                    line["newstyle"] = False
+                self.model.running(line)
 
-            for l in self.model.cfglist:
-                if l["stattime"] + self.interval > time.time():
+            for line in self.model.cfglist:
+                if line["stattime"] + self.interval > time.time():
                     continue
-                if l["hard"]:
+                if line["hard"]:
                     s = {"pid": -1, "autorestart": False}
                     try:
-                        pv = psp.Pv.Pv(l["base"] + ":HEARTBEAT")
+                        pv = psp.Pv.Pv(line["base"] + ":HEARTBEAT")
                         pv.connect(1.0)
                         pv.disconnect()
                         s["status"] = utils.STATUS_RUNNING
-                    except:
+                    except Exception:
                         s["status"] = utils.STATUS_SHUTDOWN
-                    s["rid"] = l["id"]
-                    s["rdir"] = l["dir"]
+                    s["rid"] = line["id"]
+                    s["rdir"] = line["dir"]
                 else:
-                    s = utils.check_status(l["host"], l["port"], l["id"])
+                    s = utils.check_status(line["host"], line["port"], line["id"])
                 s["stattime"] = time.time()
-                s["rhost"] = l["host"]
-                s["rport"] = l["port"]
-                if l["newstyle"]:
+                s["rhost"] = line["host"]
+                s["rport"] = line["port"]
+                if line["newstyle"]:
                     if s["rdir"] == "/tmp":
                         del s["rdir"]
                     else:
@@ -97,7 +109,7 @@ class StatusPoll(threading.Thread):
                 self.model.running(s)
 
             for p in self.model.children:
-                if p.poll() != None:
+                if p.poll() is not None:
                     self.model.children.remove(p)
 
     def readStatusFile(self, fn, ioc):
@@ -106,13 +118,13 @@ class StatusPoll(threading.Thread):
             f = open(fn)
             mtime = os.stat(fn).st_mtime
             if ioc not in list(self.rmtime.keys()) or mtime > self.rmtime[ioc]:
-                l = f.readlines()
-                if l != []:
+                lines = f.readlines()
+                if lines != []:
                     self.rmtime[ioc] = mtime
-                return l
+                return lines
             else:
                 return []
-        except:
+        except Exception:
             return []
 
 
@@ -156,19 +168,19 @@ class MyModel(QAbstractTableModel):
         self.poll = StatusPoll(self, 5)
         self.children = []
         config = utils.readConfig(hutch, do_os=True)
-        if config == None:
+        if config is not None:
             print("Cannot read configuration for %s!" % hutch)
             sys.exit(-1)
         (self.poll.mtime, self.cfglist, self.hosts, self.vdict) = config
         try:
             utils.COMMITHOST = self.vdict["COMMITHOST"]
-        except:
+        except Exception:
             pass
         self.addUsedHosts()
 
-        for l in self.cfglist:
-            l["status"] = utils.STATUS_INIT
-            l["stattime"] = 0
+        for line in self.cfglist:
+            line["status"] = utils.STATUS_INIT
+            line["stattime"] = 0
         self.headerdata = [
             "IOC Name",
             "IOC ID",
@@ -226,7 +238,7 @@ class MyModel(QAbstractTableModel):
         self.children.append(x)
 
     def addUsedHosts(self):
-        hosts = [l["host"] for l in self.cfglist]
+        hosts = [line["host"] for line in self.cfglist]
         hosts[-1:] = self.hosts
         hosts = list(set(hosts))
         hosts.sort()
@@ -235,17 +247,17 @@ class MyModel(QAbstractTableModel):
     def startPoll(self):
         self.poll.start()
 
-    def findid(self, id, l=None):
-        if l is None:
-            l = self.cfglist
-        for i in range(len(l)):
-            if id == l[i]["id"]:
+    def findid(self, id, line=None):
+        if line is None:
+            line = self.cfglist
+        for i in range(len(line)):
+            if id == line[i]["id"]:
                 return i
         return None
 
-    def findhostport(self, h, p, l):
-        for i in range(len(l)):
-            if h == l[i]["host"] and p == l[i]["port"]:
+    def findhostport(self, h, p, ln):
+        for i in range(len(ln)):
+            if h == ln[i]["host"] and p == ln[i]["port"]:
                 return i
         return None
 
@@ -254,20 +266,20 @@ class MyModel(QAbstractTableModel):
         self.vdict = vdict
         try:
             utils.COMMITHOST = self.vdict["COMMITHOST"]
-        except:
+        except Exception:
             pass
         cfgonly = []
         ouronly = []
         both = []
         for i in range(len(cfglist)):
             j = self.findid(cfglist[i]["id"], self.cfglist)
-            if j != None:
+            if j is not None:
                 both.append((i, j))
             else:
                 cfgonly.append(i)
         for i in range(len(self.cfglist)):
             j = self.findid(self.cfglist[i]["id"], cfglist)
-            if j == None:
+            if j is None:
                 ouronly[:0] = [i]
 
         for i, j in both:
@@ -293,9 +305,9 @@ class MyModel(QAbstractTableModel):
     def running(self, d):
         # Process a new status dictionary!
         i = self.findid(d["rid"], self.cfglist)
-        if i == None:
+        if i is None:
             i = self.findhostport(d["rhost"], d["rport"], self.cfglist)
-        if i != None:
+        if i is not None:
             if self.cfglist[i]["dir"] == utils.CAMRECORDER:
                 d["rdir"] = utils.CAMRECORDER
             if (
@@ -346,11 +358,9 @@ class MyModel(QAbstractTableModel):
         try:
             if self.cfglist[index.row()]["hard"]:
                 editable = Qt.NoItemFlags
-                checkable = Qt.NoItemFlags
             else:
                 editable = Qt.ItemIsEditable
-                checkable = Qt.ItemIsUserCheckable
-        except:
+        except Exception:
             return Qt.NoItemFlags
         if c == IOCNAME or c == ID:
             return Qt.ItemIsEnabled | Qt.ItemIsSelectable
@@ -366,7 +376,7 @@ class MyModel(QAbstractTableModel):
             val = val.value()
         try:
             entry = self.cfglist[index.row()]
-        except:
+        except Exception:
             return False
         c = index.column()
         if c == STATE:
@@ -388,7 +398,6 @@ class MyModel(QAbstractTableModel):
             self.dataChanged.emit(index, index)
             if c == IOCNAME or c == ID:
                 # Two columns might have the same information!
-                idx2 = self.index(index.row(), ID if c == IOCNAME else IOCNAME)
                 self.dataChanged.emit(index, index)
             return True
 
@@ -404,7 +413,7 @@ class MyModel(QAbstractTableModel):
         if c == OSVER:
             try:
                 return utils.hosttype[entry["host"]]
-            except:
+            except Exception:
                 return ""
         elif c == EXTRA:
             if entry["hard"]:
@@ -420,34 +429,34 @@ class MyModel(QAbstractTableModel):
         elif c == STATE:
             try:
                 v = entry["newdisable"]
-            except:
+            except Exception:
                 v = entry["disable"]
             if v:
                 return "Off"
             try:
                 v = entry["newdir"]
-            except:
+            except Exception:
                 v = entry["dir"]
             if v[:4] == "ioc/" or v == "/reg/g/pcds/controls/camrecord":
                 return "Prod"
             else:
                 return "Dev"
-        if c == IOCNAME and display == True:
+        if c == IOCNAME and display:
             # First try to find an alias!
             try:
                 if entry["newalias"] != "":
                     return entry["newalias"]
-            except:
+            except Exception:
                 if entry["alias"] != "":
                     return entry["alias"]
         if c == PORT and entry["hard"]:
             return ""
         try:
             return entry[self.newfield[c]]
-        except:
+        except Exception:
             try:
                 return entry[self.field[c]]
-            except:
+            except Exception:
                 print("No %s in entry:" % self.field[c])
                 print(entry)
                 return ""
@@ -487,12 +496,12 @@ class MyModel(QAbstractTableModel):
             try:
                 if c == IOCNAME and entry["newalias"] != entry["alias"]:
                     return QVariant(QBrush(Qt.blue))
-            except:
+            except Exception:
                 pass
             try:
                 if c == STATE and entry["newdisable"] != entry["disable"]:
                     return QVariant(QBrush(Qt.blue))
-            except:
+            except Exception:
                 pass
             try:
                 if entry[self.newfield[c]] != entry[self.field[c]]:
@@ -500,7 +509,7 @@ class MyModel(QAbstractTableModel):
                 else:
                     del entry[self.newfield[c]]
                     return QVariant()
-            except:
+            except Exception:
                 return QVariant()
         elif role == Qt.BackgroundRole:
             c = index.column()
@@ -588,18 +597,18 @@ class MyModel(QAbstractTableModel):
         self.layoutChanged.emit()
 
     def applyAddList(self, i, config, current, pfix, d, lst, verb):
-        for l in lst:
-            if l in list(config.keys()):
+        for lst in lst:
+            if lst in list(config.keys()):
                 try:
-                    a = config[l]["alias"]
+                    a = config[lst]["alias"]
                     if a == "":
-                        a = config[l]["id"]
+                        a = config[lst]["id"]
                     else:
-                        a += " (%s)" % config[l]["id"]
-                except:
-                    a = config[l]["id"]
+                        a += " (%s)" % config[lst]["id"]
+                except Exception:
+                    a = config[lst]["id"]
             else:
-                a = current[l]["rid"]
+                a = current[lst]["rid"]
             check = QCheckBox(d)
             check.setChecked(False)
             #
@@ -607,13 +616,13 @@ class MyModel(QAbstractTableModel):
             # Make sure we can have something there!
             #
             try:
-                h = current[l][pfix + "host"]
-            except:
-                h = config[l]["host"]
+                h = current[lst][pfix + "host"]
+            except Exception:
+                h = config[lst]["host"]
             try:
-                p = current[l][pfix + "port"]
-            except:
-                p = config[l]["port"]
+                p = current[lst][pfix + "port"]
+            except Exception:
+                p = config[lst]["port"]
             check.setText("%s %s on %s:%d" % (verb, a, h, p))
             d.clayout.addWidget(check)
             i = i + 1
@@ -772,7 +781,7 @@ class MyModel(QAbstractTableModel):
             file = tempfile.NamedTemporaryFile(dir=utils.TMP_DIR, delete=False)
             utils.writeConfig(self.hutch, self.hosts, self.cfglist, self.vdict, file)
             utils.installConfig(self.hutch, file.name)
-        except:
+        except Exception:
             QMessageBox.critical(
                 None,
                 "Error",
@@ -782,7 +791,7 @@ class MyModel(QAbstractTableModel):
             )
             try:
                 os.unlink(file.name)  # Clean up!
-            except:
+            except Exception:
                 pass
             return False
         for entry in self.cfglist:
@@ -793,16 +802,16 @@ class MyModel(QAbstractTableModel):
             try:
                 entry["id"] = entry["newid"].strip()
                 del entry["newid"]
-            except:
+            except Exception:
                 pass
             try:
                 del entry["details"]
-            except:
+            except Exception:
                 pass
-        if comment != None:
+        if comment is not None:
             try:
                 utils.commit_config(self.hutch, comment, self.userIO)
-            except:
+            except Exception:
                 print("Error committing config file!")
         return True
 
@@ -810,9 +819,9 @@ class MyModel(QAbstractTableModel):
         for entry in self.cfglist:
             for f in self.newfield:
                 try:
-                    if f != None:
+                    if f is not None:
                         del entry[f]
-                except:
+                except Exception:
                     pass
         self.poll.mtime = None  # Force a re-read!
         self.dataChanged.emit(
@@ -838,7 +847,7 @@ class MyModel(QAbstractTableModel):
         try:
             if entry["cfgstat"] == utils.CONFIG_DELETED:
                 return True
-        except:
+        except Exception:
             pass
         return (
             "newhost" in keys
@@ -857,7 +866,7 @@ class MyModel(QAbstractTableModel):
         try:
             if entry["disable"] != entry["newdisable"]:
                 return True
-        except:
+        except Exception:
             pass
         if entry["disable"]:
             return entry["status"] == utils.STATUS_RUNNING
@@ -867,25 +876,25 @@ class MyModel(QAbstractTableModel):
             try:
                 if entry["newhost"] != entry["rhost"]:
                     return True
-            except:
+            except Exception:
                 if entry["host"] != entry["rhost"]:
                     return True
             try:
                 if entry["newport"] != entry["rport"]:
                     return True
-            except:
+            except Exception:
                 if entry["port"] != entry["rport"]:
                     return True
             try:
                 if entry["newdir"] != entry["rdir"]:
                     return True
-            except:
+            except Exception:
                 if entry["dir"] != entry["rdir"]:
                     return True
             try:
                 if entry["newid"] != entry["rid"]:
                     return True
-            except:
+            except Exception:
                 if entry["id"] != entry["rid"]:
                     return True
             return False
@@ -896,9 +905,9 @@ class MyModel(QAbstractTableModel):
             entry["cfgstat"] = utils.CONFIG_NORMAL
         for f in self.newfield:
             try:
-                if f != None:
+                if f is not None:
                     del entry[f]
-            except:
+            except Exception:
                 pass
         self.dataChanged.emit(
             self.index(index.row(), 0),
@@ -942,38 +951,38 @@ class MyModel(QAbstractTableModel):
         entry = self.cfglist[index.row()]
         try:
             details = entry["details"]
-        except:
+        except Exception:
             # Remember what was in the configuration file!
             details = ["", 0, ""]
             try:
                 details[0] = entry["cmd"]
-            except:
+            except Exception:
                 pass
             try:
                 details[1] = entry["delay"]
-            except:
+            except Exception:
                 pass
             try:
                 details[2] = entry["flags"]
-            except:
+            except Exception:
                 pass
             entry["details"] = details
         self.detailsdialog.setWindowTitle("Edit Details - %s" % entry["id"])
         try:
             self.detailsdialog.ui.aliasEdit.setText(entry["newalias"])
-        except:
+        except Exception:
             self.detailsdialog.ui.aliasEdit.setText(entry["alias"])
         try:
             self.detailsdialog.ui.cmdEdit.setText(entry["cmd"])
-        except:
+        except Exception:
             self.detailsdialog.ui.cmdEdit.setText("")
         try:
             self.detailsdialog.ui.delayEdit.setText(str(entry["delay"]))
-        except:
+        except Exception:
             self.detailsdialog.ui.delayEdit.setText("")
         try:
             self.detailsdialog.ui.flagCheckBox.setChecked("u" in entry["flags"])
-        except:
+        except Exception:
             self.detailsdialog.ui.flagCheckBox.setChecked(False)
         if self.detailsdialog.exec_() == QDialog.Accepted:
             if entry["hard"]:
@@ -985,7 +994,7 @@ class MyModel(QAbstractTableModel):
                 if newcmd == "":
                     try:
                         del entry["cmd"]
-                    except:
+                    except Exception:
                         pass
                 else:
                     entry["cmd"] = newcmd
@@ -1000,17 +1009,17 @@ class MyModel(QAbstractTableModel):
                     newflags = ""
                     try:
                         del entry["flags"]
-                    except:
+                    except Exception:
                         pass
 
                 try:
                     newdelay = int(self.detailsdialog.ui.delayEdit.text())
-                except:
+                except Exception:
                     newdelay = 0
                 if newdelay == 0:
                     try:
                         del entry["delay"]
-                    except:
+                    except Exception:
                         pass
                 else:
                     entry["delay"] = newdelay
@@ -1021,7 +1030,7 @@ class MyModel(QAbstractTableModel):
             else:
                 try:
                     del entry["newalias"]
-                except:
+                except Exception:
                     pass
 
             if details != [newcmd, newdelay, newflags]:
@@ -1096,11 +1105,11 @@ class MyModel(QAbstractTableModel):
             entry = self.cfglist[index.row()]
         else:
             entry = None
-            for l in self.cfglist:
-                if l["id"] == index:
-                    entry = l
+            for line in self.cfglist:
+                if line["id"] == index:
+                    entry = line
                     break
-            if entry == None:
+            if entry is not None:
                 return
         #
         # Sigh.  Because we want to do authentication, we have a version of kerberos on our path,
@@ -1109,13 +1118,13 @@ class MyModel(QAbstractTableModel):
         #
         try:
             if entry["hard"]:
-                for l in utils.netconfig(entry["id"])["console port dn"].split(","):
-                    if l[:7] == "cn=port":
-                        port = 2000 + int(l[7:])
-                    if l[:7] == "cn=digi":
-                        host = l[3:]
-                    if l[:5] == "cn=ts":
-                        host = l[3:]
+                for line in utils.netconfig(entry["id"])["console port dn"].split(","):
+                    if line[:7] == "cn=port":
+                        port = 2000 + int(line[7:])
+                    if line[:7] == "cn=digi":
+                        host = line[3:]
+                    if line[:5] == "cn=ts":
+                        host = line[3:]
             else:
                 host = entry["host"]
                 port = entry["port"]
@@ -1126,7 +1135,7 @@ class MyModel(QAbstractTableModel):
             )
         except KeyError:
             print("Dict key error while setting up telnet interface for: %s" % entry)
-        except:
+        except Exception:
             print("Unspecified error while setting up telnet interface")
 
     def viewlogIOC(self, index):
@@ -1140,7 +1149,7 @@ class MyModel(QAbstractTableModel):
                 id,
                 "tail -1000lf `ls -t " + (utils.LOGBASE % id) + "* |head -1`",
             )
-        except:
+        except Exception:
             print("Error while trying to view log file!")
 
     # index is either an IOC name or an index!
@@ -1149,11 +1158,11 @@ class MyModel(QAbstractTableModel):
             entry = self.cfglist[index.row()]
         else:
             entry = None
-            for l in self.cfglist:
-                if l["id"] == index:
-                    entry = l
+            for line in self.cfglist:
+                if line["id"] == index:
+                    entry = line
                     break
-            if entry == None:
+            if entry is None:
                 return
         if entry["hard"]:
             if not utils.restartHIOC(entry["id"]):
@@ -1179,11 +1188,11 @@ class MyModel(QAbstractTableModel):
             entry = self.cfglist[index.row()]
         else:
             entry = None
-            for l in self.cfglist:
-                if l["id"] == index:
-                    entry = l
+            for line in self.cfglist:
+                if line["id"] == index:
+                    entry = line
                     break
-            if entry == None:
+            if entry is None:
                 return
         if entry["hard"]:
             if not utils.rebootHIOC(entry["id"]):
@@ -1203,7 +1212,7 @@ class MyModel(QAbstractTableModel):
         nc = utils.netconfig(ihost)
         try:
             nc["name"]
-        except:
+        except Exception:
             label = QLabel(d)
             label.setText("Cannot find IPMI address for host %s!" % host)
             d.layout.addWidget(label)
@@ -1221,13 +1230,13 @@ class MyModel(QAbstractTableModel):
         )
         d.layout.addWidget(label)
         llist.append(label)
-        for l in self.cfglist:
-            if l["host"] == host:
+        for line in self.cfglist:
+            if line["host"] == host:
                 label = QLabel(d)
-                if l["alias"] != "":
-                    label.setText("        " + l["alias"] + " (" + l["id"] + ")")
+                if line["alias"] != "":
+                    label.setText("        " + line["alias"] + " (" + line["id"] + ")")
                 else:
-                    label.setText("        " + l["id"])
+                    label.setText("        " + line["id"])
                 d.layout.addWidget(label)
                 llist.append(label)
         label = QLabel(d)
@@ -1254,7 +1263,7 @@ class MyModel(QAbstractTableModel):
         for p in self.children:
             try:
                 p.kill()
-            except:
+            except Exception:
                 pass
 
     def doSaveVersions(self):
@@ -1269,7 +1278,7 @@ class MyModel(QAbstractTableModel):
             entry = self.cfglist[index]
         try:
             dir = entry[self.newfield[VERSION]]
-        except:
+        except Exception:
             dir = entry[self.field[VERSION]]
         try:
             h = entry["history"]
@@ -1278,7 +1287,7 @@ class MyModel(QAbstractTableModel):
             h[:0] = [dir]
             if len(h) > 5:
                 h = h[0:5]
-        except:
+        except Exception:
             h = [dir]
         entry["history"] = h
 
@@ -1294,20 +1303,20 @@ class MyModel(QAbstractTableModel):
         x = [entry["dir"]]
         try:
             x[:0] = [entry["newdir"]]
-        except:
+        except Exception:
             pass
         try:
             i = entry["rdir"]
             if i not in x:
                 x[len(x) :] = [i]
-        except:
+        except Exception:
             pass
         try:
             h = entry["history"]
             for i in h:
                 if i not in x:
                     x[len(x) :] = [i]
-        except:
+        except Exception:
             pass
         return x
 
@@ -1331,14 +1340,14 @@ class MyModel(QAbstractTableModel):
     def getVar(self, v):
         try:
             return self.vdict[v]
-        except:
+        except Exception:
             return None
 
     def findPV(self, name):
-        l = []
+        line = []
         try:
             regexp = re.compile(name)
-        except:
+        except Exception:
             return "Bad regular expression!"
         row = 0
         for entry in self.cfglist:
@@ -1347,9 +1356,9 @@ class MyModel(QAbstractTableModel):
                 if r == name:  # One exact match, forget the rest!
                     return [(r, entry["id"], entry["alias"])]
                 else:
-                    l.append((r, entry["id"], entry["alias"]))
+                    line.append((r, entry["id"], entry["alias"]))
             row += 1
-        return l
+        return line
 
     def selectPort(self, host, lowport, highport):
         for port in range(lowport, highport):
