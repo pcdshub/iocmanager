@@ -3,7 +3,7 @@ if [ -x /etc/pathinit ]; then
     # TODO: figure out if this is actually used anywhere
     source /etc/pathinit
 fi
-if [ -z "${PCDS_CONDA_VER}" ] then
+if [ -z "${PCDS_CONDA_VER}" ]; then
     export PCDS_CONDA_VER=pcds-5.9.1
 fi
 if [ -z "${PYPS_ROOT}" ]; then
