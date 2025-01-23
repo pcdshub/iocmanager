@@ -6,7 +6,7 @@ startAll, startAll.py
 	-- "startAll hutch hostname" starts all of the IOCs for the given hutch
 	   on the given hostname.
 applyConfig, applyConfig.py
-	-- "applyConfig hutch" reads the configuration file for the hutch and 
+	-- "applyConfig hutch" reads the configuration file for the hutch and
 	   kills, starts, or restarts processes, as needed.
 getDirectory, getDirectory.py
 	-- "getDirectory id hutch" will retrieve the 'dir' field from the hutch's
@@ -24,12 +24,12 @@ CONFIG
 	-- The configuration directory.  Each hutch has a config file here, similar
 	   to the procmgr config file.  The 'dir' field is what should be run there.
 	   It is assumed to be relative to EPICS_SITE_TOP, and the particular iocBoot
-	   directory is appended to the end.  If there is a cmd, it will be run, 
+	   directory is appended to the end.  If there is a cmd, it will be run,
 	   otherwise startProc will be invoked.  (The 'u' flag in the 'flags' field
 	   is supported, as in procmgr to append "-u id" to the command.)
 STATUS
-	-- The status directory.  Each hutch has a directory here, with each IOC 
-	   having a separate file.  The file has the id as a name, and contains 
+	-- The status directory.  Each hutch has a directory here, with each IOC
+	   having a separate file.  The file has the id as a name, and contains
 	   space-separated PID, hostname, control port, and dir.  This is the last
 	   incarnation of this IOC that was started, but it might not be currently
 	   running!
