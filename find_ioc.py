@@ -1,7 +1,9 @@
 #!/usr/bin/env python
-from . import utils
 import sys
+
 from psp.options import Options
+
+from . import utils
 
 if __name__ == "__main__":
     options = Options(["name"], [], [])

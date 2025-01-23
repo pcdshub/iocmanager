@@ -1,8 +1,10 @@
 #!/usr/bin/env python
-from PyQt5 import QtWidgets
-from psp.options import Options
-from .ioc_impl import GraphicUserInterface
 import sys
+
+from psp.options import Options
+from PyQt5 import QtWidgets
+
+from .ioc_impl import GraphicUserInterface
 
 if __name__ == "__main__":
     options = Options(["hutch"], [], [])

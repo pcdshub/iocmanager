@@ -81,16 +81,16 @@
 ######################################################################
 
 
-import telnetlib
-import string
-import os
-import time
-import fcntl
-import re
-import glob
-import subprocess
 import copy
+import fcntl
+import glob
+import os
+import re
 import stat
+import string
+import subprocess
+import telnetlib
+import time
 
 #
 # Defines

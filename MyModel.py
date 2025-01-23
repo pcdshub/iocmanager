@@ -1,28 +1,28 @@
+import os
+import pwd
+import re
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+import psp
+from PyQt5.QtCore import QAbstractTableModel, QEvent, QModelIndex, Qt, QVariant
 from PyQt5.QtGui import QBrush, QColor
 from PyQt5.QtWidgets import (
-    QDialog,
-    QWidget,
-    QDialogButtonBox,
     QCheckBox,
-    QMessageBox,
-    QVBoxLayout,
-    QLabel,
-    QScrollArea,
+    QDialog,
+    QDialogButtonBox,
     QFrame,
+    QLabel,
+    QMessageBox,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt5.QtCore import QAbstractTableModel, Qt, QVariant, QEvent, QModelIndex
-from . import utils
-from . import details_ui
-from . import commit_ui
-import os
-import time
-import threading
-import subprocess
-import tempfile
-import psp
-import re
-import pwd
-import sys
+
+from . import commit_ui, details_ui, utils
 
 #
 # Column definitions.

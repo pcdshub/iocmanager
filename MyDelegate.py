@@ -1,17 +1,17 @@
+import os
+
+from PyQt5.QtCore import QSize, Qt, QUrl, QVariant
 from PyQt5.QtWidgets import (
-    QWidget,
-    QDialog,
-    QStyledItemDelegate,
     QComboBox,
+    QDialog,
     QFileDialog,
     QLabel,
     QLineEdit,
+    QStyledItemDelegate,
+    QWidget,
 )
-from PyQt5.QtCore import Qt, QSize, QVariant, QUrl
-import os
-from . import MyModel
-from . import hostname_ui
-from . import utils
+
+from . import MyModel, hostname_ui, utils
 
 
 class hostnamedialog(QDialog):

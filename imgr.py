@@ -1,12 +1,14 @@
 #!/usr/bin/env python
-import sys
 import argparse
-import socket
-import tempfile
-import pwd
 import os
-from . import utils
+import pwd
+import socket
+import sys
+import tempfile
+
 from psp.caput import caput
+
+from . import utils
 
 
 def match_hutch(h, hlist):

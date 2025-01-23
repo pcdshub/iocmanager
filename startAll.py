@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 import sys
-from . import utils
 import time
+
+from . import utils
 
 if __name__ == "__main__":
     cfg = sys.argv[1]

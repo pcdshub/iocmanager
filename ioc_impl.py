@@ -1,17 +1,17 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt
-from . import MyModel
-from .MyDelegate import MyDelegate
-from .ioc_ui import Ui_MainWindow
-from . import auth_ui
-from psp.Pv import Pv
-import pyca
-from . import utils
 import os
-import sys
 import pty
 import pwd
 import socket
+import sys
+
+import pyca
+from psp.Pv import Pv
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtCore import Qt
+
+from . import MyModel, auth_ui, utils
+from .ioc_ui import Ui_MainWindow
+from .MyDelegate import MyDelegate
 
 
 class authdialog(QtWidgets.QDialog):
