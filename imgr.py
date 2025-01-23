@@ -22,7 +22,7 @@ def get_hutch(ns):
     # First, take the --hutch specified on the command line.
     if ns.hutch is not None:
         if ns.hutch not in hlist:
-            raise Exception("Nonexistent hutch %s" % v)
+            raise Exception("Nonexistent hutch %s" % ns.hutch)
         return ns.hutch
     # Second, try to match the current host.
     v = match_hutch(socket.gethostname(), hlist)
@@ -87,14 +87,14 @@ def info(hutch, ioc, verbose):
                             d["status"] = "DISABLED"
                         elif d["status"] == utils.STATUS_RUNNING:
                             d["status"] = "DISABLED, BUT RUNNING?!?"
-                except:
+                except Exception:
                     pass
                 try:
                     if c["alias"] != "":
                         print("%s (%s):" % (ioc, c["alias"]))
                     else:
                         print("%s:" % (ioc))
-                except:
+                except Exception:
                     print("%s:" % (ioc))
                 print("    host  : %s" % c["host"])
                 print("    port  : %s" % c["port"])
@@ -146,7 +146,7 @@ def do_commit(hutch, cl, hl, vs):
         try:
             os.unlink(file.name)  # Clean up!
             pass
-        except:
+        except Exception:
             pass
         raise
 
@@ -160,7 +160,7 @@ def set_state(hutch, ioc, enable):
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     try:
         utils.COMMITHOST = vs["COMMITHOST"]
-    except:
+    except Exception:
         pass
     for c in cl:
         if c["id"] == ioc:
@@ -182,7 +182,7 @@ def add(hutch, ioc, version, hostport, disable):
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     try:
         utils.COMMITHOST = vs["COMMITHOST"]
-    except:
+    except Exception:
         pass
     hp = hostport.split(":")
     host = hp[0].lower()
@@ -229,7 +229,7 @@ def upgrade(hutch, ioc, version):
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     try:
         utils.COMMITHOST = vs["COMMITHOST"]
-    except:
+    except Exception:
         pass
     for c in cl:
         if c["id"] == ioc:
@@ -248,7 +248,7 @@ def move(hutch, ioc, hostport):
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     try:
         utils.COMMITHOST = vs["COMMITHOST"]
-    except:
+    except Exception:
         pass
     for c in cl:
         if c["id"] == ioc:
@@ -306,7 +306,7 @@ if __name__ == "__main__":
         parser.add_argument("--add", action="store_true")
         parser.add_argument("--host")
         ns = parser.parse_args(sys.argv[1:])
-    except:
+    except Exception:
         usage()
     hutch = get_hutch(ns)
     if hutch is None:
