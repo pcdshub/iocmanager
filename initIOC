@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=all
 
 # Find our standard configuration.
 if [ -z "$PYPS_ROOT" ]; then

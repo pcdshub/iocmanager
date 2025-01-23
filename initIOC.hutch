@@ -1,3 +1,4 @@
+# shellcheck disable=all
 BASEPORT=39050
 PROCMGRD_ROOT=procmgrd
 
