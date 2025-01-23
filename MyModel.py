@@ -314,9 +314,10 @@ class MyModel(QAbstractTableModel):
                 d["status"] == utils.STATUS_RUNNING
                 or self.cfglist[i]["cfgstat"] != utils.CONFIG_DELETED
             ):
-                # Sigh.  If we just emit dataChanged for the row, editing the port number becomes
-                # nearly impossible, because we keep writing it over.  Therefore, we need to avoid
-                # it... except, of course, sometimes it *does* change!
+                # Sigh.  If we just emit dataChanged for the row, editing the port
+                # number becomes nearly impossible, because we keep writing it over.
+                # Therefore, we need to avoid it... except, of course, sometimes it
+                # *does* change!
                 oldport = self.cfglist[i]["rport"]
                 self.cfglist[i].update(d)
                 if oldport != self.cfglist[i]["rport"]:
@@ -597,18 +598,18 @@ class MyModel(QAbstractTableModel):
         self.layoutChanged.emit()
 
     def applyAddList(self, i, config, current, pfix, d, lst, verb):
-        for lst in lst:
-            if lst in list(config.keys()):
+        for ls in lst:
+            if ls in list(config.keys()):
                 try:
-                    a = config[lst]["alias"]
+                    a = config[ls]["alias"]
                     if a == "":
-                        a = config[lst]["id"]
+                        a = config[ls]["id"]
                     else:
-                        a += " (%s)" % config[lst]["id"]
+                        a += " (%s)" % config[ls]["id"]
                 except Exception:
-                    a = config[lst]["id"]
+                    a = config[ls]["id"]
             else:
-                a = current[lst]["rid"]
+                a = current[ls]["rid"]
             check = QCheckBox(d)
             check.setChecked(False)
             #
@@ -616,13 +617,13 @@ class MyModel(QAbstractTableModel):
             # Make sure we can have something there!
             #
             try:
-                h = current[lst][pfix + "host"]
+                h = current[ls][pfix + "host"]
             except Exception:
-                h = config[lst]["host"]
+                h = config[ls]["host"]
             try:
-                p = current[lst][pfix + "port"]
+                p = current[ls][pfix + "port"]
             except Exception:
-                p = config[lst]["port"]
+                p = config[ls]["port"]
             check.setText("%s %s on %s:%d" % (verb, a, h, p))
             d.clayout.addWidget(check)
             i = i + 1
@@ -796,8 +797,8 @@ class MyModel(QAbstractTableModel):
             return False
         for entry in self.cfglist:
             #
-            # IOC names are special.  If we just reprocess the file, we will have both the
-            # old *and* the new names!  So we have to change the names here.
+            # IOC names are special.  If we just reprocess the file, we will have both
+            # the old *and* the new names!  So we have to change the names here.
             #
             try:
                 entry["id"] = entry["newid"].strip()
@@ -1112,9 +1113,9 @@ class MyModel(QAbstractTableModel):
             if entry is not None:
                 return
         #
-        # Sigh.  Because we want to do authentication, we have a version of kerberos on our path,
-        # but unfortunately it doesn't play nice with the library that telnet uses!  Therefore,
-        # we have to get rid of LD_LIBRARY_PATH here.
+        # Sigh.  Because we want to do authentication, we have a version of kerberos on
+        # our path, but unfortunately it doesn't play nice with the library that telnet
+        # uses!  Therefore, we have to get rid of LD_LIBRARY_PATH here.
         #
         try:
             if entry["hard"]:

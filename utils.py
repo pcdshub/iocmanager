@@ -924,8 +924,8 @@ def applyConfig(cfg, verify=None, ioc=None):
     # Now, we need to make three lists: kill, restart, and start.
     #
 
-    # Kill anyone who we don't want, or is running on the wrong host or port, or is oldstyle and needs
-    # an upgrade.
+    # Kill anyone who we don't want, or is running on the wrong host or port, or is
+    # oldstyle and needs an upgrade.
     kill_list = [
         line
         for line in running
@@ -939,13 +939,15 @@ def applyConfig(cfg, verify=None, ioc=None):
     ]
 
     #
-    # Now there is a problem if an IOC is bad and repeatedly crashing.  The running state may
-    # not be accurate, as it is oscillating between RUNNING and SHUTDOWN.  If it's enabled, not
-    # much we can do but let it spin... but if it's disabled, we need to be certain to kill it.
+    # Now there is a problem if an IOC is bad and repeatedly crashing.  The running
+    # state may not be accurate, as it is oscillating between RUNNING and SHUTDOWN.
+    # If it's enabled, not much we can do but let it spin... but if it's disabled, we
+    # need to be certain to kill it.
     #
-    # We don't want to just add *everything* though... this makes the screen too verbose!  So, we
-    # compromise... if the status file is *new*, then maybe it's crashing and needs to be killed
-    # again.  If it's old though, let's assume that it's dead and we can leave it alone...
+    # We don't want to just add *everything* though... this makes the screen too
+    # verbose!  So, we compromise... if the status file is *new*, then maybe it's
+    # crashing and needs to be killed again.  If it's old though, let's assume that
+    # it's dead and we can leave it alone...
     #
     # If it's dead, it might not *have* a status file, hence the try.
     #
@@ -957,8 +959,8 @@ def applyConfig(cfg, verify=None, ioc=None):
         except Exception:
             pass
 
-    # Start anyone who wasn't running, or was running on the wrong host or port, or is oldstyle and needs
-    # an upgrade.
+    # Start anyone who wasn't running, or was running on the wrong host or port,
+    # or is oldstyle and needs an upgrade.
     start_list = [
         line
         for line in wanted
@@ -971,7 +973,8 @@ def applyConfig(cfg, verify=None, ioc=None):
         )
     ]
 
-    # Anyone running the wrong version, newstyle, on the right host and port just needs a restart.
+    # Anyone running the wrong version, newstyle, on the right host and port
+    # just needs a restart.
     restart_list = [
         line
         for line in wanted
@@ -1043,7 +1046,10 @@ def check_special(req_ioc, req_hutch, req_version="no_upgrade"):
                 continue  # not the ioc we are looking for
 
             if req_version == "no_upgrade":
-                return True  # NOTE(josh): this does assume that the only place check_special is invoked without overloading the default argument is in the raw enable / disable case
+                # NOTE(josh): this does assume that the only place check_special is
+                # invoked without overloading the default argument is in the raw
+                # enable / disable case
+                return True
 
             # if there is information after the colon, parse it
             if len(ioc_vers_list) > 1:
@@ -1172,7 +1178,7 @@ def commit_config(hutch, comment, fd):
 #  ['config-file', {ioc config dict}]
 def find_iocs(**kwargs):
     cfgs = glob.glob(CONFIG_FILE % "*")
-    configs = list()
+    configs = []
     for cfg in cfgs:
         config = readConfig(cfg)[1]
         for ioc in config:

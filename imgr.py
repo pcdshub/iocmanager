@@ -46,10 +46,12 @@ def usage():
     print("       imgr IOCNAME [--hutch HUTCH] --move/loc HOST")
     print("       imgr IOCNAME [--hutch HUTCH] --move/loc HOST:PORT")
     print(
-        "       imgr IOCNAME [--hutch HUTCH] --add --loc HOST:PORT --dir RELEASE_DIR --enable/disable"
+        "       imgr IOCNAME [--hutch HUTCH] --add --loc HOST:PORT --dir RELEASE_DIR "
+        "--enable/disable"
     )
     print(
-        "       imgr [--hutch HUTCH] --list [--host HOST] [--enabled_only|--disabled_only]"
+        "       imgr [--hutch HUTCH] --list [--host HOST] "
+        "[--enabled_only|--disabled_only]"
     )
     print("")
     print("Note that '/' denotes a choice between two possible command names.")

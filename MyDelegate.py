@@ -65,7 +65,8 @@ class MyDelegate(QStyledItemDelegate):
             except Exception:
                 editor.setCurrentIndex(editor.lastitem)
         elif col == MyModel.VERSION:
-            # We don't have anything to do here.  It is created pointing to 0 (the newest setting)
+            # We don't have anything to do here.  It is created pointing to 0
+            # (the newest setting)
             # And after setModelData, it is pointing to what we just added.
             pass
         elif col == MyModel.STATE:
