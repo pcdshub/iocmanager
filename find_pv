@@ -21,16 +21,16 @@ fi
 THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 source "${THIS_DIR}"/default_env
 
-for pv in $@;
+for pv in "$@";
   do
-  echo PV: $pv
-  ioc_list=`/bin/egrep -l -e "$pv" "${IOC_DATA}"/ioc*/iocInfo/IOC.pvlist | /bin/cut -d / -f5`
+  echo PV: "$pv"
+  ioc_list=$(grep -E -l -e "$pv" "${IOC_DATA}"/ioc*/iocInfo/IOC.pvlist | cut -d / -f5)
   for ioc in $ioc_list;
     do
     echo "  IOC: $ioc"
 
 			# Look for IOC PV root
-    ioc_pv=`/bin/egrep UPTIME "${IOC_DATA}"/$ioc/iocInfo/IOC.pvlist | /bin/sed -e "s/:UPTIME.*//"`
+    ioc_pv=$(grep -E UPTIME "${IOC_DATA}"/"$ioc"/iocInfo/IOC.pvlist | sed -e "s/:UPTIME.*//")
     if (( ${#ioc_pv} == 0 ));
 	then
 	echo "  IOC_PV: Not found!"
@@ -39,19 +39,19 @@ for pv in $@;
     fi
 
 			# Look for linux hosts
-    host_list=`/bin/egrep -l -e "$ioc" "${IOC_COMMON}"/hosts/ioc*/startup.cmd | /bin/cut -d / -f6`
+    host_list=$(grep -E -l -e "$ioc" "${IOC_COMMON}"/hosts/ioc*/startup.cmd | cut -d / -f6)
     for h in $host_list;
       do
       echo "  HOST: $h"
     done
 
-    if [ -f "${IOC_COMMON}"/sioc/$ioc/startup.cmd ];
+    if [ -f "${IOC_COMMON}"/sioc/"$ioc"/startup.cmd ];
 	then
 				# Look for soft IOC boot directories
-	boot_list=`/bin/egrep -w -e "^cd" "${IOC_COMMON}"/sioc/$ioc/startup.cmd | /bin/awk '{ print $2}'`
+	boot_list=$(grep -E -w -e "^cd" "${IOC_COMMON}"/sioc/"$ioc"/startup.cmd | awk '{ print $2}')
 	if (( ${#boot_list} ));
 	    then
-	    echo "  STARTUP: "${IOC_COMMON}"/sioc/$ioc/startup.cmd"
+	    echo "  STARTUP: ${IOC_COMMON}/sioc/$ioc/startup.cmd"
 	    for d in $boot_list;
 	      do
 	      echo "  BOOT_DIR: $d"
@@ -60,14 +60,14 @@ for pv in $@;
     fi
 
 			# Look for hard ioc
-    hioc_list=`/bin/egrep -l -e "$ioc" "${IOC_COMMON}"/hioc/ioc*/startup.cmd | /bin/cut -d / -f6`
+    hioc_list=$(grep -E -l -e "$ioc" "${IOC_COMMON}"/hioc/ioc*/startup.cmd | cut -d / -f6)
     if (( ${#hioc_list} ));
 	then
 	for hioc in $hioc_list;
 	  do
 	  echo "  HIOC: $hioc"
-	  echo "  STARTUP: "${IOC_COMMON}"/hioc/$hioc/startup.cmd"
-	  boot_list=`/bin/egrep -w -e "^chdir" "${IOC_COMMON}"/hioc/$hioc/startup.cmd | /bin/cut -d \" -f2`
+	  echo "  STARTUP: ${IOC_COMMON}/hioc/$hioc/startup.cmd"
+	  boot_list=$(grep -E -w -e "^chdir" "${IOC_COMMON}"/hioc/"$hioc"/startup.cmd | cut -d \" -f2)
 	  for d in $boot_list;
 	    do
 	    echo "  BOOT_DIR: $d"
@@ -89,7 +89,7 @@ for pv in $@;
 
                         # Look for IocManager Configs
     echo "  IocManager Configs:"
-    "${THIS_DIR}"/find_ioc --name $ioc
+    "${THIS_DIR}"/find_ioc --name "$ioc"
 
 
   done
