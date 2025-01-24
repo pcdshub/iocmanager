@@ -169,7 +169,7 @@ class MyModel(QAbstractTableModel):
         self.poll = StatusPoll(self, 5)
         self.children = []
         config = utils.readConfig(hutch, do_os=True)
-        if config is not None:
+        if config is None:
             print("Cannot read configuration for %s!" % hutch)
             sys.exit(-1)
         (self.poll.mtime, self.cfglist, self.hosts, self.vdict) = config
