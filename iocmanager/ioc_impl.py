@@ -1,3 +1,4 @@
+import logging
 import os
 import pty
 import pwd
@@ -12,6 +13,8 @@ from qtpy.QtCore import Qt
 from . import auth_ui, my_model, utils
 from .ioc_ui import Ui_MainWindow
 from .my_delegate import MyDelegate
+
+logger = logging.getLogger(__name__)
 
 
 class authdialog(QtWidgets.QDialog):
@@ -29,9 +32,9 @@ def caput(pvname, value, timeout=1.0):
         pv.put(value, timeout)
         pv.disconnect()
     except pyca.pyexc as e:
-        print("pyca exception: %s" % (e))
+        logger.warning("pyca exception: %s", e)
     except pyca.caexc as e:
-        print("channel access exception: %s" % (e))
+        logger.warning("channel access exception: %s", e)
 
 
 ######################################################################
@@ -107,6 +110,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             try:
                 pv.disconnect()
             except Exception:
+                logger.debug(f"Error disconnecting {pv}", exc_info=True)
                 pass
         self.pvlist = []
 
@@ -115,7 +119,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             if e is None:
                 pv.gui.setText(pv.format % pv.value)
         except Exception:
-            pass
+            logger.debug(f"Error displaying {pv}", exc_info=True)
 
     def doApply(self):
         if not self.authorize_action(True):
@@ -228,7 +232,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
                 pv.wait_ready(0.5)
                 pv.monitor()
             except Exception:
-                pass
+                logger.debug(f"Error setting up {pv} in dopv", exc_info=True)
 
     def getSelection(self, selected, deselected):
         try:
@@ -455,7 +459,10 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
                 try:
                     os.close(self.model.userIO)
                 except Exception:
-                    pass
+                    logger.debug(
+                        f"Error closing {self.model.userIO} in authenticate_user",
+                        exc_info=True,
+                    )
             self.model.userIO = None
             self.ui.userLabel.setText("User: " + self.myuid)
             self.model.user = self.myuid
@@ -528,7 +535,10 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             try:
                 os.close(self.model.userIO)
             except Exception:
-                pass
+                logger.debug(
+                    f"Error closing {self.model.userIO} in authenticate_user",
+                    exc_info=True,
+                )
         self.model.userIO = fd
         if need_su:
             self.utimer.start(10 * 60000)  # Let's go for 10 minutes.
@@ -552,7 +562,8 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             try:
                 self.authenticate_user(user)
             except Exception:
-                print("Authentication as %s failed!" % user)
+                logger.info("Authentication as %s failed!", user)
+                logger.debug("", exc_info=True)
                 self.unauthenticate()
 
     def unauthenticate(self):
@@ -560,7 +571,8 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         try:
             self.authenticate_user(self.myuid)
         except Exception:
-            print("Authentication as self failed?!?")
+            logger.error("Authentication as self failed?!?")
+            logger.debug("", exc_info=True)
 
     def authorize_action(self, file_action):
         # The user might be OK.
