@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import sys
 
-from . import utils
+from .. import utils
 
 if __name__ == "__main__":
     hutch = sys.argv[1]

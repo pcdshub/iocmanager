@@ -2,7 +2,7 @@
 import sys
 import time
 
-from . import utils
+from .. import utils
 
 if __name__ == "__main__":
     cfg = sys.argv[1]

@@ -3,7 +3,7 @@ import sys
 
 from psp.options import Options
 
-from . import utils
+from .. import utils
 
 if __name__ == "__main__":
     options = Options(["name"], [], [])

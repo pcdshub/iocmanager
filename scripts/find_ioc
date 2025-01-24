@@ -3,4 +3,4 @@ THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 cd "${THIS_DIR}/.." || exit
 source "${THIS_DIR}"/default_env
 
-"${IOCMAN_PY_BIN}"/python -m iocmanager.find_ioc "$@"
+"${IOCMAN_PY_BIN}"/python -m iocmanager.scripts.find_ioc "$@"

@@ -10,4 +10,4 @@ if [ "${cfg}X" == "X" ]; then
     cfg=$(echo "$host" | awk '{print substr($0,5,3);}' -)
 fi
 
-"${IOCMAN_PY_BIN}"/python -m iocmanager.fix_telnet "$@"
+"${IOCMAN_PY_BIN}"/python -m iocmanager.scripts.fix_telnet "$@"
