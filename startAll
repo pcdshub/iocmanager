@@ -1,6 +1,7 @@
 #!/usr/bin/bash
 # Usage: startAll HUTCH HOSTNAME
 THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-source "${THIS_DIR}"/default_env
+cd "${THIS_DIR}" || exit
+source ./default_env
 
-"${IOCMAN_PY_BIN}"/python "${THIS_DIR}"/startAll.py "$@"
+"${IOCMAN_PY_BIN}"/python -m ioc_manager.startAll "$@"

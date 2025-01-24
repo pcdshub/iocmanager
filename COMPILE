@@ -1,9 +1,10 @@
 #!/bin/bash
 THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-source "${THIS_DIR}"/default_env
+cd "${THIS_DIR}" || exit
+source ./default_env
 
-"${IOCMAN_PY_BIN}"/pyuic5 -o ioc_ui.py ioc.ui
-"${IOCMAN_PY_BIN}"/pyuic5 -o hostname_ui.py hostname.ui
-"${IOCMAN_PY_BIN}"/pyuic5 -o auth_ui.py auth.ui
-"${IOCMAN_PY_BIN}"/pyuic5 -o details_ui.py details.ui
-"${IOCMAN_PY_BIN}"/pyuic5 -o commit_ui.py commit.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o ioc_manager/ioc_ui.py ui/ioc.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o ioc_manager/hostname_ui.py ui/hostname.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o ioc_manager/auth_ui.py ui/auth.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o ioc_manager/details_ui.py ui/details.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o ioc_manager/commit_ui.py ui/commit.ui

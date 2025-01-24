@@ -2,7 +2,8 @@
 # shellcheck disable=SC2164
 # Usage: startProc IOCNAME PORT HUTCH
 THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-source "${THIS_DIR}"/default_env
+cd "${THIS_DIR}"
+source ./default_env
 
 ioc=$1
 port=$2
