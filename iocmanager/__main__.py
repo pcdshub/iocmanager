@@ -2,7 +2,7 @@
 import sys
 
 from psp.options import Options
-from PyQt5 import QtWidgets
+from qtpy import QtWidgets
 
 from .ioc_impl import GraphicUserInterface
 
