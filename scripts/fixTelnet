@@ -2,7 +2,7 @@
 # Usage: fixTelnet port
 THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 cd "${THIS_DIR}/.." || exit
-source ./default_env
+source "${THIS_DIR}"/default_env
 
 host=$(hostname -s)
 cfg=$(awk /"$host"/'{print $2;}'  "$PYPS_ROOT"/config/hosts.special)
@@ -10,4 +10,4 @@ if [ "${cfg}X" == "X" ]; then
     cfg=$(echo "$host" | awk '{print substr($0,5,3);}' -)
 fi
 
-"${IOCMAN_PY_BIN}"/python -m iocmanager.fixTelnet "$@"
+"${IOCMAN_PY_BIN}"/python -m iocmanager.fix_telnet "$@"

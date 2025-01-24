@@ -9,9 +9,9 @@ from psp.Pv import Pv
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
-from . import MyModel, auth_ui, utils
+from . import auth_ui, my_model, utils
 from .ioc_ui import Ui_MainWindow
-from .MyDelegate import MyDelegate
+from .my_delegate import MyDelegate
 
 
 class authdialog(QtWidgets.QDialog):
@@ -62,7 +62,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         self.setWindowTitle("%s IocManager%s" % (hutch.upper(), version))
         self.hutch = hutch
         self.authdialog = authdialog(self)
-        self.model = MyModel.MyModel(hutch)
+        self.model = my_model.MyModel(hutch)
         self.utimer = QtCore.QTimer()
         self.delegate = MyDelegate(None, hutch)
         self.ui.actionApply.triggered.connect(self.doApply)
@@ -234,10 +234,10 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         try:
             row = selected.indexes()[0].row()
             ioc = self.model.data(
-                self.model.index(row, MyModel.IOCNAME), QtCore.Qt.EditRole
+                self.model.index(row, my_model.IOCNAME), QtCore.Qt.EditRole
             ).value()
             host = self.model.data(
-                self.model.index(row, MyModel.HOST), QtCore.Qt.EditRole
+                self.model.index(row, my_model.HOST), QtCore.Qt.EditRole
             ).value()
             if ioc == self.currentIOC:
                 return

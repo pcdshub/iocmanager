@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from . import MyModel, hostname_ui, utils
+from . import hostname_ui, my_model, utils
 
 
 class hostnamedialog(QDialog):
@@ -31,24 +31,24 @@ class MyDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         col = index.column()
-        if col == MyModel.HOST or col == MyModel.VERSION or col == MyModel.STATE:
+        if col == my_model.HOST or col == my_model.VERSION or col == my_model.STATE:
             editor = QComboBox(parent)
             editor.setAutoFillBackground(True)
             editor.currentIndexChanged.connect(lambda n: self.do_commit(n, editor))
-            if col == MyModel.HOST:
+            if col == my_model.HOST:
                 items = index.model().hosts
-            elif col == MyModel.VERSION:
+            elif col == my_model.VERSION:
                 items = index.model().history(index.row())
             else:
-                items = MyModel.statecombolist
+                items = my_model.statecombolist
             for item in items:
                 editor.addItem(item)
             editor.lastitem = editor.count()
-            if col == MyModel.HOST:
+            if col == my_model.HOST:
                 editor.addItem("New Host")
                 if self.boxsize is None:
                     self.boxsize = QSize(150, 25)
-            elif col == MyModel.VERSION:
+            elif col == my_model.VERSION:
                 editor.addItem("New Version")
             # STATE doesn't need another entry!
             return editor
@@ -57,24 +57,24 @@ class MyDelegate(QStyledItemDelegate):
 
     def setEditorData(self, editor, index):
         col = index.column()
-        if col == MyModel.HOST:
+        if col == my_model.HOST:
             value = index.model().data(index, Qt.EditRole).value()
             try:
                 idx = index.model().hosts.index(value)
                 editor.setCurrentIndex(idx)
             except Exception:
                 editor.setCurrentIndex(editor.lastitem)
-        elif col == MyModel.VERSION:
+        elif col == my_model.VERSION:
             # We don't have anything to do here.  It is created pointing to 0
             # (the newest setting)
             # And after setModelData, it is pointing to what we just added.
             pass
-        elif col == MyModel.STATE:
+        elif col == my_model.STATE:
             value = index.model().data(index, Qt.EditRole).value()
             try:
-                idx = MyModel.statelist.index(value)
-                if idx >= len(MyModel.statecombolist):
-                    idx = len(MyModel.statecombolist) - 1
+                idx = my_model.statelist.index(value)
+                if idx >= len(my_model.statecombolist):
+                    idx = len(my_model.statecombolist) - 1
                 editor.setCurrentIndex(idx)
             except Exception:
                 editor.setCurrentIndex(editor.lastitem)
@@ -87,7 +87,7 @@ class MyDelegate(QStyledItemDelegate):
 
     def setModelData(self, editor, model, index):
         col = index.column()
-        if col == MyModel.HOST:
+        if col == my_model.HOST:
             idx = editor.currentIndex()
             if idx == editor.lastitem:
                 # Pick a new hostname!
@@ -106,7 +106,7 @@ class MyDelegate(QStyledItemDelegate):
                     self.setEditorData(editor, index)  # Restore the original value!
             else:
                 model.setData(index, QVariant(str(editor.currentText())), Qt.EditRole)
-        elif col == MyModel.VERSION:
+        elif col == my_model.VERSION:
             idx = editor.currentIndex()
             if idx == editor.lastitem:
                 # Pick a new directory!
@@ -158,7 +158,7 @@ class MyDelegate(QStyledItemDelegate):
                 model.setData(index, QVariant(dir), Qt.EditRole)
             else:
                 model.setData(index, QVariant(str(editor.currentText())), Qt.EditRole)
-        elif col == MyModel.STATE:
+        elif col == my_model.STATE:
             idx = editor.currentIndex()
             model.setData(index, QVariant(idx), Qt.EditRole)
         else:
@@ -166,7 +166,7 @@ class MyDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index):
         col = index.column()
-        if col == MyModel.HOST:
+        if col == my_model.HOST:
             if self.boxsize is None:
                 result = QSize(150, 25)
             else:
