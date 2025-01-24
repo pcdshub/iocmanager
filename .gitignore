@@ -10,3 +10,5 @@ commit_ui.py
 details_ui.py
 hostname_ui.py
 ioc_ui.py
+
+procserv/build
