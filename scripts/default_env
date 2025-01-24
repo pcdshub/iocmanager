@@ -24,3 +24,6 @@ fi
 if [ -z "${IOC_COMMON}" ]; then
     export IOC_COMMON=/cds/data/iocCommon
 fi
+if [ -z "${SCRIPTROOT}" ]; then
+    export SCRIPTROOT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+fi
