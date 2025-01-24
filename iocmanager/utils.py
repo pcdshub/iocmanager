@@ -1129,7 +1129,7 @@ def read_until(fd, expr):
     exp = re.compile(expr, re.S)
     data = ""
     while True:
-        v = os.read(fd, 1024)
+        v = os.read(fd, 1024).decode("utf-8")
         # print "<<< %s" % v.encode("string-escape")
         data += v
         m = exp.search(data)

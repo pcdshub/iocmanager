@@ -528,7 +528,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         # Sigh.  Someone once had a file named time.py in their home
         # directory.  So let's go somewhere where we know the files.
         #
-        os.write(fd, "cd %s\n" % utils.TMP_DIR)
+        os.write(fd, ("cd %s\n" % utils.TMP_DIR).encode("utf-8"))
         tty_text = utils.read_until(fd, "> ")
         self.model.user = user
         if self.model.userIO is not None:
