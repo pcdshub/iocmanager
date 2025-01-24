@@ -9,9 +9,9 @@ import threading
 import time
 
 import psp
-from PyQt5.QtCore import QAbstractTableModel, QEvent, QModelIndex, Qt, QVariant
-from PyQt5.QtGui import QBrush, QColor
-from PyQt5.QtWidgets import (
+from qtpy.QtCore import QAbstractTableModel, QEvent, QModelIndex, Qt, QVariant
+from qtpy.QtGui import QBrush, QColor
+from qtpy.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,

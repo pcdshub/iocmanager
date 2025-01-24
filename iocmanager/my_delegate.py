@@ -1,7 +1,7 @@
 import os
 
-from PyQt5.QtCore import QSize, Qt, QUrl, QVariant
-from PyQt5.QtWidgets import (
+from qtpy.QtCore import QSize, Qt, QUrl, QVariant
+from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,

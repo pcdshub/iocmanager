@@ -6,8 +6,8 @@ import sys
 
 import pyca
 from psp.Pv import Pv
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import Qt
+from qtpy import QtCore, QtGui, QtWidgets
+from qtpy.QtCore import Qt
 
 from . import auth_ui, my_model, utils
 from .ioc_ui import Ui_MainWindow
