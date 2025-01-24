@@ -1,3 +1,4 @@
+import concurrent.futures
 import os
 import pwd
 import re
@@ -54,64 +55,33 @@ class StatusPoll(threading.Thread):
         self.dialog = None
 
     def run(self):
-        last = 0
-        while True:
-            now = time.time()
-            looptime = now - last
-            if looptime < self.interval:
-                time.sleep(self.interval + 1 - looptime)
-                last = time.time()
-            else:
-                last = now
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            while True:
+                start_time = time.monotonic()
+                futures = []
 
-            result = utils.readConfig(self.hutch, self.mtime, do_os=True)
-            if result is not None:
-                (self.mtime, cfglist, hosts, vdict) = result
-                self.rmtime = {}  # Force a re-read!
-                self.model.configuration(cfglist, hosts, vdict)
+                result = utils.readConfig(self.hutch, self.mtime, do_os=True)
+                if result is not None:
+                    (self.mtime, cfglist, hosts, vdict) = result
+                    self.rmtime = {}  # Force a re-read!
+                    self.model.configuration(cfglist, hosts, vdict)
 
-            result = utils.readStatusDir(self.hutch, self.readStatusFile)
-            for line in result:
-                rdir = line["rdir"]
-                line.update(
-                    utils.check_status(line["rhost"], line["rport"], line["rid"])
-                )
-                line["stattime"] = time.time()
-                if line["rdir"] == "/tmp":
-                    line["rdir"] = rdir
-                else:
-                    line["newstyle"] = False
-                self.model.running(line)
+                result = utils.readStatusDir(self.hutch, self.readStatusFile)
+                for line in result:
+                    futures.append(executor.submit(self.check_one_file_status, line))
 
-            for line in self.model.cfglist:
-                if line["stattime"] + self.interval > time.time():
-                    continue
-                if line["hard"]:
-                    s = {"pid": -1, "autorestart": False}
-                    try:
-                        pv = psp.Pv.Pv(line["base"] + ":HEARTBEAT")
-                        pv.connect(1.0)
-                        pv.disconnect()
-                        s["status"] = utils.STATUS_RUNNING
-                    except Exception:
-                        s["status"] = utils.STATUS_SHUTDOWN
-                    s["rid"] = line["id"]
-                    s["rdir"] = line["dir"]
-                else:
-                    s = utils.check_status(line["host"], line["port"], line["id"])
-                s["stattime"] = time.time()
-                s["rhost"] = line["host"]
-                s["rport"] = line["port"]
-                if line["newstyle"]:
-                    if s["rdir"] == "/tmp":
-                        del s["rdir"]
-                    else:
-                        s["newstyle"] = False  # We've switched from new to old?!?
-                self.model.running(s)
+                for line in self.model.cfglist:
+                    futures.append(executor.submit(self.check_one_config_status, line))
 
-            for p in self.model.children:
-                if p.poll() is not None:
-                    self.model.children.remove(p)
+                for p in self.model.children:
+                    futures.append(executor.submit(self.poll_one_child, p))
+
+                for fut in futures:
+                    fut.result()
+                duration = time.monotonic() - start_time
+                print(duration)
+                if duration < self.interval:
+                    time.sleep(self.interval + 1 - duration)
 
     def readStatusFile(self, fn, ioc):
         try:
@@ -127,6 +97,46 @@ class StatusPoll(threading.Thread):
                 return []
         except Exception:
             return []
+
+    def check_one_file_status(self, line):
+        rdir = line["rdir"]
+        line.update(utils.check_status(line["rhost"], line["rport"], line["rid"]))
+        line["stattime"] = time.time()
+        if line["rdir"] == "/tmp":
+            line["rdir"] = rdir
+        else:
+            line["newstyle"] = False
+        self.model.running(line)
+
+    def check_one_config_status(self, line):
+        if line["stattime"] + self.interval > time.time():
+            return
+        if line["hard"]:
+            s = {"pid": -1, "autorestart": False}
+            try:
+                pv = psp.Pv.Pv(line["base"] + ":HEARTBEAT")
+                pv.connect(1.0)
+                pv.disconnect()
+                s["status"] = utils.STATUS_RUNNING
+            except Exception:
+                s["status"] = utils.STATUS_SHUTDOWN
+            s["rid"] = line["id"]
+            s["rdir"] = line["dir"]
+        else:
+            s = utils.check_status(line["host"], line["port"], line["id"])
+        s["stattime"] = time.time()
+        s["rhost"] = line["host"]
+        s["rport"] = line["port"]
+        if line["newstyle"]:
+            if s["rdir"] == "/tmp":
+                del s["rdir"]
+            else:
+                s["newstyle"] = False  # We've switched from new to old?!?
+        self.model.running(s)
+
+    def poll_one_child(self, p):
+        if p.poll() is not None:
+            self.model.children.remove(p)
 
 
 class detailsdialog(QDialog):
