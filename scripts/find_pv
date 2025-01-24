@@ -19,7 +19,7 @@ if [ $# -eq 0 ];
 fi
 
 THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-cd "${THIS_DIR}" || exit
+cd "${THIS_DIR}/.." || exit
 source ./default_env
 
 for pv in "$@";
