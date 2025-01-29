@@ -1,4 +1,5 @@
 import concurrent.futures
+import logging
 import os
 import pwd
 import re
@@ -25,6 +26,8 @@ from qtpy.QtWidgets import (
 )
 
 from . import commit_ui, details_ui, utils
+
+logger = logging.getLogger(__name__)
 
 #
 # Column definitions.
@@ -95,6 +98,7 @@ class StatusPoll(threading.Thread):
             else:
                 return []
         except Exception:
+            logger.debug("Error reading status file", exc_info=True)
             return []
 
     def check_one_file_status(self, line):
@@ -800,7 +804,9 @@ class MyModel(QAbstractTableModel):
             file = tempfile.NamedTemporaryFile(dir=utils.TMP_DIR, delete=False)
             utils.writeConfig(self.hutch, self.hosts, self.cfglist, self.vdict, file)
             utils.installConfig(self.hutch, file.name)
-        except Exception:
+        except Exception as exc:
+            logger.error(f"Error writing config: {exc}")
+            logger.debug("Error writing config", exc_info=True)
             QMessageBox.critical(
                 None,
                 "Error",
@@ -830,8 +836,10 @@ class MyModel(QAbstractTableModel):
         if comment is not None:
             try:
                 utils.commit_config(self.hutch, comment, self.userIO)
-            except Exception:
-                print("Error committing config file!")
+            except Exception as exc:
+                logger.info(f"Error committing config file: {exc}")
+                logger.debug("Error committing config file", exc_info=True)
+
         return True
 
     def doRevert(self):
@@ -1153,9 +1161,12 @@ class MyModel(QAbstractTableModel):
                 "unsetenv LD_LIBRARY_PATH ; telnet %s %s" % (host, port),
             )
         except KeyError:
-            print("Dict key error while setting up telnet interface for: %s" % entry)
+            logger.error(
+                "Dict key error while setting up telnet interface for: %s", entry
+            )
         except Exception:
-            print("Unspecified error while setting up telnet interface")
+            logger.error("Unspecified error while setting up telnet interface")
+            logger.debug("Telnet setup error", exc_info=True)
 
     def viewlogIOC(self, index):
         if isinstance(index, QModelIndex):
@@ -1168,8 +1179,9 @@ class MyModel(QAbstractTableModel):
                 id,
                 "tail -1000lf `ls -t " + (utils.LOGBASE % id) + "* |head -1`",
             )
-        except Exception:
-            print("Error while trying to view log file!")
+        except Exception as exc:
+            logger.error(f"Error while trying to view log file: {exc}")
+            logger.debug("Error while trying to view log file", exc_info=True)
 
     # index is either an IOC name or an index!
     def rebootIOC(self, index):
