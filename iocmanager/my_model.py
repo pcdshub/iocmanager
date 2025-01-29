@@ -79,7 +79,6 @@ class StatusPoll(threading.Thread):
                 for fut in futures:
                     fut.result()
                 duration = time.monotonic() - start_time
-                print(duration)
                 if duration < self.interval:
                     time.sleep(self.interval + 1 - duration)
 
