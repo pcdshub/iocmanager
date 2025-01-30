@@ -801,7 +801,9 @@ class MyModel(QAbstractTableModel):
                 QMessageBox.Ok,
             )
         try:
-            file = tempfile.NamedTemporaryFile(dir=utils.TMP_DIR, delete=False)
+            file = tempfile.NamedTemporaryFile(
+                mode="w", dir=utils.TMP_DIR, delete=False
+            )
             utils.writeConfig(self.hutch, self.hosts, self.cfglist, self.vdict, file)
             utils.installConfig(self.hutch, file.name)
         except Exception as exc:
