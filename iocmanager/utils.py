@@ -84,6 +84,7 @@
 import copy
 import fcntl
 import glob
+import logging
 import os
 import re
 import stat
@@ -91,6 +92,8 @@ import string
 import subprocess
 import telnetlib
 import time
+
+logger = logging.getLogger(__name__)
 
 #
 # Defines
@@ -366,6 +369,7 @@ def checkTelnetMode(host, port, onOK=True, offOK=False, oneshotOK=False, verbose
         try:
             statd = readLogPortBanner(tn)
         except Exception:
+            logger.debug("checkTelnetMode() failed to readLogPortBanner", exc_info=True)
             print(
                 "ERROR: checkTelnetMode() failed to readLogPortBanner on %s port %s"
                 % (host, port)
@@ -405,6 +409,9 @@ def checkTelnetMode(host, port, onOK=True, offOK=False, oneshotOK=False, verbose
             time.sleep(0.25)
             tn.close()
         except Exception:
+            logger.debug(
+                "checkTelnetMode() failed to turn off autorestart", exc_info=True
+            )
             print(
                 "ERROR: checkTelnetMode() failed to turn off autorestart on %s port %s"
                 % (host, port)
@@ -433,6 +440,7 @@ def killProc(host, port, verbose=False):
                 tn.read_until(MSG_KILLED, 1)
                 time.sleep(0.25)
             except Exception:
+                logger.debug("killProc() failed to kill process", exc_info=True)
                 print(
                     "ERROR: killProc() failed to kill process on %s port %s"
                     % (host, port)
@@ -445,6 +453,7 @@ def killProc(host, port, verbose=False):
             # send ^Q to kill procServ
             tn.write("\x11")
         except Exception:
+            logger.debug("killProc() failed to kill procServ", exc_info=True)
             print(
                 "ERROR: killProc() failed to kill procServ on %s port %s" % (host, port)
             )
@@ -540,6 +549,7 @@ def startProc(cfg, entry, local=False):
     try:
         tn = telnetlib.Telnet(host, ctrlport, 1)
     except Exception:
+        logger.debug("telnet to procmgr failed", exc_info=True)
         print("ERROR: telnet to procmgr (%s port %d) failed" % (host, ctrlport))
         print(">>> Please start the procServ process on host %s!" % host)
     else:
@@ -601,6 +611,7 @@ def readConfig(cfg, time=None, silent=False, do_os=False):
     try:
         f = open(cfgfn, "r")
     except Exception as msg:
+        logger.debug("readConfig file io exception", exc_info=True)
         if not silent:
             print("readConfig file error: %s" % str(msg))
         return None
@@ -617,6 +628,7 @@ def readConfig(cfg, time=None, silent=False, do_os=False):
                 vdict[v] = config[v]
             res = (mtime, config["procmgr_config"], config["hosts"], vdict)
     except Exception as msg:
+        logger.debug("readConfig parsing exception", exc_info=True)
         if not silent:
             print("readConfig error: %s" % str(msg))
         res = None
@@ -811,6 +823,7 @@ def readStatusDir(cfg, readfile=lambda fn, f: open(fn).readlines()):
                             )
                             os.unlink(fn)
                         except Exception:
+                            logger.debug("Delete file error", exc_info=True)
                             print("Error while trying to delete file %s!" % fn)
                 except Exception:
                     try:
@@ -825,6 +838,7 @@ def readStatusDir(cfg, readfile=lambda fn, f: open(fn).readlines()):
                             "hard": False,
                         }
                     except Exception:
+                        logger.debug("Status dir failure", exc_info=True)
                         print("Status dir failure!")
                         print(f)
                         print(stat)
@@ -832,6 +846,7 @@ def readStatusDir(cfg, readfile=lambda fn, f: open(fn).readlines()):
                 try:
                     os.unlink(fn)
                 except Exception:
+                    logger.debug("Delete file error", exc_info=True)
                     print("Error while trying to delete file %s!" % fn)
     return list(d.values())
 
@@ -1236,11 +1251,13 @@ def restartHIOC(host):
             if line[:7] == "cn=digi":
                 host = line[3:]
     except Exception:
+        logger.debug("Netconfig error", exc_info=True)
         print("Error parsing netconfig for HIOC %s console info!" % host)
         return False
     try:
         tn = telnetlib.Telnet(host, port, 1)
     except Exception:
+        logger.debug("Telnet error", exc_info=True)
         print("Error making telnet connection to HIOC %s!" % host)
         return False
     tn.write("\x0a")
@@ -1263,6 +1280,7 @@ def rebootHIOC(host):
         print(p.communicate()[0])
         return True
     except Exception:
+        logger.debug("Power cycle error", exc_info=True)
         print("Error while trying to power cycle HIOC %s!" % host)
         return False
 
