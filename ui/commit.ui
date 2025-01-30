@@ -17,7 +17,7 @@
    <item>
     <widget class="QLabel" name="label">
      <property name="text">
-      <string>File Saved.
+      <string>Preparing to save file.
 Would you like to commit your change in GIT?
 Please enter a comment for check-in:</string>
      </property>
