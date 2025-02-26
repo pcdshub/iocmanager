@@ -9,11 +9,14 @@ fi
 if [ -z "${PYPS_ROOT}" ]; then
     export PYPS_ROOT=/cds/group/pcds/pyps
 fi
-if [ -z "${IOCMAN_PY_BIN}"]; then
+if [ -z "${IOCMAN_PY_BIN}" ]; then
     export IOCMAN_PY_BIN="${PYPS_ROOT}"/conda/py39/envs/"${PCDS_CONDA_VER}"/bin
 fi
+if [ -z "${PACKAGE_SITE_TOP}" ]; then
+    export PACKAGE_SITE_TOP=/cds/group/pcds/package
+fi
 if [ -z "${IOC_ROOT}" ]; then
-    export IOC_ROOT=/cds/group/pcds/package/epics/ioc
+    export IOC_ROOT="${PACKAGE_SITE_TOP}"/epics/ioc
 fi
 if [ -z "${CAMRECORD_ROOT}" ]; then
     export CAMRECORD_ROOT=/cds/group/pcds/controls/camrecord

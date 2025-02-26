@@ -16,7 +16,8 @@ if test X"$PROCSERVPID" != X; then kill -HUP "$PROCSERVPID"; fi
 
 # Setup the IOC user environment.
 export IOC="$ioc"
-source "$IOC_COMMON"/All/"${cfg}"_env.sh
+# source "$IOC_COMMON"/All/"${cfg}"_env.sh
+source /cds/group/pcds/epics-dev/zlentz/iocCommon-All/"${cfg}_env.sh"
 
 dir="$(python "$SCRIPTROOT"/getDirectory.py "$ioc" "$cfg")"
 if test "$dir" == NO_DIRECTORY; then
