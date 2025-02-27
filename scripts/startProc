@@ -19,7 +19,7 @@ export IOC="$ioc"
 # source "$IOC_COMMON"/All/"${cfg}"_env.sh
 source /cds/group/pcds/epics-dev/zlentz/iocCommon-All/"${cfg}_env.sh"
 
-dir="$(python "$SCRIPTROOT"/getDirectory.py "$ioc" "$cfg")"
+dir="$("$SCRIPTROOT"/getDirectory "$ioc" "$cfg")"
 if test "$dir" == NO_DIRECTORY; then
     if test X"$PROCSERVPID" != X; then
         kill -9 "$PROCSERVPID";

@@ -31,8 +31,8 @@ fi
 
 # Setup the cfg environment.
 export IOC=${host}
-# CFG_ENV = "${IOC_COMMON}"/All/"${cfg}_env.sh"
-CFG_ENV = /cds/group/pcds/epics-dev/zlentz/iocCommon-All/"${cfg}_env.sh"
+# CFG_ENV="${IOC_COMMON}"/All/"${cfg}_env.sh"
+CFG_ENV=/cds/group/pcds/epics-dev/zlentz/iocCommon-All/"${cfg}_env.sh"
 if [ ! -f "${CFG_ENV}" ]; then
 	echo "${CFG_ENV}"  not found!
 	exit 1
