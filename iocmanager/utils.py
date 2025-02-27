@@ -88,7 +88,6 @@ import logging
 import os
 import re
 import stat
-import string
 import subprocess
 import telnetlib
 import time
@@ -141,8 +140,8 @@ MSG_ISSHUTDOWN = "is SHUT DOWN"
 MSG_ISSHUTTING = "is shutting down"
 MSG_KILLED = "process was killed"
 MSG_RESTART = "new child"
-MSG_PROMPT_OLD = "\x0d\x0a[$>] "
-MSG_PROMPT = "\x0d\x0a> "
+MSG_PROMPT_OLD = b"\x0d\x0a[$>] "
+MSG_PROMPT = b"\x0d\x0a> "
 MSG_SPAWN = "procServ: spawning daemon"
 MSG_AUTORESTART_MODE = "auto restart mode"
 MSG_AUTORESTART_IS_ON = "auto restart( mode)? is ON,"
@@ -347,9 +346,9 @@ def openTelnet(host, port):
 
 def fixTelnetShell(host, port):
     tn = openTelnet(host, port)
-    tn.write("\x15\x0d")
+    tn.write(b"\x15\x0d")
     tn.expect([MSG_PROMPT_OLD], 2)
-    tn.write("export PS1='> '\n")
+    tn.write(b"export PS1='> '\n")
     tn.read_until(MSG_PROMPT, 2)
     tn.close()
 
@@ -556,19 +555,19 @@ def startProc(cfg, entry, local=False):
         # telnet succeeded
 
         # send ^U followed by carriage return to safely reach the prompt
-        tn.write("\x15\x0d")
+        tn.write(b"\x15\x0d")
 
         # wait for prompt (procServ)
         statd = tn.read_until(MSG_PROMPT, 2)
-        if not string.count(statd, MSG_PROMPT):
+        if not bytes.count(statd, MSG_PROMPT):
             print("ERROR: no prompt at %s port %s" % (host, ctrlport))
 
         # send command
-        tn.write("%s\n" % cmd)
+        tn.write(b"%s\n" % bytes(cmd, "utf-8"))
 
         # wait for prompt
         statd = tn.read_until(MSG_PROMPT, 2)
-        if not string.count(statd, MSG_PROMPT):
+        if not bytes.count(statd, MSG_PROMPT):
             print("ERR: no prompt at %s port %s" % (host, ctrlport))
 
         # close telnet connection
