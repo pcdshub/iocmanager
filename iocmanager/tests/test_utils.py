@@ -1,7 +1,47 @@
+import logging
 from pathlib import Path
 
-from ..utils import readConfig, writeConfig
+import pytest
+
+from ..utils import (
+    PROCSERV_EXE,
+    SPAM_LEVEL,
+    EnvStr,
+    add_spam_level,
+    readConfig,
+    writeConfig,
+)
 from . import CFG_FOLDER
+
+
+def test_envstr(monkeypatch: pytest.MonkeyPatch):
+    template = "some_template_{}_string"
+    var = "test_var"
+    text = EnvStr(template, var)
+
+    for example in ("one", "dos", "san"):
+        monkeypatch.setenv(var, example)
+        assert text == template.format(example)
+
+
+def test_procservstring(monkeypatch):
+    monkeypatch.setenv("PROCSERV_EXE", "")
+    assert PROCSERV_EXE == "procServ"
+    monkeypatch.setenv("PROCSERV_EXE", "/some/path/to/procServ --allow --logfile name")
+    assert PROCSERV_EXE == "/some/path/to/procServ"
+
+
+def test_add_spam_level(caplog: pytest.LogCaptureFixture):
+    logger = logging.getLogger(f"{__file__}.test_add_spam_level")
+    assert not hasattr(logger, "spam")
+    add_spam_level(logger)
+    caplog.set_level(SPAM_LEVEL)
+    caplog.clear()
+    assert not caplog.get_records(when="call")
+    logger.spam("test")
+    records = caplog.get_records(when="call")
+    assert records
+    assert records[0].message == "test"
 
 
 def test_read_config():
