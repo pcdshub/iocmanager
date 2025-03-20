@@ -1,91 +1,11 @@
-######################################################################
-#
-# Exported API routines:
-#
-# getBaseName(iocName)
-#     Return the basename of the iocAdmin PVs for a particular IOC.
-#
-# fixdir(rundir, iocName)
-#     Abbreviate the running directory of an IOC by making it relative
-#     to EPICS_SITE_TOP and removing the final "build" or "iocBoot"
-#     portion of the path.
-#
-# check_status(host, port, id)
-#     Check the health of an IOC, returning a dictionary with status,
-#     pid, id, autorestart, autorestartmode, and rdir.
-#
-# killProc(host, port)
-#     Kill the IOC at the given location.
-#
-# restartProc(host, port)`
-#     Restart the IOC at the given location.
-#
-# startProc(hutch, entry)
-#     entry is a configuration dictionary entry that should be started
-#     for a particular hutch.
-#
-# readConfig(hutch, time=None, do_os=False)
-#     Read the configuration file for a given hutch if newer than time.
-#     Return None on failure or no change, otherwise a tuple: (filetime,
-#     configlist, hostlist, vars).  filetime is the modification time of
-#     the configuration, configlist is a list of dictionaries containing
-#     an IOC configuration, hostlist is a (hint) list of hosts in this
-#     hutch, and vars is an additional list of variables defined in the
-#     config file.
-#
-#     If do_os is True, also scan the .hosts directory to build a host type
-#     lookup table.
-#
-# writeConfig(hutch, hostlist, configlist, vars, f=None)
-#     Write the configuration file for a given hutch.  Deals with the
-#     existence of uncommitted changes ("new*" fields).  If f is given,
-#     write to this open file instead of the real configuration file.
-#     vars is a dictionary of additional values to write.
-#
-# installConfig(hutch, filename, fd=None)
-#     Install the given filename as the configuration file for the
-#     specified hutch.  If fd is None, do it directly, otherwise send
-#     a request to run the installConfig utility through the given pipe.
-#
-# readStatusDir(hutch, readfile)
-#     Read the status directory for a particular hutch, returning a list
-#     of dictionaries containing updated information.  The readfile parameter
-#     is a function passed a filepath and the IOC name.  This should read
-#     any updated information, returning a list of lines or an empty list
-#     if the file was not read.  The default readfile always reads everything.
-#
-# applyConfig(hutch, verify=None, ioc=None)
-#     Apply the current configuration for the specified hutch. Before
-#     the configuration is applied, the verify method, if any is called.
-#     This routine is passed:
-#         current - The actual state of things.
-#         config - The desired configuration.
-#         kill_list - The IOCs that should be killed.
-#         start_list - The IOCs that should be started.
-#         restart_list - The IOCs that should be restarted with ^X.
-#     The method should return a (kill, start, restart) tuple of the
-#     IOCs that should *really* be changed.  (This method could then
-#     query the user to limit the changes or cancel them altogether.)
-#     If an ioc is specified (by name), only that IOC will be changed,
-#     otherwise the entire configuration will be applied.
-#
-# netconfig(host)
-#     Return a dictionary with the netconfig information for this host.
-#
-# rebootServer(host)
-#     Attempt to reboot the specified host.  Return True if successful.
-#
-# getHutchList()
-#     Return the list of all supported hutches.
-#
-######################################################################
-
+from __future__ import annotations
 
 import collections
 import copy
 import fcntl
 import functools
 import glob
+import io
 import logging
 import os
 import re
@@ -94,6 +14,7 @@ import subprocess
 import telnetlib
 import threading
 import time
+import typing
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +88,13 @@ hosttype = {}
 
 
 def add_spam_level(lgr: logging.Logger):
+    """
+    Patch a "spam" function onto a logger instance.
+
+    This function will log a message at the spam level,
+    so that it won't appear in normal verbose mode but will appear
+    in double verbose mode.
+    """
     lgr.spam = functools.partial(lgr.log, SPAM_LEVEL)
 
 
@@ -178,10 +106,21 @@ add_spam_level(logger)
 #
 
 
-#
-# Given an IOC name, find the base PV name.
-#
-def getBaseName(ioc):
+def getBaseName(ioc: str) -> str | None:
+    """
+    Return the basename of the iocAdmin PVs for a given IOC name.
+
+    Upon failure, returns None instead of raising.
+
+    Parameters
+    ----------
+    ioc : str
+        The ioc name
+
+    Returns
+    -------
+    pvbase : str or None
+    """
     pvInfoPath = PVFILE % ioc
     if not os.path.isfile(pvInfoPath):
         return None
@@ -196,11 +135,23 @@ def getBaseName(ioc):
     return None
 
 
-#
-# Given a full path and an IOC name, return a path relative
-# to EPICS_SITE_TOP without the final "iocBoot".
-#
-def fixdir(dir, id):
+def fixdir(dir: str, id: str) -> str:
+    """
+    Return a truncated path to a IOC directory.
+
+    Makes the path relative to EPICS_SITE_TOP and removes the final "iocBoot".
+
+    Parameters
+    ----------
+    dir : str
+        The full path to a running IOC
+    id : str
+        The IOC name
+
+    Returns
+    -------
+    path : str
+    """
     # Handle ".."
     part = dir.split("/")
     while ".." in part:
@@ -236,11 +187,20 @@ def fixdir(dir, id):
 #
 
 
-#
-# Read and parse the connection information from a new procServ telnet connection.
-# Returns a dictionary of information.
-#
-def readLogPortBanner(tn):
+def readLogPortBanner(tn: telnetlib.Telnet) -> dict[str, str | bool]:
+    """
+    Read and parse the connection information from a new telnet connection.
+
+    Parameters
+    ----------
+    tn : telnetlib.Telnet
+        A brand-new Telnet object that has otherwise been unused.
+
+    Returns
+    -------
+    info : dict
+        Various information about the connection and procServ status.
+    """
     try:
         response = tn.read_until(MSG_BANNER_END, 1)
     except Exception:
@@ -301,10 +261,29 @@ pdict = {}
 lockdict = collections.defaultdict(threading.RLock)
 
 
-#
-# Returns a dictionary with status information for a given host/port.
-#
-def check_status(host, port, id):
+def check_status(host: str, port: int, id: str) -> dict[str, str | bool]:
+    """
+    Returns the status of an IOC via information from ping and telnet.
+
+    Pings the host first if it hasn't been pinged recently.
+    If the ping succeeds or has succeeded recently, telnet to the procServ port.
+    If telnet succeeds, uses readLogPortBanner to determine the procServ status.
+
+    Parameters
+    ----------
+    host : str
+        The network hostname the IOC runs on.
+    port : int
+        The port the procServ process listens for telnet on.
+    id : str
+        The name of the IOC.
+
+    Returns
+    -------
+    status : dict
+        Various information about the IOC health and status.
+    """
+    # Lock to ensure only 1 ping at a time per host
     with lockdict[host]:
         logger.spam(f"check_status({host}, {port}, {id})")
         now = time.monotonic()
@@ -348,7 +327,22 @@ def check_status(host, port, id):
     return result
 
 
-def openTelnet(host, port):
+def openTelnet(host: str, port: int) -> telnetlib.Telnet | None:
+    """
+    Try multiple times to open a telnet connection.
+
+    Parameters
+    ----------
+    host : str
+        The hostname to connect to.
+    port : int
+        The port on the hostname to connect to.
+
+    Returns
+    -------
+    telnet : telnetlib.Telnet or None
+        The Telnet object if successful, otherwise None
+    """
     connected = False
     telnetCount = 0
     while (not connected) and (telnetCount < 2):
@@ -365,7 +359,20 @@ def openTelnet(host, port):
         return None
 
 
-def fixTelnetShell(host, port):
+def fixTelnetShell(host: str, port: int) -> None:
+    """
+    Connect to a telnet port and set the prompt to >
+
+    This makes it easier to parse and separate inputs vs outputs
+    when dealing with telnet bytes.
+
+    Parameters
+    ----------
+    host : str
+        The hostname to connect to.
+    port : int
+        The port on the hostname to connect to.
+    """
     tn = openTelnet(host, port)
     tn.write(b"\x15\x0d")
     tn.expect([MSG_PROMPT_OLD], 2)
@@ -374,13 +381,41 @@ def fixTelnetShell(host, port):
     tn.close()
 
 
-#
-# See if the procServ is in an acceptible state: on, off, or oneshot.
-# If not, send ^T until it is.
-#
-# Return True if we're in a good state, False if there was some problem along the way.
-#
-def checkTelnetMode(host, port, onOK=True, offOK=False, oneshotOK=False, verbose=False):
+def checkTelnetMode(
+    host: str,
+    port: int,
+    onOK: bool = True,
+    offOK: bool = False,
+    oneshotOK: bool = False,
+    verbose: bool = False,
+) -> bool:
+    """
+    Ensure the procServ is in an acceptable state among on/off/oneshot.
+
+    Parameters
+    ----------
+    host : str
+        The hostname to connect to.
+    port : int
+        The port on the hostname to connect to.
+    onOk : bool
+        True if the "on" state is acceptable, False otherwise.
+        Defaults to True.
+    offOk : bool
+        True if the "off" state is acceptable, False otherwise.
+        Defaults to False.
+    oneshotOk : bool
+        True if the "oneshot" state is acceptable, False otherwise.
+        Defaults to False.
+    verbose : bool
+        Set to True to get more debug prints.
+        Defaults to False.
+
+    Returns
+    -------
+    status : bool
+        True if everything went well.
+    """
     while True:
         tn = openTelnet(host, port)
         if not tn:
@@ -440,7 +475,19 @@ def checkTelnetMode(host, port, onOK=True, offOK=False, oneshotOK=False, verbose
             return False
 
 
-def killProc(host, port, verbose=False):
+def killProc(host: str, port: int, verbose: bool = False) -> None:
+    """
+    Kills a procServ process entirely, including the subshell it controls.
+
+    Parameters
+    ----------
+    host : str
+        The hostname to connect to.
+    port : int
+        The port on the hostname to connect to.
+    verbose : bool
+        Set to True for more detailed debug prints
+    """
     print("Killing IOC on host %s, port %s..." % (host, port))
     if not checkTelnetMode(
         host, port, onOK=False, offOK=True, oneshotOK=False, verbose=verbose
@@ -484,7 +531,22 @@ def killProc(host, port, verbose=False):
         print("ERROR: killProc() telnet to %s port %s failed" % (host, port))
 
 
-def restartProc(host, port):
+def restartProc(host: str, port: int) -> bool:
+    """
+    Restarts a procServ's contained process.
+
+    Parameters
+    ----------
+    host : str
+        The hostname to connect to.
+    port : int
+        The port on the hostname to connect to.
+
+    Returns
+    -------
+    success : bool
+        True if we managed to restart the process successfully.
+    """
     print("Restarting IOC on host %s, port %s..." % (host, port))
     # Can't deal with ONESHOT mode!
     if not checkTelnetMode(host, port, onOK=True, offOK=True, oneshotOK=False):
@@ -522,7 +584,23 @@ def restartProc(host, port):
     return started
 
 
-def startProc(cfg, entry, local=False):
+def startProc(cfg: str, entry: dict[str, str | int], local=False) -> None:
+    """
+    Starts a new procServ process from our config entry information.
+
+    Parameters
+    ----------
+    cfg : str
+        The name of the area, such as xpp or tmo.
+    entry : dict
+        Config dict with the following required keys:
+        - "host": str server hostname
+        - "port": int procServ port
+        - "id": str ioc name
+        And the following optional keys:
+        - "cmd": str command to run if not st.cmd
+        - "flags": deprecated
+    """
     # Hopefully, we can dispose of this soon!
     platform = "1"
     if cfg == "xrt":
@@ -601,13 +679,34 @@ def startProc(cfg, entry, local=False):
 #
 
 
-#
-# Reads a hutch configuration file and returns a tuple:
-#     (filetime, configlist, hostlist, varlist).
-#
-# cfg can be a path to config file or name of a hutch
-#
-def readConfig(cfg, time=None, silent=False, do_os=False):
+def readConfig(
+    cfg: str, time: float | None = None, silent: bool = False, do_os: bool = False
+) -> tuple[float, list[dict], list[str], list[str]] | None:
+    """
+    Read the configuration file for a given hutch if newer than time.
+
+    Returns None on failure or no change,
+    otherwise returns a tuple of various config information.
+
+    Parameters
+    ----------
+    cfg : str
+        A path to a config file or the name of a hutch.
+    time : float
+        The last file modification timestamp.
+    silent : bool
+        If True, suppress print outputs.
+    do_os : bool
+        If True, scan the .hosts directory to rebuild a host type lookup table.
+
+    Returns
+    -------
+    filetime, configlist, hostlist, varlist: tuple or None
+        - filename: float, last modified time of the config file
+        - configlist: list of dict, the various ioc configs
+        - hostlist: list of str, the hostnames valid for the hutch
+        - varlist: list of str, other variables set in the config file
+    """
     config = {
         "procmgr_config": None,
         "hosts": None,
@@ -697,7 +796,33 @@ def readConfig(cfg, time=None, silent=False, do_os=False):
 #
 # Writes a hutch configuration file, dealing with possible changes ("new*" fields).
 #
-def writeConfig(hutch, hostlist, cfglist, vars, f=None):
+def writeConfig(
+    hutch: str,
+    hostlist: list[str],
+    cfglist: list[dict[str, str | int]],
+    vars: dict[str, str | bool | int],
+    f: io.TextIOWrapper | None = None,
+) -> None:
+    """
+    Write the configuration file for a given hutch.
+
+    Deals with the existence of uncomitted changes ("new*" fields).
+
+    Parameters
+    ----------
+    hutch : str
+        Unused. Probably was used in a past version of this function.
+    hostlist : list of str
+        Hosts that are available for the hutch to include in the config.
+    cfglist : list of dict
+        List of dictionaries that each correspond to an IOC's config.
+    vars: dict mapping of string to value
+        Dictionary mapping of additional variables to include in the
+        config file. These each must be literal strings "True", "False",
+        or something that can be converted to an integer.
+    f: open file
+        A file-like object such as the one returned by the open built-in.
+    """
     if f is None:
         raise Exception("Must specify output file!")
     f.truncate()
@@ -784,24 +909,46 @@ def writeConfig(hutch, hostlist, cfglist, vars, f=None):
     )
 
 
-#
-# Install an existing file as the hutch configuration file.
-#
-# Much simpler, and this should be atomic!
-#
-def installConfig(hutch, file, fd=None):
+def installConfig(hutch: str, file: str, fd: None = None) -> None:
+    """
+    Install an existing file as the hutch configuration file.
+
+    Parameters
+    ----------
+    hutch : str
+        The name of the hutch, such as tmo or xpp.
+    file : str
+        Path to the file to use as the new hutch configuration file.
+    fd : None
+        Unused.
+    """
     os.rename(file, CONFIG_FILE % hutch)
 
 
-#
-# Reads the status directory for a hutch, looking for changes.  The newer
-# parameter is a routine that is called as newer(iocname, mtime) which
-# returns True if the file has been modified since last read.  In this
-# case, newer should also remember mtime as the last read time.
-#
-# Returns a list of dictionaries containing the new information.
-#
-def readStatusDir(cfg, readfile=lambda fn, f: open(fn).readlines()):
+def readStatusDir(
+    cfg: str,
+    readfile: typing.Callable[[str, str], list[str]] = lambda fn, f: open(
+        fn
+    ).readlines(),
+) -> list[dict[str, str | int | bool]]:
+    """
+    Read a status directory for a hutch and return the changes.
+
+    Parameters
+    ----------
+    cfg : str
+        The hutch name associated with the config, such as xpp or tmo.
+    readfile : callable[[str, str], None] -> list[str]
+        An optional callable that expects two positional str arguments,
+        The full path to the status file and the name of the status file.
+        It is expected to return the contents of the file as a list
+        of str, one line per str.
+
+    Returns
+    -------
+    status : list of dict
+        A list of dictionaries containing the updated information.
+    """
     files = os.listdir(STATUS_DIR % cfg)
     d = {}
     for f in files:
@@ -874,7 +1021,43 @@ def readStatusDir(cfg, readfile=lambda fn, f: open(fn).readlines()):
 #
 # Apply the current configuration.
 #
-def applyConfig(cfg, verify=None, ioc=None):
+def applyConfig(
+    cfg: str,
+    verify: typing.Callable[
+        [dict, dict, list[str], list[str], list[str]],
+        tuple[list[str], list[str], list[str]],
+    ]
+    | None = None,
+    ioc: str | None = None,
+) -> typing.Literal[0]:
+    """
+    Starts, restarts, and kills IOCs to match the saved configuration.
+
+    If a verify function is provided, it will be called first to let the
+    user confirm that they want to take all of these actions.
+
+    Parameters
+    ----------
+    cfg : str
+        The name of the hutch, or a full filepath to the config file.
+    verify : callable
+        An optionally provided function that expects to recieve the following.
+        - current: dict of current state (pre-apply)
+        - config: dict of desired state (post-apply)
+        - kill_list: list[str] of ioc names that should be killed
+        - start_list: list[str] of ioc names that should be started
+        - restart_list: list[str] of ioc names that should be restarted
+        The function must return a tuple of its own kill_list, start_list, and
+        restart_list, which should be subset of or equal to the input lists.
+    ioc : str
+        The name of a single IOC to apply to, if provided.
+        If not provided, we'll apply the entire configuration.
+
+    Returns
+    -------
+    zero : int
+        Literally the number 0, every time. (???)
+    """
     result = readConfig(cfg)
     if result is None:
         print("Cannot read configuration for %s!" % cfg)
@@ -1057,7 +1240,22 @@ def applyConfig(cfg, verify=None, ioc=None):
 #
 
 
-def check_auth(user, hutch):
+def check_auth(user: str, hutch: str) -> bool:
+    """
+    Check if a user is authorized to apply changes.
+
+    Parameters
+    ----------
+    user : str
+        Username to check
+    hutch : str
+        Hutch to check for, such as xpp or tmo
+
+    Returns
+    -------
+    auth_ok : bool
+        True if the user is authorized, False otherwise.
+    """
     lines = open(AUTH_FILE % hutch).readlines()
     lines = [ln.strip() for ln in lines]
     for ln in lines:
@@ -1066,9 +1264,33 @@ def check_auth(user, hutch):
     return False
 
 
-# checks if ioc is marked as toggleable between defined versions of IOCs
-# schema will be ioc_name:permittedversion1,permittedversion2,etc
-def check_special(req_ioc, req_hutch, req_version="no_upgrade"):
+def check_special(
+    req_ioc: str, req_hutch: str, req_version: str = "no_upgrade"
+) -> bool:
+    """
+    Check the iocmanager.special file to see if an ioc is toggleable between versions.
+
+    The iocmanager.special file should contain lines of the form
+    ioc_name:permittedversion1,permittedversion2,etc
+
+    And can be found in the hutch's pyps config directory.
+
+    Parameters
+    ----------
+    req_ioc : str
+        The name of the IOC to check
+    req_hutch : str
+        The hutch whose iocmanager.special file we will search through
+    req_version : str
+        The version to check is in the list, if provided.
+        If not provided, the default "no_upgrade" string will be used to
+        match any version.
+
+    Returns
+    -------
+    is_special -> bool
+        True if the IOC is toggleable between versions.
+    """
     with open(SPECIAL_FILE % req_hutch) as fp:
         lines = fp.readlines()
         lines = [ln.strip() for ln in lines]
@@ -1099,7 +1321,26 @@ def check_special(req_ioc, req_hutch, req_version="no_upgrade"):
         return False
 
 
-def check_ssh(user, hutch):
+def check_ssh(user: str, hutch: str) -> bool:
+    """
+    Return True if the user is permitted to SSH, and False otherwise.
+
+    This is tracked in an iocmanager.nossh file in the
+    hutch's pyps config folder, which can be used to
+    make this function return false for specific users.
+
+    Parameters
+    ----------
+    user : str
+        Username to check
+    hutch : str
+        Hutch to check, such as xpp or tmo
+
+    Returns
+    -------
+    ok_to_ssh : bool
+        True if the user is not in the nossh file
+    """
     try:
         lines = open(NOSSH_FILE % hutch).readlines()
     except Exception:
@@ -1111,6 +1352,7 @@ def check_ssh(user, hutch):
     return True
 
 
+# Used in findParent to find "RELEASE = /some/filepath" lines
 eq = re.compile("^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(.*?)[ \t]*$")
 eqq = re.compile('^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*"([^"]*)"[ \t]*$')
 eqqq = re.compile("^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*'([^']*)'[ \t]*$")
@@ -1119,7 +1361,23 @@ spq = re.compile('^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]+"([^"]*)"[ \t]*$')
 spqq = re.compile("^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]+'([^']*)'[ \t]*$")
 
 
-def readAll(fn):
+def readAll(fn: str) -> list[str]:
+    """
+    Return the contents of a filename.
+
+    The filename can either be an absolute path or it can be relative to
+    EPICS_SITE_TOP.
+
+    Parameters
+    ----------
+    fn : str
+        Filename
+
+    Returns
+    -------
+    text : list of str
+        The contents of the file
+    """
     if fn[0] != "/":
         fn = EPICS_SITE_TOP + fn
     try:
@@ -1128,7 +1386,23 @@ def readAll(fn):
         return []
 
 
-def findParent(ioc, dir):
+def findParent(ioc: str, dir: str) -> str:
+    """
+    Return the parent (common) ioc path for a templated ioc.
+
+    Parameters
+    ----------
+    ioc : str
+        The name of the ioc
+    dir : str
+        The ioc directory
+
+    Returns
+    -------
+    parent : str
+        The full path to the parent IOC release, or an empty
+        string if one could not be determined.
+    """
     fn = dir + "/" + ioc + ".cfg"
     lines = readAll(fn)
     if lines == []:
@@ -1160,7 +1434,22 @@ def findParent(ioc, dir):
     return ""
 
 
-def read_until(fd, expr):
+def read_until(fd: int, expr: str) -> re.Match[str] | None:
+    """
+    Read an open file descriptor until regular expression expr finds a match.
+
+    Parameters
+    ----------
+    fd : int
+        The file descriptor number
+    expr : str
+        Regular expression to match
+
+    Returns
+    -------
+    match : re.Match or None
+        The match if we have one, or None if there was never a match.
+    """
     exp = re.compile(expr, re.S)
     data = ""
     while True:
@@ -1172,7 +1461,15 @@ def read_until(fd, expr):
             return m
 
 
-def flush_input(fd):
+def flush_input(fd: int) -> None:
+    """
+    Completely empty a file descriptor
+
+    Parameters
+    ----------
+    fd : int
+        The file descriptor number
+    """
     fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
     while True:
         try:
@@ -1182,11 +1479,25 @@ def flush_input(fd):
             return
 
 
-def do_write(fd, msg):
+def do_write(fd: int, msg: bytes) -> None:
+    """Alias for os.write."""
     os.write(fd, msg)
 
 
-def commit_config(hutch, comment, fd):
+def commit_config(hutch: str, comment: bytes, fd: int):
+    """
+    Send the git commit command through our ssh file descriptor.
+
+    Parameters
+    ----------
+    hutch : str
+        The name of the hutch to commit, such as xpp or tmo
+    comment : bytes
+        The commit message
+    fd : int
+        The number of an open file descriptor to an ssh process
+        on the commit host
+    """
     config = CONFIG_FILE % hutch
     flush_input(fd)
     do_write(fd, "cat >" + config + ".comment <<EOFEOFEOF\n")
@@ -1206,12 +1517,24 @@ def commit_config(hutch, comment, fd):
     read_until(fd, "> ")
 
 
-# Find siocs matching input arguments
-# May want to extend this to regular expressions at some point
-# eg: find_iocs(host='ioc-xcs-mot1') or find_iocs(id='ioc-xcs-imb3')
-# Returns list of tuples of form:
-#  ['config-file', {ioc config dict}]
-def find_iocs(**kwargs):
+def find_iocs(**kwargs) -> list[tuple[str, dict]]:
+    """
+    Find IOCs matching the inputs in any hutch config.
+
+    Examples:
+    find_iocs(host='ioc-xcs-mot1')
+    find_iocs(host='ioc-xcs-imb3')
+
+    Parameters
+    ----------
+    **kwargs :
+        Any field in an IOC config, mapped to any value
+
+    Returns
+    -------
+    iocs : list of tuple
+        Each IOC's source config file path and config information
+    """
     cfgs = glob.glob(CONFIG_FILE % "*")
     configs = []
     for cfg in cfgs:
@@ -1226,7 +1549,21 @@ def find_iocs(**kwargs):
     return configs
 
 
-def netconfig(host):
+def netconfig(host: str) -> dict[str, str]:
+    """
+    Return the netconfig information for a host.
+
+    Parameters
+    ----------
+    host : str
+        The hostname
+
+    Returns
+    -------
+    info : dict of str
+        The information about the hostname from netconfig,
+        or an empty dict if there was no information.
+    """
     try:
         env = copy.deepcopy(os.environ)
         del env["LD_LIBRARY_PATH"]
@@ -1241,11 +1578,13 @@ def netconfig(host):
         return {}
 
 
-def rebootServer(host):
+def rebootServer(host: str) -> bool:
+    """Reboot a server, returning True if successful."""
     return os.system("/reg/common/tools/bin/psipmi %s power cycle" % host) == 0
 
 
-def getHardIOCDir(host, silent=False):
+def getHardIOCDir(host: str, silent: bool = False) -> str:
+    """Return the hard IOC directory for a given hard IOC host."""
     dir = "Unknown"
     try:
         lines = [ln.strip() for ln in open(HIOC_STARTUP % host).readlines()]
@@ -1262,8 +1601,8 @@ def getHardIOCDir(host, silent=False):
     return dir
 
 
-def restartHIOC(host):
-    """Attempts to console into a HIOC and reboot it via the shell."""
+def restartHIOC(host: str) -> bool:
+    """Console into a HIOC and reboot it via the shell, return True if successful."""
     try:
         for line in netconfig(host)["console port dn"].split(","):
             if line[:7] == "cn=port":
@@ -1289,8 +1628,8 @@ def restartHIOC(host):
     return True
 
 
-def rebootHIOC(host):
-    """Attempts to power cycle a HIOC via the PDU entry in netconfig."""
+def rebootHIOC(host: str) -> bool:
+    """Power cycle a HIOC via the PDU entry in netconfig, return True if successful."""
     try:
         env = copy.deepcopy(os.environ)
         del env["LD_LIBRARY_PATH"]
@@ -1305,7 +1644,8 @@ def rebootHIOC(host):
         return False
 
 
-def findPV(regexp, ioc):
+def findPV(regexp: re.Pattern, ioc: str) -> list[str]:
+    """Return all PVs belonging to an IOC that match a regular expression."""
     try:
         lines = [ln.split(",")[0] for ln in open(PVFILE % ioc).readlines()]
     except Exception:
@@ -1313,7 +1653,8 @@ def findPV(regexp, ioc):
     return list(filter(regexp.search, lines))
 
 
-def getHutchList():
+def getHutchList() -> list[str]:
+    """Return the list of all supported hutches."""
     try:
         p = subprocess.Popen(
             ["csh", "-c", "cd %s; echo */iocmanager.cfg" % CONFIG_DIR],
@@ -1324,11 +1665,12 @@ def getHutchList():
         return []
 
 
-#
-# Does this configuration list look valid?  Currently, just check if there
-# is a duplicate host/port combination.
-#
-def validateConfig(cl):
+def validateConfig(cl: list[dict]) -> bool:
+    """
+    Returns True if the list of IOC configurations looks valid.
+
+    Currently, just checks if there is a duplicate host/port combination.
+    """
     for i in range(len(cl)):
         try:
             h = cl[i]["newhost"]
@@ -1355,10 +1697,23 @@ def validateConfig(cl):
     return True
 
 
-#
-# Will we find an st.cmd file along this path?
-#
-def validateDir(dir, ioc):
+def validateDir(dir: str, ioc: str) -> bool:
+    """
+    Returns True if we can find a st.cmd file in the filetree.
+
+    Parameters
+    ----------
+    dir : str
+        Path to the IOC, either an absolute path or a path relative
+        to EPICS_SITE_TOP
+    ioc : str
+        The name of the IOC
+
+    Returns
+    -------
+    has_stcmd : bool
+        True if we found the st.cmd file at one of the standard locations.
+    """
     if dir[0] != "/":
         dir = EPICS_SITE_TOP + dir
     for p in stpaths:
