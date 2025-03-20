@@ -81,8 +81,10 @@
 ######################################################################
 
 
+import collections
 import copy
 import fcntl
+import functools
 import glob
 import logging
 import os
@@ -90,6 +92,7 @@ import re
 import stat
 import subprocess
 import telnetlib
+import threading
 import time
 
 logger = logging.getLogger(__name__)
@@ -152,6 +155,8 @@ MSG_AUTORESTART_MODE_CHANGE = "auto restart mode to "
 EPICS_DEV_TOP = "/reg/g/pcds/epics-dev"
 EPICS_SITE_TOP = "/reg/g/pcds/epics/"
 
+SPAM_LEVEL = 5
+
 stpaths = [
     "%s/children/build/iocBoot/%s/st.cmd",
     "%s/build/iocBoot/%s/st.cmd",
@@ -159,6 +164,13 @@ stpaths = [
 ]
 
 hosttype = {}
+
+
+def add_spam_level(lgr: logging.Logger):
+    lgr.spam = functools.partial(lgr.log, SPAM_LEVEL)
+
+
+add_spam_level(logger)
 
 ######################################################################
 #
@@ -286,24 +298,30 @@ def readLogPortBanner(tn):
 
 
 pdict = {}
+lockdict = collections.defaultdict(threading.RLock)
 
 
 #
 # Returns a dictionary with status information for a given host/port.
 #
 def check_status(host, port, id):
-    global pdict
-    now = time.time()
-    try:
-        (last, pingrc) = pdict[host]
-        havestat = now - last > 120
-    except Exception:
-        havestat = False
-    if not havestat:
-        # Ping the host to see if it is up!
-        pingrc = os.system("ping -c 1 -w 1 -W 0.002 %s >/dev/null 2>/dev/null" % host)
-        pdict[host] = (now, pingrc)
+    with lockdict[host]:
+        logger.spam(f"check_status({host}, {port}, {id})")
+        now = time.monotonic()
+        try:
+            (last, pingrc) = pdict[host]
+            havestat = now - last < 10
+        except Exception:
+            havestat = False
+        if not havestat:
+            # Ping the host to see if it is up!
+            logger.spam(f"Pinging {host}")
+            pingrc = os.system(
+                "ping -c 1 -w 1 -W 0.002 %s >/dev/null 2>/dev/null" % host
+            )
+            pdict[host] = (now, pingrc)
     if pingrc != 0:
+        logger.spam(f"{host} is down")
         return {
             "status": STATUS_DOWN,
             "rid": id,
@@ -311,9 +329,11 @@ def check_status(host, port, id):
             "autorestart": False,
             "rdir": "/tmp",
         }
+    logger.spam(f"Check telnet to {host}:{port}")
     try:
         tn = telnetlib.Telnet(host, port, 1)
     except Exception:
+        logger.spam(f"{host}:{port} is down")
         return {
             "status": STATUS_NOCONNECT,
             "rid": id,
@@ -324,6 +344,7 @@ def check_status(host, port, id):
         }
     result = readLogPortBanner(tn)
     tn.close()
+    logger.spam(f"Done checking {host}:{port}")
     return result
 
 

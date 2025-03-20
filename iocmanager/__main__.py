@@ -6,6 +6,7 @@ import sys
 from qtpy import QtWidgets
 
 from .ioc_impl import GraphicUserInterface
+from .utils import SPAM_LEVEL
 
 parser = argparse.ArgumentParser(
     prog="iocmanager",
@@ -16,14 +17,26 @@ parser = argparse.ArgumentParser(
     ),
 )
 parser.add_argument("--hutch", help="The area whose IOCs you'd like to manage.")
-parser.add_argument("--verbose", action="store_true", help="Show debug messages")
+parser.add_argument(
+    "--verbose",
+    "-v",
+    action="count",
+    default=0,
+    help=(
+        "Increase debug verbosity. "
+        "-v or --verbose shows debug messages, "
+        "-vv shows spammy debug messages."
+    ),
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    if args.verbose:
+    if not args.verbose:
+        log_level = logging.INFO
+    elif args.verbose == 1:
         log_level = logging.DEBUG
     else:
-        log_level = logging.INFO
+        log_level = SPAM_LEVEL
     logging.basicConfig(level=log_level)
     logger = logging.getLogger(__name__)
 
