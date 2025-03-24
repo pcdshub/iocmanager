@@ -18,12 +18,15 @@ from . import CFG_FOLDER
 
 
 def test_env_var_globals(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("PROCSERV_EXE", "")
+    monkeypatch.delenv("PROCSERV_EXE")
     set_env_var_globals()
     assert utils.PROCSERV_EXE == "procServ"
     monkeypatch.setenv("PROCSERV_EXE", "/some/path/to/procServ --allow --logfile name")
     set_env_var_globals()
     assert utils.PROCSERV_EXE == "/some/path/to/procServ"
+    monkeypatch.setenv("PROCSERV_EXE", "/another/path/to/procServ")
+    set_env_var_globals()
+    assert utils.PROCSERV_EXE == "/another/path/to/procServ"
 
 
 def test_add_spam_level(caplog: pytest.LogCaptureFixture):
