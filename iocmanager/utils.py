@@ -185,10 +185,8 @@ def fixdir(dir: str, id: str) -> str:
     -------
     path : str
     """
-    # Handle ".."
-    part = dir.split("/")
-    while ".." in part:
-        part.remove("..")
+    # Remove ".."
+    part = [pth for pth in dir.split("/") if pth != ".."]
     dir = "/".join(part)
     dir = dir.removeprefix(EPICS_SITE_TOP)
     for pth in stpaths:
