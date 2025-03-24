@@ -9,6 +9,7 @@ from .. import utils
 from ..utils import (
     SPAM_LEVEL,
     add_spam_level,
+    fixdir,
     getBaseName,
     readConfig,
     set_env_var_globals,
@@ -48,6 +49,34 @@ def test_add_spam_level(caplog: pytest.LogCaptureFixture):
 )
 def test_getBaseName(ioc_name: str, pv_base: str | None):
     assert getBaseName(ioc_name) == pv_base
+
+
+# Possible pieces to normalize
+# test_fixdir_prefix = ("", "../", "../../", "EPICS_SITE_TOP")
+# The code claims to handle .. but it just loops forever, TODO fix code
+test_fixdir_prefix = ("", "EPICS_SITE_TOP")
+test_fixdir_iocdir = "ioc/common/ci/R1.0.0/"
+test_fixdir_extra_parts = ("", "iocBoot/", "build/iocBoot/", "children/build/iocBoot/")
+test_fixdir_iocnames = ("fake_ioc1", "fake_ioc2")
+
+# Build all the variants
+test_fix_dir_params = []
+for prefix in test_fixdir_prefix:
+    for ext in test_fixdir_extra_parts:
+        for ioc in test_fixdir_iocnames:
+            test_fix_dir_params.append((f"{prefix}{test_fixdir_iocdir}{ext}{ioc}", ioc))
+
+
+@pytest.mark.parametrize("ioc_dir,ioc_name", test_fix_dir_params)
+def test_fixdir(ioc_dir: str, ioc_name: str):
+    ioc_dir = ioc_dir.replace("EPICS_SITE_TOP", utils.EPICS_SITE_TOP)
+    if "iocBoot" in ioc_dir:
+        answer = test_fixdir_iocdir.removesuffix("/")
+    else:
+        # Implementation does no special suffix removal if iocBoot isn't here
+        # So the trailing ioc dir remains, but the other processing is done
+        answer = f"{test_fixdir_iocdir}{ioc_name}"
+    assert fixdir(ioc_dir, ioc_name) == answer
 
 
 def test_read_config():

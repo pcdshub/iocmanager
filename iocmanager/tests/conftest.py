@@ -16,7 +16,10 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("IOC_DATA", str(Path(__file__).parent / "ioc_data"))
     monkeypatch.setenv("IOC_COMMON", str(tmp_path))
     monkeypatch.setenv("TOOLS_SITE_TOP", str(tmp_path))
-    monkeypatch.setenv("EPICS_SITE_TOP", str(tmp_path))
+    EPICS_SITE_TOP = str(tmp_path)
+    if not EPICS_SITE_TOP.endswith("/"):
+        EPICS_SITE_TOP += "/"
+    monkeypatch.setenv("EPICS_SITE_TOP", EPICS_SITE_TOP)
 
     set_env_var_globals()
 
