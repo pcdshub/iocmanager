@@ -188,8 +188,7 @@ def fixdir(dir: str, id: str) -> str:
     # Handle ".."
     part = dir.split("/")
     while ".." in part:
-        idx = part.index("..")
-        part = part[: idx - 1] + part[idx + 1 :]
+        part.remove("..")
     dir = "/".join(part)
     if dir[0 : len(EPICS_SITE_TOP)] == EPICS_SITE_TOP:
         dir = dir[len(EPICS_SITE_TOP) :]

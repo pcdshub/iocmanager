@@ -52,9 +52,7 @@ def test_getBaseName(ioc_name: str, pv_base: str | None):
 
 
 # Possible pieces to normalize
-# test_fixdir_prefix = ("", "../", "../../", "EPICS_SITE_TOP")
-# The code claims to handle .. but it just loops forever, TODO fix code
-test_fixdir_prefix = ("", "EPICS_SITE_TOP")
+test_fixdir_prefix = ("", "../", "../../", "EPICS_SITE_TOP")
 test_fixdir_iocdir = "ioc/common/ci/R1.0.0/"
 test_fixdir_extra_parts = ("", "iocBoot/", "build/iocBoot/", "children/build/iocBoot/")
 test_fixdir_iocnames = ("fake_ioc1", "fake_ioc2")
