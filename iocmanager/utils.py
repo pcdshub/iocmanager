@@ -21,8 +21,15 @@ logger = logging.getLogger(__name__)
 
 # Environment-variable settings: allow us to reset/reload these
 def set_env_var_globals():
-    global CAMRECORDER
+    """
+    Initialize global variables from the shell environment.
+
+    Can be called multiple times in a session for e.g. testing purposes.
+    """
     global PROCSERV_EXE
+    global EPICS_SITE_TOP
+    global EPICS_DEV_TOP
+    global CAMRECORDER
     global TMP_DIR
     global STARTUP_DIR
     global CONFIG_DIR
@@ -34,24 +41,39 @@ def set_env_var_globals():
     global HOST_DIR
     global LOGBASE
     global PVFILE
-    CAMRECORDER = os.getenv("CAMRECORD_ROOT")
-    PROCSERV_EXE = os.getenv("PROCSERV_EXE")
-    if PROCSERV_EXE is None:
-        PROCSERV_EXE = "procServ"
-    else:
-        PROCSERV_EXE = PROCSERV_EXE.split()[0]
+    global NETCONFIG
+    global HIOC_POWER
+    global HIOC_CONSOLE
+    global HIOC_STARTUP
+    # Raw env vars with defaults
+    CAMRECORD_ROOT = os.getenv("CAMRECORD_ROOT", "/cds/group/pcds/controls/camrecord")
+    PROCSERV_EXE = os.getenv("PROCSERV_EXE", "procServ").split()[0]
+    PYPS_ROOT = os.getenv("PYPS_ROOT", "/cds/group/pcds/pyps")
+    IOC_DATA = os.getenv("IOC_DATA", "/cds/data/iocData")
+    IOC_COMMON = os.getenv("IOC_COMMON", "/cds/data/iocCommon")
+    TOOLS_SITE_TOP = os.getenv("TOOLS_SITE_TOP", "/cds/sw/tools")
+    EPICS_SITE_TOP = os.getenv("EPICS_SITE_TOP", "/cds/group/pcds/epics")
+    EPICS_DEV_TOP = os.getenv("EPICS_DEV_TOP", EPICS_SITE_TOP + "-dev")
+    EPICS_SITE_TOP += "/"  # Code somewhere expects the trailing /, TODO clean this up
+
+    # Use env vars to build config strings
+    CAMRECORDER = CAMRECORD_ROOT
     # Note: TMP_DIR and CONFIG_FILE should be on the same file system so os.rename works
-    TMP_DIR = "%s/config/.status/tmp" % os.getenv("PYPS_ROOT")
-    STARTUP_DIR = "%s/config/%%s/iocmanager/" % os.getenv("PYPS_ROOT")
-    CONFIG_DIR = "%s/config/" % os.getenv("PYPS_ROOT")
-    CONFIG_FILE = "%s/config/%%s/iocmanager.cfg" % os.getenv("PYPS_ROOT")
-    NOSSH_FILE = "%s/config/%%s/iocmanager.nossh" % os.getenv("PYPS_ROOT")
-    AUTH_FILE = "%s/config/%%s/iocmanager.auth" % os.getenv("PYPS_ROOT")
-    SPECIAL_FILE = "%s/config/%%s/iocmanager.special" % os.getenv("PYPS_ROOT")
-    STATUS_DIR = "%s/config/.status/%%s" % os.getenv("PYPS_ROOT")
-    HOST_DIR = "%s/config/.host" % os.getenv("PYPS_ROOT")
-    LOGBASE = "%s/%%s/iocInfo/ioc.log" % os.getenv("IOC_DATA")
-    PVFILE = "%s/%%s/iocInfo/IOC.pvlist" % os.getenv("IOC_DATA")
+    TMP_DIR = f"{PYPS_ROOT}/config/.status/tmp"
+    STARTUP_DIR = f"{PYPS_ROOT}/config/%s/iocmanager/"
+    CONFIG_DIR = f"{PYPS_ROOT}/config/"
+    CONFIG_FILE = f"{PYPS_ROOT}/config/%s/iocmanager.cfg"
+    NOSSH_FILE = f"{PYPS_ROOT}/config/%s/iocmanager.nossh"
+    AUTH_FILE = f"{PYPS_ROOT}/config/%s/iocmanager.auth"
+    SPECIAL_FILE = f"{PYPS_ROOT}/config/%s/iocmanager.special"
+    STATUS_DIR = f"{PYPS_ROOT}/config/.status/%s"
+    HOST_DIR = f"{PYPS_ROOT}/config/.host"
+    LOGBASE = f"{IOC_DATA}/%s/iocInfo/ioc.log"
+    PVFILE = f"{IOC_DATA}/%s/iocInfo/IOC.pvlist"
+    NETCONFIG = f"{TOOLS_SITE_TOP}/bin/netconfig"
+    HIOC_POWER = f"{TOOLS_SITE_TOP}/bin/power"
+    HIOC_CONSOLE = f"{TOOLS_SITE_TOP}/bin/console"
+    HIOC_STARTUP = f"{IOC_COMMON}/hioc/%s/startup.cmd"
 
 
 set_env_var_globals()
@@ -59,11 +81,7 @@ set_env_var_globals()
 # Constants
 BASEPORT = 39050
 COMMITHOST = "psbuild-rhel7"
-NETCONFIG = "/reg/common/tools/bin/netconfig"
 
-HIOC_STARTUP = "/reg/d/iocCommon/hioc/%s/startup.cmd"
-HIOC_POWER = "/reg/common/tools/bin/power"
-HIOC_CONSOLE = "/reg/common/tools/bin/console"
 
 STATUS_INIT = "INITIALIZE WAIT"
 STATUS_NOCONNECT = "NOCONNECT"
@@ -90,9 +108,6 @@ MSG_AUTORESTART_IS_ON = "auto restart( mode)? is ON,"
 MSG_AUTORESTART_IS_ONESHOT = "auto restart( mode)? is ONESHOT,"
 MSG_AUTORESTART_CHANGE = "auto restart to "
 MSG_AUTORESTART_MODE_CHANGE = "auto restart mode to "
-
-EPICS_DEV_TOP = "/reg/g/pcds/epics-dev"
-EPICS_SITE_TOP = "/reg/g/pcds/epics/"
 
 SPAM_LEVEL = 5
 

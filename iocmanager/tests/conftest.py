@@ -11,9 +11,12 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     Set environment variables appropriately for the unit tests.
     """
     monkeypatch.setenv("CAMRECORD_ROOT", str(tmp_path))
+    monkeypatch.setenv("PROCSERV_EXE", "echo")
     monkeypatch.setenv("PYPS_ROOT", str(tmp_path))
     monkeypatch.setenv("IOC_DATA", str(Path(__file__).parent / "ioc_data"))
-    monkeypatch.setenv("PROCSERV_EXE", "echo")
+    monkeypatch.setenv("IOC_COMMON", str(tmp_path))
+    monkeypatch.setenv("TOOLS_SITE_TOP", str(tmp_path))
+    monkeypatch.setenv("EPICS_SITE_TOP", str(tmp_path))
 
     set_env_var_globals()
 
