@@ -18,86 +18,31 @@ import typing
 
 logger = logging.getLogger(__name__)
 
-
-class EnvStr(collections.UserString):
-    """
-    Base class for string that updates itself when environment variables change.
-
-    This is used so that definitions here that rely on
-    environment variables can be easily changed at runtime for
-    testing purposes without needing to carefully manage
-    import orders.
-
-    It needs to be subclassed to set the env var because
-    various UserString operations assume that there
-    is only one init argument to a UserString.
-
-    Parameters
-    ----------
-    template : str
-        A format-string style template for us to substitute
-        the environment variable into.
-
-    Attributes
-    ----------
-    env_var : str
-        An environment variable to substitute into the template
-        using template.format(os.getenv(env_var))
-    """
-
-    env_var: str
-
-    def __init__(self, template: str):
-        self.template = template
-
-    @property
-    def data(self) -> str:
-        return self.template.format(os.environ.get(self.env_var, ""))
-
-
-class CamRecStr(EnvStr):
-    env_var = "CAMRECORD_ROOT"
-
-
-class ProcServStr(EnvStr):
-    env_var = "PROCSERV_EXE"
-
-    @property
-    def data(self) -> str:
-        value = super().data
-        if not value:
-            return "procServ"
-        return value.split()[0]
-
-
-class PypsStr(EnvStr):
-    env_var = "PYPS_ROOT"
-
-
-class IocDataStr(EnvStr):
-    env_var = "IOC_DATA"
-
-
 #
 # Defines
 #
-CAMRECORDER = CamRecStr("{}")
-PROCSERV_EXE = ProcServStr("{}")
+CAMRECORDER = os.getenv("CAMRECORD_ROOT")
+PROCSERV_EXE = os.getenv("PROCSERV_EXE")
+if PROCSERV_EXE is None:
+    PROCSERV_EXE = "procServ"
+else:
+    PROCSERV_EXE = PROCSERV_EXE.split()[0]
 # Note: TMP_DIR and CONFIG_FILE should be on the same file system so os.rename works!!
-TMP_DIR = PypsStr("{}/config/.status/tmp")
-STARTUP_DIR = PypsStr("{}/config/%s/iocmanager/")
-CONFIG_DIR = PypsStr("{}/config/")
-CONFIG_FILE = PypsStr("{}/config/%s/iocmanager.cfg")
-NOSSH_FILE = PypsStr("{}/config/%s/iocmanager.nossh")
+TMP_DIR = "%s/config/.status/tmp" % os.getenv("PYPS_ROOT")
+STARTUP_DIR = "%s/config/%%s/iocmanager/" % os.getenv("PYPS_ROOT")
+CONFIG_DIR = "%s/config/" % os.getenv("PYPS_ROOT")
+CONFIG_FILE = "%s/config/%%s/iocmanager.cfg" % os.getenv("PYPS_ROOT")
+NOSSH_FILE = "%s/config/%%s/iocmanager.nossh" % os.getenv("PYPS_ROOT")
 HIOC_STARTUP = "/reg/d/iocCommon/hioc/%s/startup.cmd"
 HIOC_POWER = "/reg/common/tools/bin/power"
 HIOC_CONSOLE = "/reg/common/tools/bin/console"
-AUTH_FILE = PypsStr("{}/config/%s/iocmanager.auth")
-SPECIAL_FILE = PypsStr("{}/config/%s/iocmanager.special")
-STATUS_DIR = PypsStr("{}/config/.status/%s")
-HOST_DIR = PypsStr("{}/config/.host")
-LOGBASE = IocDataStr("{}/%s/iocInfo/ioc.log")
-PVFILE = IocDataStr("{}/%s/iocInfo/IOC.pvlist")
+AUTH_FILE = "%s/config/%%s/iocmanager.auth" % os.getenv("PYPS_ROOT")
+SPECIAL_FILE = "%s/config/%%s/iocmanager.special" % os.getenv("PYPS_ROOT")
+STATUS_DIR = "%s/config/.status/%%s" % os.getenv("PYPS_ROOT")
+HOST_DIR = "%s/config/.host" % os.getenv("PYPS_ROOT")
+LOGBASE = "%s/%%s/iocInfo/ioc.log" % os.getenv("IOC_DATA")
+PVFILE = "%s/%%s/iocInfo/IOC.pvlist" % os.getenv("IOC_DATA")
+INSTALL = __file__[: __file__.rfind("/")] + "/installConfig"
 BASEPORT = 39050
 COMMITHOST = "psbuild-rhel7"
 NETCONFIG = "/reg/common/tools/bin/netconfig"

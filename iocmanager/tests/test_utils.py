@@ -6,9 +6,7 @@ from pathlib import Path
 import pytest
 
 from ..utils import (
-    PROCSERV_EXE,
     SPAM_LEVEL,
-    EnvStr,
     add_spam_level,
     getBaseName,
     readConfig,
@@ -17,22 +15,7 @@ from ..utils import (
 from . import CFG_FOLDER
 
 
-def test_envstr(monkeypatch: pytest.MonkeyPatch):
-    template = "some_template_{}_string"
-    var = "test_var"
-    text = EnvStr(template)
-    text.env_var = var
-
-    for example in ("one", "dos", "san"):
-        monkeypatch.setenv(var, example)
-        assert text == template.format(example)
-
-
-def test_procservstring(monkeypatch):
-    monkeypatch.setenv("PROCSERV_EXE", "")
-    assert PROCSERV_EXE == "procServ"
-    monkeypatch.setenv("PROCSERV_EXE", "/some/path/to/procServ --allow --logfile name")
-    assert PROCSERV_EXE == "/some/path/to/procServ"
+def test_reset_globals(monkeypatch: pytest.MonkeyPatch): ...
 
 
 def test_add_spam_level(caplog: pytest.LogCaptureFixture):
