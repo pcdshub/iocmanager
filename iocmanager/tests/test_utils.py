@@ -5,17 +5,25 @@ from pathlib import Path
 
 import pytest
 
+from .. import utils
 from ..utils import (
     SPAM_LEVEL,
     add_spam_level,
     getBaseName,
     readConfig,
+    set_env_var_globals,
     writeConfig,
 )
 from . import CFG_FOLDER
 
 
-def test_reset_globals(monkeypatch: pytest.MonkeyPatch): ...
+def test_env_var_globals(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PROCSERV_EXE", "")
+    set_env_var_globals()
+    assert utils.PROCSERV_EXE == "procServ"
+    monkeypatch.setenv("PROCSERV_EXE", "/some/path/to/procServ --allow --logfile name")
+    set_env_var_globals()
+    assert utils.PROCSERV_EXE == "/some/path/to/procServ"
 
 
 def test_add_spam_level(caplog: pytest.LogCaptureFixture):

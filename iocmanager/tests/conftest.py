@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from iocmanager.utils import set_env_var_globals
+
 
 @pytest.fixture(scope="function", autouse=True)
 def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -13,4 +15,8 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("IOC_DATA", str(Path(__file__).parent / "ioc_data"))
     monkeypatch.setenv("PROCSERV_EXE", "echo")
 
+    set_env_var_globals()
+
     yield
+
+    set_env_var_globals()

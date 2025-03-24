@@ -18,34 +18,52 @@ import typing
 
 logger = logging.getLogger(__name__)
 
-#
-# Defines
-#
-CAMRECORDER = os.getenv("CAMRECORD_ROOT")
-PROCSERV_EXE = os.getenv("PROCSERV_EXE")
-if PROCSERV_EXE is None:
-    PROCSERV_EXE = "procServ"
-else:
-    PROCSERV_EXE = PROCSERV_EXE.split()[0]
-# Note: TMP_DIR and CONFIG_FILE should be on the same file system so os.rename works!!
-TMP_DIR = "%s/config/.status/tmp" % os.getenv("PYPS_ROOT")
-STARTUP_DIR = "%s/config/%%s/iocmanager/" % os.getenv("PYPS_ROOT")
-CONFIG_DIR = "%s/config/" % os.getenv("PYPS_ROOT")
-CONFIG_FILE = "%s/config/%%s/iocmanager.cfg" % os.getenv("PYPS_ROOT")
-NOSSH_FILE = "%s/config/%%s/iocmanager.nossh" % os.getenv("PYPS_ROOT")
-HIOC_STARTUP = "/reg/d/iocCommon/hioc/%s/startup.cmd"
-HIOC_POWER = "/reg/common/tools/bin/power"
-HIOC_CONSOLE = "/reg/common/tools/bin/console"
-AUTH_FILE = "%s/config/%%s/iocmanager.auth" % os.getenv("PYPS_ROOT")
-SPECIAL_FILE = "%s/config/%%s/iocmanager.special" % os.getenv("PYPS_ROOT")
-STATUS_DIR = "%s/config/.status/%%s" % os.getenv("PYPS_ROOT")
-HOST_DIR = "%s/config/.host" % os.getenv("PYPS_ROOT")
-LOGBASE = "%s/%%s/iocInfo/ioc.log" % os.getenv("IOC_DATA")
-PVFILE = "%s/%%s/iocInfo/IOC.pvlist" % os.getenv("IOC_DATA")
-INSTALL = __file__[: __file__.rfind("/")] + "/installConfig"
+
+# Environment-variable settings: allow us to reset/reload these
+def set_env_var_globals():
+    global CAMRECORDER
+    global PROCSERV_EXE
+    global TMP_DIR
+    global STARTUP_DIR
+    global CONFIG_DIR
+    global CONFIG_FILE
+    global NOSSH_FILE
+    global AUTH_FILE
+    global SPECIAL_FILE
+    global STATUS_DIR
+    global HOST_DIR
+    global LOGBASE
+    global PVFILE
+    CAMRECORDER = os.getenv("CAMRECORD_ROOT")
+    PROCSERV_EXE = os.getenv("PROCSERV_EXE")
+    if PROCSERV_EXE is None:
+        PROCSERV_EXE = "procServ"
+    else:
+        PROCSERV_EXE = PROCSERV_EXE.split()[0]
+    # Note: TMP_DIR and CONFIG_FILE should be on the same file system so os.rename works
+    TMP_DIR = "%s/config/.status/tmp" % os.getenv("PYPS_ROOT")
+    STARTUP_DIR = "%s/config/%%s/iocmanager/" % os.getenv("PYPS_ROOT")
+    CONFIG_DIR = "%s/config/" % os.getenv("PYPS_ROOT")
+    CONFIG_FILE = "%s/config/%%s/iocmanager.cfg" % os.getenv("PYPS_ROOT")
+    NOSSH_FILE = "%s/config/%%s/iocmanager.nossh" % os.getenv("PYPS_ROOT")
+    AUTH_FILE = "%s/config/%%s/iocmanager.auth" % os.getenv("PYPS_ROOT")
+    SPECIAL_FILE = "%s/config/%%s/iocmanager.special" % os.getenv("PYPS_ROOT")
+    STATUS_DIR = "%s/config/.status/%%s" % os.getenv("PYPS_ROOT")
+    HOST_DIR = "%s/config/.host" % os.getenv("PYPS_ROOT")
+    LOGBASE = "%s/%%s/iocInfo/ioc.log" % os.getenv("IOC_DATA")
+    PVFILE = "%s/%%s/iocInfo/IOC.pvlist" % os.getenv("IOC_DATA")
+
+
+set_env_var_globals()
+
+# Constants
 BASEPORT = 39050
 COMMITHOST = "psbuild-rhel7"
 NETCONFIG = "/reg/common/tools/bin/netconfig"
+
+HIOC_STARTUP = "/reg/d/iocCommon/hioc/%s/startup.cmd"
+HIOC_POWER = "/reg/common/tools/bin/power"
+HIOC_CONSOLE = "/reg/common/tools/bin/console"
 
 STATUS_INIT = "INITIALIZE WAIT"
 STATUS_NOCONNECT = "NOCONNECT"
