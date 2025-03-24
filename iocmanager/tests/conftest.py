@@ -10,7 +10,7 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """
     monkeypatch.setenv("CAMRECORD_ROOT", str(tmp_path))
     monkeypatch.setenv("PYPS_ROOT", str(tmp_path))
-    monkeypatch.setenv("IOC_DATA", str(tmp_path))
+    monkeypatch.setenv("IOC_DATA", str(Path(__file__).parent / "ioc_data"))
     monkeypatch.setenv("PROCSERV_EXE", "echo")
 
     yield

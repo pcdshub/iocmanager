@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 
@@ -8,6 +10,7 @@ from ..utils import (
     SPAM_LEVEL,
     EnvStr,
     add_spam_level,
+    getBaseName,
     readConfig,
     writeConfig,
 )
@@ -17,7 +20,8 @@ from . import CFG_FOLDER
 def test_envstr(monkeypatch: pytest.MonkeyPatch):
     template = "some_template_{}_string"
     var = "test_var"
-    text = EnvStr(template, var)
+    text = EnvStr(template)
+    text.env_var = var
 
     for example in ("one", "dos", "san"):
         monkeypatch.setenv(var, example)
@@ -42,6 +46,14 @@ def test_add_spam_level(caplog: pytest.LogCaptureFixture):
     records = caplog.get_records(when="call")
     assert records
     assert records[0].message == "test"
+
+
+@pytest.mark.parametrize(
+    "ioc_name,pv_base",
+    [("ioc1", "IOC:PYTEST:01"), ("notanioc", None), ("iocbad", None)],
+)
+def test_getBaseName(ioc_name: str, pv_base: str | None):
+    assert getBaseName(ioc_name) == pv_base
 
 
 def test_read_config():
