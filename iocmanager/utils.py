@@ -172,7 +172,18 @@ def fixdir(dir: str, id: str) -> str:
     """
     Return a truncated path to a IOC directory.
 
-    Makes the path relative to EPICS_SITE_TOP and removes the final "iocBoot".
+    - Makes the path relative to EPICS_SITE_TOP
+    - Removes .. from the path
+    - Removes the final "iocBoot" or "build/iocBoot", etc. and
+      the accompanying IOC name
+
+    For example, if we pass in:
+    $EPICS_SITE_TOP/ioc/common/example/R1.0.0/children/build/iocBoot/ioc_name
+    This will return
+    ioc/common/example/R1.0.0
+
+    Note: some of the features require a somewhat standard-looking path.
+    Malformed paths may be returned with few or no changes.
 
     Parameters
     ----------
