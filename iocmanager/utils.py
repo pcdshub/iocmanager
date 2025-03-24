@@ -190,16 +190,11 @@ def fixdir(dir: str, id: str) -> str:
     while ".." in part:
         part.remove("..")
     dir = "/".join(part)
-    if dir[0 : len(EPICS_SITE_TOP)] == EPICS_SITE_TOP:
-        dir = dir[len(EPICS_SITE_TOP) :]
+    dir = dir.removeprefix(EPICS_SITE_TOP)
     for pth in stpaths:
         ext = pth % ("", id)
         ext = ext.removesuffix("/st.cmd")
-        try:
-            if dir[len(dir) - len(ext) : len(dir)] == ext:
-                dir = dir[0 : len(dir) - len(ext)]
-        except Exception:
-            ...
+        dir = dir.removesuffix(ext)
     return dir
 
 
