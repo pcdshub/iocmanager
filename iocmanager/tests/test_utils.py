@@ -93,25 +93,25 @@ def test_readLogPortBanner(procserv: TestProcServ):
         # Only true in old procServ versions
         assert not info["autorestart"]
 
-    basic_checks(info, utils.STATUS_RUNNING)
+    basic_checks()
     assert not info["autooneshot"]
     assert info["autorestartmode"]
 
     # Toggle to one shot
     procserv.toggle_mode()
-    basic_checks(info, utils.STATUS_RUNNING)
+    basic_checks()
     assert info["autooneshot"]
     assert not info["autorestartmode"]
 
     # Toggle to restart off
     procserv.toggle_mode()
-    basic_checks(info, utils.STATUS_RUNNING)
+    basic_checks()
     assert not info["autooneshot"]
     assert not info["autorestartmode"]
 
     # Turn off the child and check for shutdown
     procserv.stop_child()
-    basic_checks(info, utils.STATUS_SHUTDOWN)
+    basic_checks()
 
     # Get a new info dict to check the no connect case
     with Telnet() as tn:
