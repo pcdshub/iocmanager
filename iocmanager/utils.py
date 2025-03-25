@@ -158,14 +158,18 @@ def getBaseName(ioc: str) -> str | None:
     if not os.path.isfile(pvInfoPath):
         return None
     try:
-        lines = open(pvInfoPath).readlines()
+        with open(pvInfoPath, "r") as fd:
+            lines = fd.readlines()
+    except Exception:
+        print(f"Error reading pvlist file {pvInfoPath}")
+        return
+    try:
         for ln in lines:
             pv = ln.split(",")[0]
-            if pv[-10:] == ":HEARTBEAT":
-                return pv[:-10]
+            if pv.endswith(":HEARTBEAT"):
+                return pv.removesuffix(":HEARTBEAT")
     except Exception:
-        print("Error parsing %s for base PV name!" % (pvInfoPath))
-    return None
+        print(f"Error parsing {pvInfoPath} for base PV name!")
 
 
 def fixdir(dir: str, id: str) -> str:
