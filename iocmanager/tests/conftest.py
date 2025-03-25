@@ -80,7 +80,7 @@ class TestProcServ:
             [
                 str(get_procserv_bin_path()),
                 "--foreground",
-                self.port,
+                str(self.port),
                 str(TESTS_PATH / "iocs" / "counter" / "st.cmd"),
             ],
             stdout=subprocess.DEVNULL,
