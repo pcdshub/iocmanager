@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from telnetlib import Telnet
 
 import pytest
 
@@ -12,10 +13,12 @@ from ..utils import (
     fixdir,
     getBaseName,
     readConfig,
+    readLogPortBanner,
     set_env_var_globals,
     writeConfig,
 )
 from . import CFG_FOLDER
+from .conftest import TestProcServ
 
 
 def test_env_var_globals(monkeypatch: pytest.MonkeyPatch):
@@ -75,6 +78,46 @@ def test_fixdir(ioc_dir: str, ioc_name: str):
         # So the trailing ioc dir remains, but the other processing is done
         answer = f"{test_fixdir_iocdir}{ioc_name}"
     assert fixdir(ioc_dir, ioc_name) == answer
+
+
+def test_readLogPortBanner(procserv: TestProcServ):
+    # Always starts with restart = on and process running
+    with Telnet("localhost", procserv.port, 1) as tn:
+        info = readLogPortBanner(tn)
+
+    def basic_checks():
+        assert info["status"] == utils.STATUS_RUNNING
+        # These could be many things, check as much as we can
+        assert int(info["pid"]) > 0
+        assert "rid" in info
+        # Only true in old procServ versions
+        assert not info["autorestart"]
+
+    basic_checks(info, utils.STATUS_RUNNING)
+    assert not info["autooneshot"]
+    assert info["autorestartmode"]
+
+    # Toggle to one shot
+    procserv.toggle_mode()
+    basic_checks(info, utils.STATUS_RUNNING)
+    assert info["autooneshot"]
+    assert not info["autorestartmode"]
+
+    # Toggle to restart off
+    procserv.toggle_mode()
+    basic_checks(info, utils.STATUS_RUNNING)
+    assert not info["autooneshot"]
+    assert not info["autorestartmode"]
+
+    # Turn off the child and check for shutdown
+    procserv.stop_child()
+    basic_checks(info, utils.STATUS_SHUTDOWN)
+
+    # Get a new info dict to check the no connect case
+    with Telnet() as tn:
+        bad_info = readLogPortBanner(tn)
+
+    assert bad_info["status"] == utils.STATUS_ERROR
 
 
 def test_read_config():
