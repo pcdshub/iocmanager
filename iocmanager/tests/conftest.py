@@ -94,17 +94,20 @@ class TestProcServ:
     def close_procserv(self):
         if self.proc is not None:
             self.stop_child()
-            self.proc.stdin.write(ctrl("Q"))
+            if self.proc.stdin is not None:
+                self.proc.stdin.write(ctrl("Q"))
             self.proc.kill()
             self.proc = None
 
     def toggle_mode(self):
         if self.proc is not None:
-            self.proc.stdin.write(ctrl("T"))
+            if self.proc.stdin is not None:
+                self.proc.stdin.write(ctrl("T"))
 
     def stop_child(self):
         if self.proc is not None:
-            self.proc.stdin.write(ctrl("X"))
+            if self.proc.stdin is not None:
+                self.proc.stdin.write(ctrl("X"))
 
 
 def get_procserv_bin_path() -> Path:
