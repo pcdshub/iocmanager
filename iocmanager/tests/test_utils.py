@@ -11,6 +11,7 @@ from .. import utils
 from ..utils import (
     SPAM_LEVEL,
     add_spam_level,
+    check_status,
     fixdir,
     getBaseName,
     readConfig,
@@ -154,6 +155,53 @@ def test_readLogPortBanner(procserv: ProcServHelper):
         bad_info = readLogPortBanner(tn)
 
     assert bad_info["status"] == utils.STATUS_ERROR
+
+
+def test_check_status_good(procserv: ProcServHelper):
+    # Should have a similar result to the readLogPortBanner initial test
+    server = "localhost"
+    assert check_status(server, procserv.port, procserv.proc_name) == {
+        "status": utils.STATUS_SHUTDOWN,
+        "pid": "-",
+        "rid": procserv.proc_name,
+        "autorestart": False,
+        "autooneshot": False,
+        "autorestartmode": True,
+        "rdir": procserv.startup_dir,
+    }
+    # ping's exit code
+    assert utils.pdict[server][1] == 0
+
+
+def test_check_status_no_procserv():
+    # Ping succeeds but telnet fails
+    server = "localhost"
+    ioc = "blarg"
+    assert check_status(server, 31111, ioc) == {
+        "status": utils.STATUS_NOCONNECT,
+        "pid": "-",
+        "rid": ioc,
+        "autorestart": False,
+        "autorestartmode": False,
+        "rdir": "/tmp",
+    }
+    # ping's exit code
+    assert utils.pdict[server][1] == 0
+
+
+def test_check_status_no_host():
+    # Ping fails
+    server = "please-never-name-a-server-this"
+    ioc = "blarg2"
+    assert check_status(server, 31111, ioc) == {
+        "status": utils.STATUS_DOWN,
+        "pid": "-",
+        "rid": ioc,
+        "autorestart": False,
+        "rdir": "/tmp",
+    }
+    # ping's exit code
+    assert utils.pdict[server][1] > 0
 
 
 def test_read_config():

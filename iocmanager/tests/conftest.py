@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 from telnetlib import Telnet
 from typing import Iterator
@@ -113,6 +114,9 @@ class ProcServHelper:
             stderr=subprocess.DEVNULL,
             cwd=self.startup_dir,
         )
+        # This is rude but it makes it more consistent...
+        # TODO be better
+        time.sleep(0.1)
         self.tn = Telnet("localhost", self.port, 1)
         return self.proc
 
