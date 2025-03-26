@@ -251,7 +251,11 @@ def readLogPortBanner(tn: telnetlib.Telnet) -> dict[str, str | bool]:
         pid = "-"
     else:
         tmpstatus = STATUS_RUNNING
-        pid = re.search(b'@@@ Child "(.*)" PID: ([0-9]*)', response).group(2)
+        pid = (
+            re.search(b'@@@ Child "(.*)" PID: ([0-9]*)', response)
+            .group(2)
+            .decode("ascii")
+        )
     match = re.search(b'@@@ Child "(.*)" start', response)
     getid = "-"
     if match:
