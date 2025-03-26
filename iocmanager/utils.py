@@ -235,7 +235,7 @@ def readLogPortBanner(tn: telnetlib.Telnet) -> dict[str, str | bool]:
     try:
         response = tn.read_until(MSG_BANNER_END, 1)
     except Exception:
-        response = ""
+        response = b""
     if not response.count(MSG_BANNER_END):
         return {
             "status": STATUS_ERROR,
