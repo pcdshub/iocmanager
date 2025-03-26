@@ -95,19 +95,20 @@ CONFIG_ADDED = 1
 CONFIG_DELETED = 2
 
 # messages expected from procServ
-MSG_BANNER_END = "server started at"
-MSG_ISSHUTDOWN = "is SHUT DOWN"
-MSG_ISSHUTTING = "is shutting down"
-MSG_KILLED = "process was killed"
-MSG_RESTART = "new child"
+# need to be bytes type for telnetlib
+MSG_BANNER_END = b"server started at"
+MSG_ISSHUTDOWN = b"is SHUT DOWN"
+MSG_ISSHUTTING = b"is shutting down"
+MSG_KILLED = b"process was killed"
+MSG_RESTART = b"new child"
 MSG_PROMPT_OLD = b"\x0d\x0a[$>] "
 MSG_PROMPT = b"\x0d\x0a> "
-MSG_SPAWN = "procServ: spawning daemon"
-MSG_AUTORESTART_MODE = "auto restart mode"
-MSG_AUTORESTART_IS_ON = "auto restart( mode)? is ON,"
-MSG_AUTORESTART_IS_ONESHOT = "auto restart( mode)? is ONESHOT,"
-MSG_AUTORESTART_CHANGE = "auto restart to "
-MSG_AUTORESTART_MODE_CHANGE = "auto restart mode to "
+MSG_SPAWN = b"procServ: spawning daemon"
+MSG_AUTORESTART_MODE = b"auto restart mode"
+MSG_AUTORESTART_IS_ON = b"auto restart( mode)? is ON,"
+MSG_AUTORESTART_IS_ONESHOT = b"auto restart( mode)? is ONESHOT,"
+MSG_AUTORESTART_CHANGE = b"auto restart to "
+MSG_AUTORESTART_MODE_CHANGE = b"auto restart mode to "
 
 SPAM_LEVEL = 5
 
@@ -245,20 +246,20 @@ def readLogPortBanner(tn: telnetlib.Telnet) -> dict[str, str | bool]:
             "autorestartmode": False,
             "rdir": "/tmp",
         }
-    if re.search("SHUT DOWN", response):
+    if re.search(b"SHUT DOWN", response):
         tmpstatus = STATUS_SHUTDOWN
         pid = "-"
     else:
         tmpstatus = STATUS_RUNNING
-        pid = re.search('@@@ Child "(.*)" PID: ([0-9]*)', response).group(2)
-    match = re.search('@@@ Child "(.*)" start', response)
+        pid = re.search(b'@@@ Child "(.*)" PID: ([0-9]*)', response).group(2)
+    match = re.search(b'@@@ Child "(.*)" start', response)
     getid = "-"
     if match:
-        getid = match.group(1)
-    match = re.search("@@@ Server startup directory: (.*)", response)
+        getid = match.group(1).decode("ascii")
+    match = re.search(b"@@@ Server startup directory: (.*)", response)
     dir = "/tmp"
     if match:
-        dir = match.group(1)
+        dir = match.group(1).decode("ascii")
         if dir[-1] == "\r":
             dir = dir[:-1]
     # Note: This means that ONESHOT counts as OFF!
