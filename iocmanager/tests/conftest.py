@@ -73,44 +73,113 @@ class TestProcServ:
     def __init__(self, port: int):
         self.port = port
         self.proc = None
+        self.startup_dir = str(TESTS_PATH / "iocs" / "counter" / "st.cmd")
 
     def __enter__(self) -> TestProcServ:
-        self.close_procserv()
-        self.proc = subprocess.Popen(
-            [
-                str(get_procserv_bin_path()),
-                "--foreground",
-                str(self.port),
-                str(TESTS_PATH / "iocs" / "counter" / "st.cmd"),
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        self.open_procserv()
         return self
 
     def __exit__(self, *args, **kwargs):
         self.close_procserv()
 
+    def open_procserv(self) -> subprocess.Popen:
+        """
+        Start a dummy procServ subprocess for unit test interaction.
+
+        It will begin with no process running and autorestart disabled,
+        so that the state is always known at the beginning of the test
+        (without relying on things like subprocess startup speed).
+        """
+        self.close_procserv()
+        self.proc = subprocess.Popen(
+            [
+                str(get_procserv_bin_path()),
+                # Keep connected to this subprocess stdin/stdout
+                "--foreground",
+                # Start in no restart mode for predictable init
+                "--noautorestart",
+                # Start with no process running for predictable init
+                "--wait",
+                str(self.port),
+                self.startup_dir,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return self.proc
+
     def close_procserv(self):
+        """
+        Stop and clean up the procServ subprocess.
+
+        We need to ask procServ to kill its own subprocess
+        if one is running, then turn off procServ itself.
+        We will always finish by killing the process just in case.
+        """
         if self.proc is not None:
-            self.stop_child()
-            if self.proc.stdin is not None:
-                self.proc.stdin.write(ctrl("Q"))
+            # If nothing is running, this is all we need
+            self._close_cmd()
+            # If something was running, the previous command is ignored.
+            self.toggle_running()
+            # Now that nothing is running, we can try to close again.
+            self._close_cmd()
+            # Always kill just in case
             self.proc.kill()
             self.proc = None
 
-    def toggle_mode(self):
+    def _close_cmd(self):
+        """
+        Send the command to close the procServ instance.
+
+        This is the equivalent of pressing ctrl+Q
+
+        Requres the subprocess to be closed first.
+        """
+        if self.proc is not None:
+            if self.proc.stdin is not None:
+                self.proc.stdin.write(ctrl("Q"))
+
+    def toggle_autorestart(self):
+        """
+        Iterate through the three autorestart options.
+
+        This is the equivalent of pressing ctrl+T
+
+        The options are cycled through in a specific order:
+        - start in OFF
+        - ONESHOT after first toggle
+        - ON after second toggle
+        - OFF again after third toggle
+        - repeat
+        """
         if self.proc is not None:
             if self.proc.stdin is not None:
                 self.proc.stdin.write(ctrl("T"))
 
-    def stop_child(self):
+    def toggle_running(self):
+        """
+        Stop or start the subprocess controlled by procServ.
+
+        If the process is not running, this starts the process.
+        If the process is running, this stops the process.
+
+        After stopping a process, the behavior of what to do
+        next depends on the autorestart mode:
+        - ON = start the process again
+        - OFF = keep the process off
+        - ONESHOT = restart the process once, but not again
+
+        This is the equivalent of pressing ctrl+X
+        """
         if self.proc is not None:
             if self.proc.stdin is not None:
                 self.proc.stdin.write(ctrl("X"))
 
 
 def get_procserv_bin_path() -> Path:
+    """
+    Get a Path to the most correct procServ binary built in this repo.
+    """
     if not PROCSERV_BUILD.exists():
         raise RuntimeError("f{PROCSERV_BUILD} not found")
     if EPICS_HOST_ARCH is not None:

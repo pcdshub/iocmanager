@@ -1,7 +1,7 @@
 #!/usr/bin/bash
-num=0
-while true; do
-    echo $num
-    sleep 1
-    (( num += 1 ))
+for num in {1..1000}
+do
+    echo "$num";
+    sleep 1;
 done
+echo "Exiting counter fake IOC (probably something went wrong if we counted to 1000)"

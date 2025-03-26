@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from telnetlib import Telnet
 
@@ -81,9 +82,37 @@ def test_fixdir(ioc_dir: str, ioc_name: str):
 
 
 def test_readLogPortBanner(procserv: TestProcServ):
-    # Always starts with restart = on and process running
-    with Telnet("localhost", procserv.port, 1) as tn:
-        info = readLogPortBanner(tn)
+    def get_info() -> dict[str, str | bool]:
+        with Telnet("localhost", procserv.port, 1) as tn:
+            return readLogPortBanner(tn)
+
+    # Always starts with restart = off and process stopped
+    assert get_info() == {
+        "status": utils.STATUS_SHUTDOWN,
+        "pid": "-",
+        "rid": "-",
+        "autorestart": False,
+        "autooneshot": False,
+        "autorestartmode": False,
+        "rdir": procserv.startup_dir,
+    }
+
+    # Start the process
+    procserv.toggle_running()
+
+    def wait_status(status: str, errmsg: str) -> dict[str, str | bool]:
+        # Wait for it to start
+        timeout = 5.0
+        start_time = time.monotonic()
+        wait_info = get_info()
+        while wait_info["status"] != status and time.monotonic() - start_time < timeout:
+            time.sleep(0.1)
+            wait_info = get_info()
+
+        assert wait_info["status"] == status, errmsg
+        return wait_info
+
+    info = wait_status(utils.STATUS_RUNNING, "Subprocess did not start")
 
     def basic_checks():
         assert info["status"] == utils.STATUS_RUNNING
@@ -95,23 +124,27 @@ def test_readLogPortBanner(procserv: TestProcServ):
 
     basic_checks()
     assert not info["autooneshot"]
-    assert info["autorestartmode"]
+    assert not info["autorestartmode"]
 
     # Toggle to one shot
-    procserv.toggle_mode()
+    procserv.toggle_autorestart()
+    info = get_info()
     basic_checks()
     assert info["autooneshot"]
     assert not info["autorestartmode"]
 
-    # Toggle to restart off
-    procserv.toggle_mode()
+    # Toggle to restart on
+    procserv.toggle_autorestart()
+    info = get_info()
     basic_checks()
     assert not info["autooneshot"]
-    assert not info["autorestartmode"]
+    assert info["autorestartmode"]
 
-    # Turn off the child and check for shutdown
-    procserv.stop_child()
-    basic_checks()
+    # Back to no autorestart
+    procserv.toggle_autorestart()
+    # Turn off the process and check for shutdown
+    procserv.toggle_running()
+    wait_status(utils.STATUS_SHUTDOWN, "Unable to shutdown")
 
     # Get a new info dict to check the no connect case
     with Telnet() as tn:
