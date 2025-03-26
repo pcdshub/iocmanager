@@ -19,7 +19,7 @@ from ..utils import (
     writeConfig,
 )
 from . import CFG_FOLDER
-from .conftest import TestProcServ
+from .conftest import ProcServHelper
 
 
 def test_env_var_globals(monkeypatch: pytest.MonkeyPatch):
@@ -81,7 +81,7 @@ def test_fixdir(ioc_dir: str, ioc_name: str):
     assert fixdir(ioc_dir, ioc_name) == answer
 
 
-def test_readLogPortBanner(procserv: TestProcServ):
+def test_readLogPortBanner(procserv: ProcServHelper):
     def get_info() -> dict[str, str | bool]:
         with Telnet("localhost", procserv.port, 1) as tn:
             return readLogPortBanner(tn)
@@ -90,10 +90,10 @@ def test_readLogPortBanner(procserv: TestProcServ):
     assert get_info() == {
         "status": utils.STATUS_SHUTDOWN,
         "pid": "-",
-        "rid": "-",
+        "rid": procserv.proc_name,
         "autorestart": False,
         "autooneshot": False,
-        "autorestartmode": False,
+        "autorestartmode": True,
         "rdir": procserv.startup_dir,
     }
 
@@ -101,44 +101,47 @@ def test_readLogPortBanner(procserv: TestProcServ):
     procserv.toggle_running()
 
     def wait_status(status: str, errmsg: str) -> dict[str, str | bool]:
-        # Wait for it to start
-        timeout = 5.0
+        timeout = 10
+        # 1s seems big, but if you connect too often the process never starts!
+        # Probably a procServ performance issue
+        sleep_time = 1
         start_time = time.monotonic()
         wait_info = get_info()
         while wait_info["status"] != status and time.monotonic() - start_time < timeout:
-            time.sleep(0.1)
+            time.sleep(sleep_time)
+            # Connect even less often after each failure as a performance workaround
+            sleep_time *= 2
             wait_info = get_info()
 
         assert wait_info["status"] == status, errmsg
         return wait_info
 
-    info = wait_status(utils.STATUS_RUNNING, "Subprocess did not start")
-
     def basic_checks():
         assert info["status"] == utils.STATUS_RUNNING
-        # These could be many things, check as much as we can
         assert int(info["pid"]) > 0
-        assert "rid" in info
-        # Only true in old procServ versions
-        assert not info["autorestart"]
+        assert info["rid"] == procserv.proc_name
+        # True if procServ's version is high enough
+        assert info["autorestartmode"]
+        assert info["rdir"] == procserv.startup_dir
 
+    info = wait_status(utils.STATUS_RUNNING, "Subprocess did not start")
     basic_checks()
     assert not info["autooneshot"]
-    assert not info["autorestartmode"]
+    assert not info["autorestart"]
 
     # Toggle to one shot
     procserv.toggle_autorestart()
     info = get_info()
     basic_checks()
     assert info["autooneshot"]
-    assert not info["autorestartmode"]
+    assert not info["autorestart"]
 
     # Toggle to restart on
     procserv.toggle_autorestart()
     info = get_info()
     basic_checks()
     assert not info["autooneshot"]
-    assert info["autorestartmode"]
+    assert info["autorestart"]
 
     # Back to no autorestart
     procserv.toggle_autorestart()

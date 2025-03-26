@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+from telnetlib import Telnet
 from typing import Iterator
 
 import pytest
@@ -42,7 +43,7 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
 
 
 @pytest.fixture(scope="function")
-def procserv() -> Iterator[TestProcServ]:
+def procserv() -> Iterator[ProcServHelper]:
     """
     Start procServ with a "counter" IOC.
 
@@ -53,11 +54,11 @@ def procserv() -> Iterator[TestProcServ]:
     # Hard-code port for now, maybe we can pick this more intelligently in the future
     port = 34567
 
-    with TestProcServ(port=port) as pserv:
+    with ProcServHelper(port=port) as pserv:
         yield pserv
 
 
-class TestProcServ:
+class ProcServHelper:
     """
     Test helper.
 
@@ -73,9 +74,11 @@ class TestProcServ:
     def __init__(self, port: int):
         self.port = port
         self.proc = None
-        self.startup_dir = str(TESTS_PATH / "iocs" / "counter" / "st.cmd")
+        self.tn = None
+        self.startup_dir = str(TESTS_PATH / "iocs" / "counter")
+        self.proc_name = "counter"
 
-    def __enter__(self) -> TestProcServ:
+    def __enter__(self) -> ProcServHelper:
         self.open_procserv()
         return self
 
@@ -94,18 +97,23 @@ class TestProcServ:
         self.proc = subprocess.Popen(
             [
                 str(get_procserv_bin_path()),
-                # Keep connected to this subprocess stdin/stdout
+                # Keep connected to this subprocess rather than daemonize
                 "--foreground",
                 # Start in no restart mode for predictable init
                 "--noautorestart",
                 # Start with no process running for predictable init
                 "--wait",
+                # Select a name to show to people who connect
+                f"--name={self.proc_name}",
                 str(self.port),
-                self.startup_dir,
+                "./st.cmd",
             ],
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            cwd=self.startup_dir,
         )
+        self.tn = Telnet("localhost", self.port, 1)
         return self.proc
 
     def close_procserv(self):
@@ -118,16 +126,30 @@ class TestProcServ:
         """
         if self.proc is not None:
             # If nothing is running, this is all we need
-            self._close_cmd()
+            self.close_cmd()
             # If something was running, the previous command is ignored.
             self.toggle_running()
             # Now that nothing is running, we can try to close again.
-            self._close_cmd()
+            self.close_cmd()
             # Always kill just in case
             self.proc.kill()
             self.proc = None
+        if self.tn is not None:
+            self.tn.close()
+            self.tn = None
 
-    def _close_cmd(self):
+    def _ctrl_char(self, char: str):
+        """
+        Send a control character to the procServ process.
+        """
+        if self.tn is not None:
+            try:
+                self.tn.write(ctrl(char))
+            except OSError:
+                # telnet connection is dead, probably ok to skip
+                ...
+
+    def close_cmd(self):
         """
         Send the command to close the procServ instance.
 
@@ -135,9 +157,7 @@ class TestProcServ:
 
         Requres the subprocess to be closed first.
         """
-        if self.proc is not None:
-            if self.proc.stdin is not None:
-                self.proc.stdin.write(ctrl("Q"))
+        self._ctrl_char("q")
 
     def toggle_autorestart(self):
         """
@@ -152,9 +172,7 @@ class TestProcServ:
         - OFF again after third toggle
         - repeat
         """
-        if self.proc is not None:
-            if self.proc.stdin is not None:
-                self.proc.stdin.write(ctrl("T"))
+        self._ctrl_char("t")
 
     def toggle_running(self):
         """
@@ -166,14 +184,12 @@ class TestProcServ:
         After stopping a process, the behavior of what to do
         next depends on the autorestart mode:
         - ON = start the process again
-        - OFF = keep the process off
-        - ONESHOT = restart the process once, but not again
+        - OFF = keep the process off, but keep procServ running
+        - ONESHOT = shutdown procServ when the process ends
 
         This is the equivalent of pressing ctrl+X
         """
-        if self.proc is not None:
-            if self.proc.stdin is not None:
-                self.proc.stdin.write(ctrl("X"))
+        self._ctrl_char("x")
 
 
 def get_procserv_bin_path() -> Path:
