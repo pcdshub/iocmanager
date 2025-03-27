@@ -52,10 +52,35 @@ def procserv() -> Iterator[ProcServHelper]:
 
     Closes the procServ afterwards.
     """
-    # Hard-code port for now, maybe we can pick this more intelligently in the future
+    proc_name = "counter"
+    startup_dir = str(TESTS_PATH / "iocs" / "counter")
+    command = "./st.cmd"
     port = 34567
 
-    with ProcServHelper(port=port) as pserv:
+    with ProcServHelper(
+        proc_name=proc_name, startup_dir=startup_dir, command=command, port=port
+    ) as pserv:
+        yield pserv
+
+
+@pytest.fixture(scope="function")
+def procmgrd() -> Iterator[ProcServHelper]:
+    """
+    Start a procmgrd procServ instance.
+
+    Yields the port to connect to on localhost to access the procServ.
+
+    Closes the procServ afterwards.
+    """
+    proc_name = "procmgrd"
+    startup_dir = str(TESTS_PATH)
+    # See initIOC.hutch
+    command = "./not_procmgrd.sh"
+    port = 36666
+
+    with ProcServHelper(
+        proc_name=proc_name, startup_dir=startup_dir, command=command, port=port
+    ) as pserv:
         yield pserv
 
 
@@ -69,12 +94,13 @@ class ProcServHelper:
     Closes the process cleanly on context exit.
     """
 
-    def __init__(self, port: int):
-        self.port = port
+    def __init__(self, proc_name: str, startup_dir: str, command: str, port: int):
         self.proc = None
         self.tn = None
-        self.startup_dir = str(TESTS_PATH / "iocs" / "counter")
-        self.proc_name = "counter"
+        self.proc_name = proc_name
+        self.startup_dir = startup_dir
+        self.command = command
+        self.port = port
 
     def __enter__(self) -> ProcServHelper:
         self.open_procserv()
@@ -104,7 +130,7 @@ class ProcServHelper:
                 # Select a name to show to people who connect
                 f"--name={self.proc_name}",
                 str(self.port),
-                "./st.cmd",
+                self.command,
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

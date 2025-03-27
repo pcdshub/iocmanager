@@ -13,6 +13,7 @@ from ..utils import (
     add_spam_level,
     check_status,
     fixdir,
+    fixTelnetShell,
     getBaseName,
     openTelnet,
     readConfig,
@@ -205,7 +206,7 @@ def test_check_status_no_host():
     assert utils.pdict[server][1] > 0
 
 
-def test_open_telnet_good(procserv):
+def test_open_telnet_good(procserv: ProcServHelper):
     tn = openTelnet("localhost", procserv.port)
     try:
         tn.close()
@@ -221,6 +222,16 @@ def test_open_telnet_bad():
     except Exception:
         ...
     assert tn is None
+
+
+def test_fix_telnet_shell(procmgrd: ProcServHelper):
+    procmgrd.toggle_running()
+    procmgrd.tn.read_until(utils.MSG_RESTART)
+    fixTelnetShell("localhost", procmgrd.port)
+    with Telnet("localhost", procmgrd.port, 1) as tn:
+        tn.write(b"\n")
+        bts = tn.read_until(b"> ", 1)
+    assert b"> " in bts
 
 
 def test_read_config():
