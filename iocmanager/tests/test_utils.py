@@ -279,6 +279,11 @@ def test_check_telnet_mode_good(
     set_state_and_assert(end_state)
 
 
+def test_check_telnet_mode_bad():
+    # Expected to fail via returning False and then not raising
+    assert not checkTelnetMode("localhost", 31111)
+
+
 def test_read_config():
     _, iocs, hosts, _ = readConfig(str(CFG_FOLDER / "example.cfg"))
 
