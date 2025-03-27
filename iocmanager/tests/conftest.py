@@ -74,7 +74,6 @@ def procmgrd() -> Iterator[ProcServHelper]:
     """
     proc_name = "procmgrd"
     startup_dir = str(TESTS_PATH)
-    # See initIOC.hutch
     command = "./not_procmgrd.sh"
     port = 36666
 
