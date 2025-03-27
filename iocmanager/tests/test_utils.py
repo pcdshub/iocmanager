@@ -14,6 +14,7 @@ from ..utils import (
     check_status,
     fixdir,
     getBaseName,
+    openTelnet,
     readConfig,
     readLogPortBanner,
     set_env_var_globals,
@@ -202,6 +203,24 @@ def test_check_status_no_host():
     }
     # ping's exit code
     assert utils.pdict[server][1] > 0
+
+
+def test_open_telnet_good(procserv):
+    tn = openTelnet("localhost", procserv.port)
+    try:
+        tn.close()
+    except Exception:
+        ...
+    assert isinstance(tn, Telnet)
+
+
+def test_open_telnet_bad():
+    tn = openTelnet("localhost", 31111)
+    try:
+        tn.close()
+    except Exception:
+        ...
+    assert tn is None
 
 
 def test_read_config():
