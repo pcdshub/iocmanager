@@ -117,6 +117,8 @@ class ProcServHelper:
         (without relying on things like subprocess startup speed).
         """
         self.close_procserv()
+        # Before starting, check for leaks from previous test
+        self.check_port_available()
         self.proc = subprocess.Popen(
             [
                 str(get_procserv_bin_path()),
@@ -163,6 +165,28 @@ class ProcServHelper:
         if self.tn is not None:
             self.tn.close()
             self.tn = None
+
+    def check_port_available(self):
+        """
+        Raise if our configured port is already in use.
+
+        It might be in use by us, by another user, or by a previous
+        test that is leaking processes.
+        """
+        try:
+            with Telnet("localhost", self.port, 1):
+                ...
+        except OSError:
+            ...
+        else:
+            raise RuntimeError(
+                f"Port {self.port} is in use. "
+                "You might have a test suite issue, "
+                "or maybe an iocmanager kill/cleanup routine is broken. "
+                "Try to manually remove processes "
+                "that look like test/ioc artifacts, "
+                "such as st.cmd or procServ running as you."
+            )
 
     def _ctrl_char(self, char: str):
         """

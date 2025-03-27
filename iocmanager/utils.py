@@ -514,6 +514,12 @@ def killProc(host: str, port: int, verbose: bool = False) -> None:
     """
     Kills a procServ process entirely, including the subshell it controls.
 
+    This is implemented kindly, e.g. without actually running a kill command,
+    The procServ's return code should be 0.
+
+    Internally this sends a ctrl+X if the subprocess is alive (to end it),
+    then a ctrl+Q to ask the procServ process to terminate.
+
     Parameters
     ----------
     host : str
@@ -537,7 +543,7 @@ def killProc(host: str, port: int, verbose: bool = False) -> None:
                 if verbose:
                     print("killProc: Sending Ctrl-X to %s port %s" % (host, port))
                 # send ^X to kill child process
-                tn.write("\x18")
+                tn.write(b"\x18")
                 # wait for killed message
                 tn.read_until(MSG_KILLED, 1)
                 time.sleep(0.25)
@@ -553,7 +559,7 @@ def killProc(host: str, port: int, verbose: bool = False) -> None:
             if verbose:
                 print("killProc: Sending Ctrl-Q to %s port %s" % (host, port))
             # send ^Q to kill procServ
-            tn.write("\x11")
+            tn.write(b"\x11")
         except Exception:
             logger.debug("killProc() failed to kill procServ", exc_info=True)
             print(

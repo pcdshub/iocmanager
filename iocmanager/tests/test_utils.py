@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import subprocess
 import time
 from pathlib import Path
 from telnetlib import Telnet
@@ -17,6 +18,7 @@ from ..utils import (
     fixdir,
     fixTelnetShell,
     getBaseName,
+    killProc,
     openTelnet,
     readConfig,
     readLogPortBanner,
@@ -237,14 +239,14 @@ def test_fix_telnet_shell(procmgrd: ProcServHelper):
 
 
 autorestart_states = ("on", "off", "oneshot")
-permutations = list(
+check_telnet_params = list(
     itertools.product(autorestart_states, autorestart_states, (True, False))
 )
 
 
 @pytest.mark.parametrize(
     "start_state,end_state,verbose",
-    permutations,
+    check_telnet_params,
 )
 def test_check_telnet_mode_good(
     procserv: ProcServHelper, start_state: str, end_state: str, verbose: bool
@@ -282,6 +284,71 @@ def test_check_telnet_mode_good(
 def test_check_telnet_mode_bad():
     # Expected to fail via returning False and then not raising
     assert not checkTelnetMode("localhost", 31111)
+
+
+# For killing procServ, let's try to cover all combinations of:
+#   - Already running vs not running
+#   - The three autorestart options
+#   - verbose vs not verbose
+
+
+@pytest.mark.parametrize(
+    "running,autorestart,verbose",
+    list(itertools.product((True, False), autorestart_states, (True, False))),
+)
+def test_kill_proc_good(
+    procserv: ProcServHelper, running: bool, autorestart: str, verbose: bool
+):
+    # Start by setting us to the correct state
+    # fixture begins as not running, autorestart off
+    if running:
+        # Not running -> running
+        procserv.toggle_running()
+    if autorestart == "oneshot":
+        # Off -> Oneshot
+        procserv.toggle_autorestart()
+    elif autorestart == "on":
+        # Off -> Oneshot -> On
+        procserv.toggle_autorestart()
+        procserv.toggle_autorestart()
+    elif autorestart != "off":
+        raise ValueError(f"Invalid value autorestart={autorestart} in test parameters")
+    # Wait 1s for status to stabilize
+    # TODO make helpers for robust waiting in ProcServHelper
+    time.sleep(1)
+    with Telnet("localhost", procserv.port, 1) as tn:
+        info = readLogPortBanner(tn)
+    # Subprocess should exist and have a pid
+    if running:
+        assert info["status"] == utils.STATUS_RUNNING
+        subproc_pid = info["pid"]
+        assert int(subproc_pid) > 0
+        # Check that the pid is alive
+        assert not subprocess.run(["ps", "--pid", str(subproc_pid)]).returncode
+    else:
+        assert info["status"] == utils.STATUS_SHUTDOWN
+    killProc("localhost", procserv.port, verbose=verbose)
+    # We need to wait again, gross
+    time.sleep(1)
+    if running:
+        # We expect the subprocess pid and the procserv to be dead.
+        # Telnet should fail too.
+        assert subprocess.run(["ps", "--pid", str(subproc_pid)]).returncode
+    return_code = procserv.proc.poll()
+    assert return_code is not None, "procserv still running"
+    assert return_code == 0, "procserv errored out without our help"
+    with pytest.raises(OSError):
+        with Telnet("localhost", procserv.port, 1):
+            ...
+
+
+@pytest.mark.parametrize("verbose", (True, False))
+def test_kill_proc_bad(verbose: bool):
+    # Note: I don't know how to reach some of the failure modes
+    # For example, under what circumstances would the subprocess survive a kill?
+    # We will test at least the case where the telnet can't connect
+    # The expected behavior is unfortunately "just do nothing"
+    killProc("localhost", 31111, verbose=verbose)
 
 
 def test_read_config():
