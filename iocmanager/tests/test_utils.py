@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import logging
 import time
 from pathlib import Path
@@ -12,6 +13,7 @@ from ..utils import (
     SPAM_LEVEL,
     add_spam_level,
     check_status,
+    checkTelnetMode,
     fixdir,
     fixTelnetShell,
     getBaseName,
@@ -232,6 +234,50 @@ def test_fix_telnet_shell(procmgrd: ProcServHelper):
         tn.write(b"\n")
         bts = tn.read_until(b"> ", 1)
     assert b"> " in bts
+
+
+autorestart_states = ("on", "off", "oneshot")
+permutations = list(
+    itertools.product(autorestart_states, autorestart_states, (True, False))
+)
+
+
+@pytest.mark.parametrize(
+    "start_state,end_state,verbose",
+    permutations,
+)
+def test_check_telnet_mode_good(
+    procserv: ProcServHelper, start_state: str, end_state: str, verbose: bool
+):
+    # We should be able to change from any starting mode to any other mode.
+    def set_state_and_assert(state: str):
+        on_ok = False
+        off_ok = False
+        os_ok = False
+        if state == "on":
+            on_ok = True
+        elif state == "off":
+            off_ok = True
+        elif state == "oneshot":
+            os_ok = True
+        else:
+            raise ValueError(f"Invalid parameterized test input state={state}")
+        checkTelnetMode(
+            "localhost",
+            procserv.port,
+            onOK=on_ok,
+            offOK=off_ok,
+            oneshotOK=os_ok,
+            verbose=verbose,
+        )
+        with Telnet("localhost", procserv.port, 1) as tn:
+            info = readLogPortBanner(tn)
+        assert info["autorestart"] == on_ok
+        assert info["autorestart"] != off_ok
+        assert info["autooneshot"] == os_ok
+
+    set_state_and_assert(start_state)
+    set_state_and_assert(end_state)
 
 
 def test_read_config():

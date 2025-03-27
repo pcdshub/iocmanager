@@ -225,9 +225,11 @@ def get_procserv_bin_path() -> Path:
     if not PROCSERV_BUILD.exists():
         raise RuntimeError("f{PROCSERV_BUILD} not found")
     if EPICS_HOST_ARCH is not None:
-        return PROCSERV_BUILD / EPICS_HOST_ARCH / "bin" / "procServ"
-    # No host arch, just pick one
-    for pth in PROCSERV_BUILD.glob("*"):
+        bin_path = PROCSERV_BUILD / EPICS_HOST_ARCH / "bin" / "procServ"
+        if bin_path.exists():
+            return bin_path
+    # No host arch, just pick the highest version one that exists
+    for pth in reversed(list(PROCSERV_BUILD.glob("*"))):
         bin_path = pth / "bin" / "procServ"
         if bin_path.exists():
             return bin_path

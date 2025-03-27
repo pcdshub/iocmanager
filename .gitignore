@@ -2,6 +2,7 @@
 .svn
 .pdbrc
 *~
+.vscode
 __pycache__
 core.*
 
