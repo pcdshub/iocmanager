@@ -63,11 +63,8 @@ class ProcServHelper:
     """
     Test helper.
 
-    Acts as a context manager that launches a procServ process
-    with an attached terminal.
-
-    Can be used to send commands directly to the process without
-    telnet.
+    Acts as a context manager that launches an attached procServ
+    process (not a daemon), which helps us clean up afterwards.
 
     Closes the process cleanly on context exit.
     """

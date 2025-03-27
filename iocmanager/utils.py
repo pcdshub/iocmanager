@@ -396,7 +396,7 @@ def openTelnet(host: str, port: int) -> telnetlib.Telnet | None:
 
 def fixTelnetShell(host: str, port: int) -> None:
     """
-    Connect to a telnet port and set the prompt to >
+    Connect to a telnet port running sh and set the prompt to >
 
     This makes it easier to parse and separate inputs vs outputs
     when dealing with telnet bytes.
