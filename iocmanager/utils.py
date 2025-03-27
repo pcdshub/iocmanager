@@ -490,7 +490,7 @@ def checkTelnetMode(
                     % (host, port)
                 )
             # send ^T to toggle off auto restart.
-            tn.write("\x14")
+            tn.write(b"\x14")
             # wait for toggled message
             if statd["autorestartmode"]:
                 tn.read_until(MSG_AUTORESTART_MODE_CHANGE, 1)

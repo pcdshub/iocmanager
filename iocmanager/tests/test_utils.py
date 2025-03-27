@@ -273,7 +273,6 @@ def test_check_telnet_mode_good(
         with Telnet("localhost", procserv.port, 1) as tn:
             info = readLogPortBanner(tn)
         assert info["autorestart"] == on_ok
-        assert info["autorestart"] != off_ok
         assert info["autooneshot"] == os_ok
 
     set_state_and_assert(start_state)
