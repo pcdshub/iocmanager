@@ -576,6 +576,9 @@ def restartProc(host: str, port: int) -> bool:
     """
     Restarts a procServ's contained process.
 
+    Internally, this is implemented by sending ctrl+X and ctrl+R
+    commands to the procServ port via telnet.
+
     Parameters
     ----------
     host : str
@@ -599,7 +602,7 @@ def restartProc(host: str, port: int) -> bool:
         if statd["status"] == STATUS_RUNNING:
             try:
                 # send ^X to kill child process
-                tn.write("\x18")
+                tn.write(b"\x18")
 
                 # wait for killed message
                 r = tn.read_until(MSG_KILLED, 1)
@@ -609,7 +612,7 @@ def restartProc(host: str, port: int) -> bool:
 
         if not statd["autorestart"]:
             # send ^R to restart child process
-            tn.write("\x12")
+            tn.write(b"\x12")
 
         # wait for restart message
         r = tn.read_until(MSG_RESTART, 1)

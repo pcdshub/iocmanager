@@ -22,6 +22,7 @@ from ..utils import (
     openTelnet,
     readConfig,
     readLogPortBanner,
+    restartProc,
     set_env_var_globals,
     writeConfig,
 )
@@ -349,6 +350,49 @@ def test_kill_proc_bad(verbose: bool):
     # We will test at least the case where the telnet can't connect
     # The expected behavior is unfortunately "just do nothing"
     killProc("localhost", 31111, verbose=verbose)
+
+
+@pytest.mark.parametrize(
+    "running,autorestart",
+    list(itertools.product((True, False), autorestart_states)),
+)
+def test_restart_proc_good(procserv: ProcServHelper, running: bool, autorestart: str):
+    # Start by setting us to the correct state
+    # fixture begins as not running, autorestart off
+    # TODO refactor this block into a function/helper instead of copy/paste
+    if running:
+        # Not running -> running
+        procserv.toggle_running()
+    if autorestart == "oneshot":
+        # Off -> Oneshot
+        procserv.toggle_autorestart()
+    elif autorestart == "on":
+        # Off -> Oneshot -> On
+        procserv.toggle_autorestart()
+        procserv.toggle_autorestart()
+    elif autorestart != "off":
+        raise ValueError(f"Invalid value autorestart={autorestart} in test parameters")
+    time.sleep(1)
+    # We need to observe either SHUTDOWN -> RUNNING or RUNNING -> SHUTDOWN -> RUNNING
+    with Telnet("localhost", procserv.port, 1) as tn:
+        info = readLogPortBanner(tn)
+        # Starting state
+        if running:
+            assert info["status"] == utils.STATUS_RUNNING
+        else:
+            assert info["status"] == utils.STATUS_SHUTDOWN
+        time.sleep(1)
+        assert restartProc("localhost", procserv.port)
+        # Now we can read the log of our open telnet
+        if running:
+            assert utils.MSG_ISSHUTTING in tn.read_until(utils.MSG_ISSHUTTING)
+            assert utils.MSG_KILLED in tn.read_until(utils.MSG_KILLED)
+        # Whether we started running or shutdown, now we should see it come online
+        assert utils.MSG_RESTART in tn.read_until(utils.MSG_RESTART)
+
+
+def test_restart_proc_bad():
+    assert not restartProc("localhost", 31111)
 
 
 def test_read_config():
