@@ -159,6 +159,9 @@ class ProcServHelper:
             self.toggle_running()
             # Now that nothing is running, we can try to close again.
             self.close_cmd()
+            # Give it a second to catch up
+            # TODO more sophisticated waiting
+            time.sleep(1)
             # Always kill just in case
             self.proc.kill()
             self.proc = None
