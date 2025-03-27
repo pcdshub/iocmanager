@@ -262,7 +262,7 @@ def test_check_telnet_mode_good(
             os_ok = True
         else:
             raise ValueError(f"Invalid parameterized test input state={state}")
-        checkTelnetMode(
+        assert checkTelnetMode(
             "localhost",
             procserv.port,
             onOK=on_ok,
