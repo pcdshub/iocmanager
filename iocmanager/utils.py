@@ -576,8 +576,24 @@ def restartProc(host: str, port: int) -> bool:
     """
     Restarts a procServ's contained process.
 
-    Internally, this is implemented by sending ctrl+X and ctrl+R
+    Internally, this is implemented by sending ctrl+X and ctrl+T
     commands to the procServ port via telnet.
+
+    We first force the procServ into "no restart" mode using
+    as many ctrl+T presses as possible, then we ctrl+X to
+    stop the process if necessary, finally we ctrl+X one final
+    time. Afterwards we ctrl+T back to the initial mode.
+
+    Doing this in oneshot mode is not possible because killing the
+    process will kill the procServ itself.
+
+    Doing this in autorestart mode is not wise because it can take
+    up to 15 seconds for the automatic restart to kick in, so
+    we would need to wait at least that long to verify that
+    everything works. It can also happen quickly in autorestart mode,
+    and this is also problematic because it can restart when we aren't
+    expecting which will cause our "start" command to turn the IOC
+    back off.
 
     Parameters
     ----------
@@ -592,39 +608,43 @@ def restartProc(host: str, port: int) -> bool:
         True if we managed to restart the process successfully.
     """
     print("Restarting IOC on host %s, port %s..." % (host, port))
-    # Can't deal with ONESHOT mode!
-    if not checkTelnetMode(host, port, onOK=True, offOK=True, oneshotOK=False):
-        return
     tn = openTelnet(host, port)
+    if tn is None:
+        print("ERROR: restartProc() telnet to %s port %s failed" % (host, port))
+        return False
     started = False
-    if tn:
+    with tn:
+        # Check initial status
         statd = readLogPortBanner(tn)
+        # Force into no restart mode
+        if not checkTelnetMode(host, port, onOK=False, offOK=True, oneshotOK=False):
+            return False
+        # Manual kill if necessary
         if statd["status"] == STATUS_RUNNING:
-            try:
-                # send ^X to kill child process
-                tn.write(b"\x18")
+            # send ^X to kill child process
+            tn.write(b"\x18")
 
-                # wait for killed message
-                r = tn.read_until(MSG_KILLED, 1)
-                time.sleep(0.25)
-            except Exception:
-                pass  # What do we do now?!?
+            # wait for killed message
+            tn.read_until(MSG_KILLED, 1)
+            time.sleep(0.25)
 
-        if not statd["autorestart"]:
-            # send ^R to restart child process
-            tn.write(b"\x12")
+        # send ^X to start child process
+        tn.write(b"\x18")
 
         # wait for restart message
-        r = tn.read_until(MSG_RESTART, 1)
-        if not r.count(MSG_RESTART):
-            print("ERROR: no restart message... ")
-        else:
+        rsp = tn.read_until(MSG_RESTART, 1)
+        if MSG_RESTART in rsp:
             started = True
+        else:
+            print("ERROR: no restart message... ")
 
-        tn.close()
+    # Finally, force back to original mode
+    if statd["autorestart"]:
+        checkTelnetMode(host, port, onOK=True, offOK=False, oneshotOK=False)
+    elif statd["autooneshot"]:
+        checkTelnetMode(host, port, onOK=False, offOK=False, oneshotOK=True)
     else:
-        print("ERROR: restartProc() telnet to %s port %s failed" % (host, port))
-
+        checkTelnetMode(host, port, onOK=False, offOK=True, oneshotOK=False)
     return started
 
 

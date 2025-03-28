@@ -389,6 +389,18 @@ def test_restart_proc_good(procserv: ProcServHelper, running: bool, autorestart:
             assert utils.MSG_KILLED in tn.read_until(utils.MSG_KILLED)
         # Whether we started running or shutdown, now we should see it come online
         assert utils.MSG_RESTART in tn.read_until(utils.MSG_RESTART)
+    # At the very end we should have come back to our original autorestart setting
+    with Telnet("localhost", procserv.port, 1) as tn:
+        info = readLogPortBanner(tn)
+    if autorestart == "on":
+        assert info["autorestart"]
+        assert not info["autooneshot"]
+    elif autorestart == "off":
+        assert not info["autorestart"]
+        assert not info["autooneshot"]
+    elif autorestart == "oneshot":
+        assert not info["autorestart"]
+        assert info["autooneshot"]
 
 
 def test_restart_proc_bad():
