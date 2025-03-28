@@ -13,3 +13,5 @@ hostname_ui.py
 ioc_ui.py
 
 procserv/build
+
+ioc.log*

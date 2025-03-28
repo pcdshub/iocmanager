@@ -24,6 +24,7 @@ from ..utils import (
     readLogPortBanner,
     restartProc,
     set_env_var_globals,
+    startProc,
     writeConfig,
 )
 from . import CFG_FOLDER
@@ -405,6 +406,37 @@ def test_restart_proc_good(procserv: ProcServHelper, running: bool, autorestart:
 
 def test_restart_proc_bad():
     assert not restartProc("localhost", 31111)
+
+
+def test_start_proc(procmgrd: ProcServHelper):
+    procmgrd.toggle_running()
+    time.sleep(1)
+    fixTelnetShell("localhost", procmgrd.port)
+    time.sleep(1)
+    name = "counter"
+    port = 36420
+    try:
+        startProc(
+            cfg="tst",
+            entry={
+                "host": "localhost",
+                "port": port,
+                "id": name,
+            },
+        )
+        time.sleep(1)
+        # The process should be running and accessible via telnet like any other
+        with Telnet("localhost", port, 1) as tn:
+            info = readLogPortBanner(tn)
+        assert info["status"] == utils.STATUS_RUNNING
+        assert int(info["pid"]) > 0
+        assert info["rid"] == name
+        assert info["autorestart"]
+        assert not info["autooneshot"]
+        assert info["autorestartmode"]
+    finally:
+        # Try to clean up
+        killProc("localhost", port)
 
 
 def test_read_config():

@@ -9,7 +9,7 @@ from typing import Iterator
 
 import pytest
 
-from iocmanager.utils import set_env_var_globals
+from iocmanager.utils import BASEPORT, set_env_var_globals
 
 EPICS_HOST_ARCH = os.getenv("EPICS_HOST_ARCH")
 TESTS_PATH = Path(__file__).parent.resolve()
@@ -35,6 +35,7 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
     if not EPICS_SITE_TOP.endswith("/"):
         EPICS_SITE_TOP += "/"
     monkeypatch.setenv("EPICS_SITE_TOP", EPICS_SITE_TOP)
+    monkeypatch.setenv("SCRIPTROOT", str(TESTS_PATH / "script_root"))
 
     set_env_var_globals()
 
@@ -75,7 +76,8 @@ def procmgrd() -> Iterator[ProcServHelper]:
     proc_name = "procmgrd"
     startup_dir = str(TESTS_PATH)
     command = "./not_procmgrd.sh"
-    port = 36666
+    # The real procmgrd uses BASEPORT, or BASEPORT+2n
+    port = BASEPORT
 
     with ProcServHelper(
         proc_name=proc_name, startup_dir=startup_dir, command=command, port=port
