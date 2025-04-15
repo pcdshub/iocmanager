@@ -3,29 +3,29 @@
 
 # language-specific group(s)
 ## EPICS files
-*.archive @pcdshub/epics-reviewers
-*.autosave @pcdshub/epics-reviewers
-*.cmd @pcdshub/epics-reviewers
-*.db @pcdshub/epics-reviewers
-*.dbd @pcdshub/epics-reviewers
-*.edl @pcdshub/epics-reviewers
-*.ioc @pcdshub/epics-reviewers
-*.proto @pcdshub/epics-reviewers
-*.req @pcdshub/epics-reviewers
-*.sub-arch @pcdshub/epics-reviewers
-*.sub-req @pcdshub/epics-reviewers
-*.substitutions @pcdshub/epics-reviewers
-*.tpl-arch @pcdshub/epics-reviewers
-*.tpl-req @pcdshub/epics-reviewers
-RELEASE_SITE @pcdshub/epics-reviewers
-/configure/RELEASE @pcdshub/epics-reviewers
+*.archive @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.autosave @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.cmd @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.db @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.dbd @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.edl @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.ioc @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.proto @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.req @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.sub-arch @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.sub-req @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.substitutions @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.tpl-arch @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.tpl-req @pcdshub/epics-reviewers @pcdshub/python-reviewers
+RELEASE_SITE @pcdshub/epics-reviewers @pcdshub/python-reviewers
+/configure/RELEASE @pcdshub/epics-reviewers @pcdshub/python-reviewers
 ## PYTHON files
-*.py @pcdshub/python-reviewers
-*.pyi @pcdshub/python-reviewers
-*.pyc @pcdshub/python-reviewers
-*.pyw @pcdshub/python-reviewers
-*.pyx @pcdshub/python-reviewers
-*.pyd @pcdshub/python-reviewers
+*.py @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.pyi @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.pyc @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.pyw @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.pyx @pcdshub/epics-reviewers @pcdshub/python-reviewers
+*.pyd @pcdshub/epics-reviewers @pcdshub/python-reviewers
 
 # github folder holds administrative files
 .github/** @pcdshub/software-admin
