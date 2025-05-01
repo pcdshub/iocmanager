@@ -714,9 +714,9 @@ def startProc(cfg: str, entry: dict[str, str | int], local=False) -> None:
         logger.debug("telnet to procmgr failed", exc_info=True)
         print("ERROR: telnet to procmgr (%s port %d) failed" % (host, ctrlport))
         print(">>> Please start the procServ process on host %s!" % host)
-    else:
-        # telnet succeeded
-
+        return
+    # telnet succeeded
+    with tn:
         # send ^U followed by carriage return to safely reach the prompt
         tn.write(b"\x15\x0d")
 
@@ -733,9 +733,6 @@ def startProc(cfg: str, entry: dict[str, str | int], local=False) -> None:
         if not bytes.count(statd, MSG_PROMPT):
             print("ERR: no prompt at %s port %s" % (host, ctrlport))
 
-        # close telnet connection
-        tn.close()
-
 
 ######################################################################
 #
@@ -744,7 +741,7 @@ def startProc(cfg: str, entry: dict[str, str | int], local=False) -> None:
 
 
 def readConfig(
-    cfg: str, time: float | None = None, silent: bool = False, do_os: bool = False
+    cfg: str, last_mtime: float | None = None, do_os: bool = False
 ) -> tuple[float, list[dict], list[str], list[str]] | None:
     """
     Read the configuration file for a given hutch if newer than time.
@@ -756,21 +753,44 @@ def readConfig(
     ----------
     cfg : str
         A path to a config file or the name of a hutch.
-    time : float
+    last_mtime : float, optional
         The last file modification timestamp.
-    silent : bool
-        If True, suppress print outputs.
     do_os : bool
         If True, scan the .hosts directory to rebuild a host type lookup table.
 
     Returns
     -------
     filetime, configlist, hostlist, varlist: tuple or None
-        - filename: float, last modified time of the config file
+        - filetime: float, last modified time of the config file
         - configlist: list of dict, the various ioc configs
         - hostlist: list of str, the hostnames valid for the hutch
         - varlist: list of str, other variables set in the config file
     """
+    # Check if we have a file or a hutch name
+    if os.pathsep in cfg:
+        cfgfn = cfg
+    else:
+        cfgfn = CONFIG_FILE % cfg
+
+    try:
+        mtime = os.stat(cfgfn).st_mtime
+    except Exception as exc:
+        logger.debug("os.stat exception in readConfig", exc_info=True)
+        logger.error(f"readConfig: could not read {cfgfn}: {exc}")
+        return
+    # Skip if no modifications
+    if last_mtime == mtime:
+        return
+
+    try:
+        with open(cfgfn, "rb") as fd:
+            cfgbytes = fd.read()
+    except Exception as exc:
+        logger.debug("readConfig file io exception", exc_info=True)
+        logger.error("readConfig file error: %s" % str(exc))
+        return
+
+    # This dict gets filled by exec based on the cfg file contents
     config = {
         "procmgr_config": None,
         "hosts": None,
@@ -786,52 +806,43 @@ def readConfig(
         "alias": "alias",
         "hard": "hard",
     }
-    vars = set(config.keys())
-    if len(cfg.split("/")) > 1:  # cfg is file path
-        cfgfn = cfg
-    else:  # cfg is name of hutch
-        cfgfn = CONFIG_FILE % cfg
+    stardard_vars_names = set(config)
     try:
-        f = open(cfgfn, "r")
-    except Exception as msg:
-        logger.debug("readConfig file io exception", exc_info=True)
-        if not silent:
-            print("readConfig file error: %s" % str(msg))
-        return None
-
-    try:
-        mtime = os.stat(cfgfn).st_mtime
-        if time == mtime:
-            res = None
-        else:
-            exec(compile(open(cfgfn, "rb").read(), cfgfn, "exec"), {}, config)
-            newvars = set(config.keys()).difference(vars)
-            vdict = {}
-            for v in newvars:
-                vdict[v] = config[v]
-            res = (mtime, config["procmgr_config"], config["hosts"], vdict)
-    except Exception as msg:
+        exec(compile(cfgbytes, cfgfn, "exec"), {}, config)
+        cfg_unique_vars = set(config).difference(stardard_vars_names)
+        vdict = {}
+        for v in cfg_unique_vars:
+            vdict[v] = config[v]
+        res = (mtime, config["procmgr_config"], config["hosts"], vdict)
+    except Exception as exc:
         logger.debug("readConfig parsing exception", exc_info=True)
-        if not silent:
-            print("readConfig error: %s" % str(msg))
-        res = None
-    f.close()
-    if res is None:
-        return None
-    for ioc in res[1]:
-        # Add defaults!
-        if "disable" not in list(ioc.keys()):
-            ioc["disable"] = False
-        if "hard" not in list(ioc.keys()):
-            ioc["hard"] = False
-        if "history" not in list(ioc.keys()):
-            ioc["history"] = []
-        if "alias" not in list(ioc.keys()):
-            ioc["alias"] = ""
+        logger.error("readConfig error: %s" % str(exc))
+        return
+
+    # Add some malformed config checks for better errors
+    # and to help the IDE type checkers
+    procmgr_config = res[1]
+    if not isinstance(procmgr_config, list):
+        logger.error("procmgr_config must be a list of dictionaries!")
+        return
+
+    hosts_list = res[2]
+    if not isinstance(hosts_list, list):
+        logger.error("hosts must be a list of str!")
+        return
+
+    for ioc in procmgr_config:
+        if not isinstance(ioc, dict):
+            logger.error("Each ioc in procmgr_config must be a dict!")
+            return
+        ioc.setdefault("disable", False)
+        ioc.setdefault("hard", False)
+        ioc.setdefault("history", [])
+        ioc.setdefault("alias", "")
         ioc["cfgstat"] = CONFIG_NORMAL
         if ioc["hard"]:
             ioc["base"] = getBaseName(ioc["id"])
-            ioc["dir"] = getHardIOCDir(ioc["id"], silent)
+            ioc["dir"] = getHardIOCDir(ioc["id"])
             ioc["host"] = ioc["id"]
             ioc["port"] = -1
             ioc["rhost"] = ioc["id"]
@@ -846,14 +857,18 @@ def readConfig(
             ioc["rport"] = ioc["port"]
             ioc["newstyle"] = False
             ioc["pdir"] = findParent(ioc["id"], ioc["dir"])
+
+    # hosttype is used to display which OS each host is running
     if do_os:
         global hosttype
         hosttype = {}
-        for fn in config["hosts"]:
+        for fn in hosts_list:
             try:
-                hosttype[fn] = open("%s/%s" % (HOST_DIR, fn)).readlines()[0].strip()
+                with open("%s/%s" % (HOST_DIR, fn)) as fd:
+                    hosttype[fn] = fd.readlines()[0].strip()
             except Exception:
-                pass
+                ...
+
     return res
 
 
@@ -1647,14 +1662,13 @@ def rebootServer(host: str) -> bool:
     return os.system("/reg/common/tools/bin/psipmi %s power cycle" % host) == 0
 
 
-def getHardIOCDir(host: str, silent: bool = False) -> str:
+def getHardIOCDir(host: str) -> str:
     """Return the hard IOC directory for a given hard IOC host."""
     dir = "Unknown"
     try:
         lines = [ln.strip() for ln in open(HIOC_STARTUP % host).readlines()]
     except Exception:
-        if not silent:
-            print("Error while trying to read HIOC startup file for %s!" % host)
+        logger.error("Error while trying to read HIOC startup file for %s!" % host)
         return "Unknown"
     for ln in lines:
         if ln[:5] == "chdir":
