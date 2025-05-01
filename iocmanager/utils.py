@@ -767,7 +767,7 @@ def readConfig(
         - varlist: list of str, other variables set in the config file
     """
     # Check if we have a file or a hutch name
-    if os.pathsep in cfg:
+    if os.sep in cfg:
         cfgfn = cfg
     else:
         cfgfn = CONFIG_FILE % cfg
