@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -27,7 +28,10 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
         monkeypatch.setenv("PROCSERV_EXE", str(get_procserv_bin_path()))
     except RuntimeError:
         monkeypatch.delenv("PROCSERV_EXE")
-    monkeypatch.setenv("PYPS_ROOT", str(tmp_path))
+    local_pyps_root = TESTS_PATH / "pyps_root"
+    temp_pyps_root = tmp_path / "pyps_root"
+    shutil.copytree(local_pyps_root, temp_pyps_root)
+    monkeypatch.setenv("PYPS_ROOT", str(temp_pyps_root))
     monkeypatch.setenv("IOC_DATA", str(TESTS_PATH / "ioc_data"))
     monkeypatch.setenv("IOC_COMMON", str(tmp_path))
     monkeypatch.setenv("TOOLS_SITE_TOP", str(tmp_path))

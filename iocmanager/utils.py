@@ -1011,7 +1011,25 @@ def readStatusDir(
     ).readlines(),
 ) -> list[dict[str, str | int | bool]]:
     """
-    Read a status directory for a hutch and return the changes.
+    Update a status directory for a hutch and return its information.
+
+    Each hutch has a status directory, nominally at
+    /cds/group/pcds/pyps/config/.status/$hutchname
+
+    This directory contains one file per IOC process, which stores:
+    - PID
+    - hostname
+    - procServ port
+    - path to IOC
+
+    The file stores this info in a single line, for example:
+    14509 ctl-tmo-misc-01 30305 ioc/tmo/pvNotepad/R1.1.5
+
+    This function will open each of these files and do the following:
+    - If the file doesn't have 4 parts, delete the file
+    - If we encounter multiple files with the same host/port combination,
+      delete all but the newest such file.
+    - Collect information about the files that remain and return it all
 
     Parameters
     ----------
@@ -1026,7 +1044,8 @@ def readStatusDir(
     Returns
     -------
     status : list of dict
-        A list of dictionaries containing the updated information.
+        A list of dictionaries containing all information about each
+        IOC from the status dir.
     """
     files = os.listdir(STATUS_DIR % cfg)
     d = {}
