@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -440,7 +441,10 @@ def test_start_proc(procmgrd: ProcServHelper):
 
 
 def test_read_config():
-    _, iocs, hosts, _ = readConfig(str(CFG_FOLDER / "example.cfg"))
+    filename = str(CFG_FOLDER / "example.cfg")
+    ftime, iocs, hosts, extra_vars = readConfig(filename)
+
+    assert ftime == os.stat(filename).st_mtime
 
     assert iocs == [
         {
@@ -483,6 +487,10 @@ def test_read_config():
         "test-server1",
         "test-server2",
     ]
+
+    assert extra_vars == {
+        "COMMITHOST": "localhost",
+    }
 
 
 def test_write_config(tmp_path: Path):
