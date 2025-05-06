@@ -19,6 +19,7 @@ from ..utils import (
     add_spam_level,
     applyConfig,
     check_auth,
+    check_special,
     check_status,
     checkTelnetMode,
     fixdir,
@@ -978,3 +979,16 @@ def test_apply_config_early_fail(monkeypatch: pytest.MonkeyPatch):
 def test_check_auth():
     assert check_auth("user_for_test_check_auth", "pytest")
     assert not check_auth("some_rando", "pytest")
+
+
+def test_check_special_two_variants():
+    # We should get True for the two versions we have but not for others
+    assert check_special("has_two_variants", "pytest", "ioc/pytest/normal")
+    assert check_special("has_two_variants", "pytest", "ioc/pytest/other")
+    assert not check_special("has_two_variants", "pytest", "what_the_heck")
+
+
+def test_check_special_just_name():
+    # With just a name and no variants, we should get true with no version arg
+    assert check_special("just_a_name", "pytest")
+    assert not check_special("any_other_name", "pytest")
