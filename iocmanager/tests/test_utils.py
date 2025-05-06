@@ -907,7 +907,7 @@ def test_apply_config(
 
         new_start_args = []
         for args in start_args:
-            if args[1]["id"] == "ioc":
+            if args[0] == f"ctl-pytest-{ioc}":
                 new_start_args.append(args)
             else:
                 not_start_args.append(args)
