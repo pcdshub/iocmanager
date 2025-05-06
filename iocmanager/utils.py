@@ -1049,11 +1049,8 @@ def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
         try:
             pid, host, port, directory = lines[0].strip().split()
         except Exception:
-            try:
-                os.remove(full_path)
-            except Exception:
-                logger.debug("Delete file error", exc_info=True)
-                logger.error("Error while trying to delete file %s!" % full_path)
+            # Must be the unpack error, file has corrupt data
+            _lazy_delete_file(full_path)
             continue
         port = int(port)
         key = (host, port)
@@ -1066,11 +1063,7 @@ def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
                     info[key]["rid"],
                     filename,
                 )
-                try:
-                    os.remove((STATUS_DIR % cfg) + "/" + info[key]["rid"])
-                except Exception:
-                    logger.debug("Delete file error", exc_info=True)
-                    logger.error("Error while trying to delete file %s!" % full_path)
+                _lazy_delete_file((STATUS_DIR % cfg) + "/" + info[key]["rid"])
                 new_entry = True
             else:
                 # Duplicate, but older, so delete this!
@@ -1079,11 +1072,7 @@ def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
                     filename,
                     info[key]["rid"],
                 )
-                try:
-                    os.remove(full_path)
-                except Exception:
-                    logger.debug("Delete file error", exc_info=True)
-                    logger.error("Error while trying to delete file %s!" % full_path)
+                _lazy_delete_file(full_path)
                 new_entry = False
         else:
             new_entry = True
@@ -1101,6 +1090,19 @@ def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
             }
 
     return list(info.values())
+
+
+def _lazy_delete_file(filename: str):
+    """
+    Try to delete the file, but give up easily in case of errors.
+
+    Usually a filesystem permissions thing, no need to crash the GUI for this.
+    """
+    try:
+        os.remove(filename)
+    except Exception:
+        logger.debug("Delete file error", exc_info=True)
+        logger.error("Error while trying to delete file %s!" % filename)
 
 
 #
