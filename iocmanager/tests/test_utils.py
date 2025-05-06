@@ -6,8 +6,10 @@ import os
 import shutil
 import subprocess
 import time
+from itertools import product
 from pathlib import Path
 from telnetlib import Telnet
+from unittest.mock import Mock
 
 import pytest
 
@@ -15,6 +17,7 @@ from .. import utils
 from ..utils import (
     SPAM_LEVEL,
     add_spam_level,
+    applyConfig,
     check_status,
     checkTelnetMode,
     fixdir,
@@ -604,3 +607,352 @@ def test_read_status_dir():
     assert new_counter_path.is_file()
     assert new_shouter_path.is_file()
     assert empty_file_path.is_file()
+
+
+vopts = ("allow", "deny", "skip", "one_ioc")
+bopts = (True, False)
+
+
+@pytest.mark.parametrize(
+    "do_verify,do_kill,do_start,do_restart", list(product(vopts, bopts, bopts, bopts))
+)
+def test_apply_config(
+    monkeypatch: pytest.MonkeyPatch,
+    do_verify: str,
+    do_kill: bool,
+    do_start: bool,
+    do_restart: bool,
+):
+    if do_verify not in vopts:
+        raise ValueError(f"Invalid do_verify {do_verify} from programmers.")
+    # This function does a lot of things
+    # We'll make heavy use of monkeypatch and mock here to see what args
+    # killProc, startProc, and restartProc are called with.
+    CFG = "pytest"
+
+    mock = Mock()
+    monkeypatch.setattr(utils, "killProc", mock.killProc)
+    monkeypatch.setattr(utils, "startProc", mock.startProc)
+    monkeypatch.setattr(utils, "restartProc", mock.restartProc)
+
+    # We'll monkeypatch readConfig, readStatusDir, check_status too
+    # We don't want to mess around with real processes in this test
+    read_config_list = []
+    read_config_result = (0, read_config_list, [], {})
+    read_status_dir_result = []
+
+    def fake_read_config(*args, **kwargs):
+        return read_config_result
+
+    def fake_read_status_dir(*args, **kwargs):
+        return read_status_dir_result
+
+    def fake_check_status(host: str, port: int, id: str):
+        # Simplify: presume status dir is correct, all hosts up
+        status = utils.STATUS_SHUTDOWN
+        for res in read_status_dir_result:
+            if (res["rhost"], res["rport"]) == (host, port):
+                status = utils.STATUS_RUNNING
+                break
+        return {
+            "status": status,
+            "rid": id,
+            "pid": "-",
+            "autorestart": True,
+            "autorestartmode": False,
+            "rdir": "/tmp",
+        }
+
+    monkeypatch.setattr(utils, "readConfig", fake_read_config)
+    monkeypatch.setattr(utils, "readStatusDir", fake_read_status_dir)
+    monkeypatch.setattr(utils, "check_status", fake_check_status)
+
+    # Change our verify approach based on the input arg
+    if do_verify == "allow":
+
+        def verify(current, config, kill_list, start_list, restart_list):
+            return (kill_list, start_list, restart_list)
+    elif do_verify == "deny":
+
+        def verify(current, config, kill_list, start_list, restart_list):
+            return ([], [], [])
+    else:
+        verify = None
+
+    def basic_fake_config(
+        name: str,
+        host: str | None = None,
+        port: int | None = None,
+        disable: bool = False,
+        directory: str | None = None,
+    ):
+        config = {
+            "id": name,
+            "dir": directory or f"ioc/pytest/{name}",
+            "host": host or f"ctl-pytest-{name}",
+            "port": port or 20000,
+            "disable": disable,
+            "hard": False,
+            "history": [],
+            "alias": "",
+            "newstyle": False,
+            "pdir": f"ioc/common/{name}",
+        }
+        config["rid"] = config["id"]
+        config["rdir"] = config["dir"]
+        config["rhost"] = config["host"]
+        config["rport"] = config["port"]
+        return config
+
+    def basic_fake_status(
+        name: str,
+        host: str | None = None,
+        port: int | None = None,
+        directory: str | None = None,
+    ):
+        return {
+            "rid": name,
+            "pid": "10000",
+            "rhost": host or f"ctl-pytest-{name}",
+            "rport": port or 20000,
+            "rdir": directory or f"ioc/pytest/{name}",
+            "newstyle": True,
+            "mtime": 0,
+            "hard": False,
+        }
+
+    # killProc(host, port)
+    kill_args = []
+    not_kill_args = []
+    # startProc(cfg, {"host": host, "port": port, others})
+    # but we'll just do (host, port) and deal with it later
+    start_args = []
+    not_start_args = []
+    # restartProc(host, port)
+    restart_args = []
+    not_restart_args = []
+
+    # Set up IOCs that we expect to kill
+    kill_1_args = ("ctl-pytest-kill_1", 20000)
+    if do_kill:
+        # Disabled, do kill
+        read_config_list.append(
+            basic_fake_config(
+                name="kill_1",
+                disable=True,
+            )
+        )
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="kill_1",
+            )
+        )
+        kill_args.append(kill_1_args)
+    else:
+        # Enabled, don't kill
+        read_config_list.append(
+            basic_fake_config(
+                name="kill_1",
+            )
+        )
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="kill_1",
+            )
+        )
+        not_kill_args.append(kill_1_args)
+
+    # Set up IOCs that we expect to kill and then start somewhere else
+    kill_2_args = ("kill_2_old_server", 20000)
+    kill_3_args = ("ctl-pytest-kill_3", 20000)
+    start_2_args = ("kill_2_new_server", 20000)
+    start_3_args = ("ctl-pytest-kill_3", 10000)
+    if do_kill and do_start:
+        # New host, kill and start
+        read_config_list.append(
+            basic_fake_config(
+                name="kill_2",
+                host="kill_2_new_server",
+            )
+        )
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="kill_2",
+                host="kill_2_old_server",
+            )
+        )
+        kill_args.append(kill_2_args)
+        start_args.append(start_2_args)
+        # New port, kill and start
+        read_config_list.append(
+            basic_fake_config(
+                name="kill_3",
+                port=10000,
+            )
+        )
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="kill_3",
+                port=20000,
+            )
+        )
+        kill_args.append(kill_3_args)
+        start_args.append(start_3_args)
+    else:
+        # Same host, same port, don't kill
+        read_config_list.append(
+            basic_fake_config(
+                name="kill_2",
+            )
+        )
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="kill_2",
+            )
+        )
+        not_kill_args.append(kill_2_args)
+        not_start_args.append(start_2_args)
+        read_config_list.append(
+            basic_fake_config(
+                name="kill_3",
+            )
+        )
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="kill_3",
+            )
+        )
+        not_kill_args.append(kill_3_args)
+        not_start_args.append(start_3_args)
+
+    # Set up IOCs that we expect to start
+    start_1_args = ("ctl-pytest-start_1", 20000)
+    if do_start:
+        # New or newly enabled IOC
+        read_config_list.append(
+            basic_fake_config(
+                name="start_1",
+            )
+        )
+        start_args.append(start_1_args)
+    else:
+        not_start_args.append(start_1_args)
+
+    # Set up IOCs that we expect to restart
+    restart_1_args = ("ctl-pytest-restart_1", 20000)
+    if do_restart:
+        # New version, do restart
+        read_config_list.append(
+            basic_fake_config(name="restart_1", directory="ioc/new/version")
+        )
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="restart_1",
+                directory="ioc/old/version",
+            )
+        )
+        restart_args.append(restart_1_args)
+    else:
+        # Same version, no need to restart
+        read_config_list.append(
+            basic_fake_config(
+                name="restart_1",
+            )
+        )
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="restart_1",
+            )
+        )
+        not_restart_args.append(restart_1_args)
+
+    # Always include a hard ioc, it should be ignored
+    hioc_cfg = basic_fake_config("hioc-pytest")
+    hioc_cfg["hard"] = True
+    read_config_list.append(hioc_cfg)
+    not_start_args.append((hioc_cfg["host"], hioc_cfg["port"]))
+    not_kill_args.append((hioc_cfg["host"], hioc_cfg["port"]))
+    not_restart_args.append((hioc_cfg["host"], hioc_cfg["port"]))
+
+    # In one_ioc mode, we'll test the ioc argument.
+    # Pick the first IOC in the chain that we expect to take action on.
+    if do_verify == "one_ioc":
+        if do_kill:
+            ioc = "kill_1"
+        elif do_start:
+            ioc = "start_1"
+        elif do_restart:
+            ioc = "restart_1"
+        else:
+            ioc = "misc"
+    else:
+        ioc = None
+
+    if ioc is not None:
+        # Move everything into the not lists except for our one IOC
+        new_kill_args = []
+        for args in kill_args:
+            if args[0] == f"ctl-pytest-{ioc}":
+                new_kill_args.append(args)
+            else:
+                not_kill_args.append(args)
+        kill_args = new_kill_args
+
+        new_start_args = []
+        for args in start_args:
+            if args[1]["id"] == "ioc":
+                new_start_args.append(args)
+            else:
+                not_start_args.append(args)
+        start_args = new_start_args
+
+        new_restart_args = []
+        for args in restart_args:
+            if args[0] == f"ctl-pytest-{ioc}":
+                new_restart_args.append(args)
+            else:
+                not_restart_args.append(args)
+        restart_args = new_restart_args
+
+    # The situation is set up. Let's run the function.
+    applyConfig(CFG, verify=verify, ioc=ioc)
+
+    # Verify which things were killed vs not killed
+    for args in kill_args:
+        mock.killProc.assert_any_call(*args)
+    for args in not_kill_args:
+        for this_arg_call in mock.killProc.call_args_list:
+            assert args != this_arg_call
+    assert mock.killProc.call_count == len(kill_args)
+
+    for args in restart_args:
+        mock.restartProc.assert_any_call(*args)
+    for args in not_restart_args:
+        for this_arg_call in mock.restartProc.call_args_list:
+            assert args != this_arg_call
+    assert mock.restartProc.call_count == len(restart_args)
+
+    # Slightly different for startProc, it's expecting a dict
+    # Our args are (host, port)
+    # Real args are (cfg, {"host": host, "port": port, **kw})
+    for args in start_args:
+        found_match = False
+        for sp_call in mock.startProc.call_args_list:
+            if (
+                args[0] == sp_call.args[1]["host"]
+                and args[1] == sp_call.args[1]["port"]
+            ):
+                found_match = True
+                break
+        assert found_match
+    for args in not_start_args:
+        found_match = False
+        for sp_call in mock.startProc.call_args_list:
+            if (
+                args[0] == sp_call.args[1]["host"]
+                and args[1] == sp_call.args[1]["port"]
+            ):
+                found_match = True
+                break
+        assert not found_match
+    assert mock.startProc.call_count == len(start_args)

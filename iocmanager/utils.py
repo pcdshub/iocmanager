@@ -742,7 +742,7 @@ def startProc(cfg: str, entry: dict[str, str | int], local=False) -> None:
 
 def readConfig(
     cfg: str, last_mtime: float | None = None, do_os: bool = False
-) -> tuple[float, list[dict], list[str], list[str]] | None:
+) -> tuple[float, list[dict], list[str], dict[str, typing.Any]] | None:
     """
     Read the configuration file for a given hutch if newer than time.
 
@@ -764,7 +764,7 @@ def readConfig(
         - filetime: float, last modified time of the config file
         - configlist: list of dict, the various ioc configs
         - hostlist: list of str, the hostnames valid for the hutch
-        - varlist: list of str, other variables set in the config file
+        - vardict: dict with str keys, other variables set in the config file
     """
     # Check if we have a file or a hutch name
     if os.sep in cfg:
@@ -1116,18 +1116,24 @@ def applyConfig(
     ]
     | None = None,
     ioc: str | None = None,
-) -> typing.Literal[0]:
+) -> int:
     """
     Starts, restarts, and kills IOCs to match the saved configuration.
 
     If a verify function is provided, it will be called first to let the
     user confirm that they want to take all of these actions.
 
+    Note:
+    - This relies on the status directory being populated
+      correctly, which is handled by startProc.
+    - This may implicitly modify/clean up the status directory via
+      calling readStatusDir
+
     Parameters
     ----------
     cfg : str
         The name of the hutch, or a full filepath to the config file.
-    verify : callable
+    verify : callable, optional
         An optionally provided function that expects to recieve the following.
         - current: dict of current state (pre-apply)
         - config: dict of desired state (post-apply)
@@ -1136,14 +1142,14 @@ def applyConfig(
         - restart_list: list[str] of ioc names that should be restarted
         The function must return a tuple of its own kill_list, start_list, and
         restart_list, which should be subset of or equal to the input lists.
-    ioc : str
+    ioc : str, optional
         The name of a single IOC to apply to, if provided.
         If not provided, we'll apply the entire configuration.
 
     Returns
     -------
-    zero : int
-        Literally the number 0, every time. (???)
+    return_code : int
+        Zero if completed successfully.
     """
     result = readConfig(cfg)
     if result is None:
