@@ -18,6 +18,7 @@ from ..utils import (
     SPAM_LEVEL,
     add_spam_level,
     applyConfig,
+    check_auth,
     check_status,
     checkTelnetMode,
     fixdir,
@@ -972,3 +973,8 @@ def test_apply_config_early_fail(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(utils, "readConfig", fake_read_config)
 
     assert applyConfig("pytest", ioc="notarealiocpleasedontpbreakproc") != 0
+
+
+def test_check_auth():
+    assert check_auth("user_for_test_check_auth", "pytest")
+    assert not check_auth("some_rando", "pytest")
