@@ -874,9 +874,18 @@ def test_apply_config(
     not_kill_args.append((hioc_cfg["host"], hioc_cfg["port"]))
     not_restart_args.append((hioc_cfg["host"], hioc_cfg["port"]))
 
-    # In one_ioc mode, we'll test the ioc argument.
-    # Pick the first IOC in the chain that we expect to take action on.
-    if do_verify == "one_ioc":
+    ioc = None
+    if do_verify == "deny":
+        # If the user denies action, we should take no actions!
+        not_kill_args.extend(kill_args)
+        kill_args.clear()
+        not_start_args.extend(start_args)
+        start_args.clear()
+        not_restart_args.extend(restart_args)
+        restart_args.clear()
+    elif do_verify == "one_ioc":
+        # In one_ioc mode, we'll test the ioc argument.
+        # Pick the first IOC in the chain that we expect to take action on.
         if do_kill:
             ioc = "kill_1"
         elif do_start:
@@ -885,8 +894,6 @@ def test_apply_config(
             ioc = "restart_1"
         else:
             ioc = "misc"
-    else:
-        ioc = None
 
     if ioc is not None:
         # Move everything into the not lists except for our one IOC
