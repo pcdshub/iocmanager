@@ -581,12 +581,17 @@ def test_read_status_dir():
     new_shouter_info["rid"] = new_shouter_path.name
     new_shouter_info["mtime"] = os.stat(new_shouter_path).st_mtime
 
-    # Make a bad file, it should be deleted and no info returned
+    # Make some bad files, it should be deleted and no info returned
     bad_file_path = status_dir / "not-an-ioc"
     with open(bad_file_path, "w") as fd:
         fd.write("12345 PIZZA SODA")
 
     assert bad_file_path.is_file()
+
+    # Empty files are ignored and not deleted, for whatever reason
+    empty_file_path = status_dir / "empty"
+    empty_file_path.touch()
+    assert empty_file_path.is_file()
 
     # Run again: should have new info, the old and bad files should be gone
     iocs2 = readStatusDir("pytest")
@@ -598,3 +603,4 @@ def test_read_status_dir():
     assert not bad_file_path.exists()
     assert new_counter_path.is_file()
     assert new_shouter_path.is_file()
+    assert empty_file_path.is_file()
