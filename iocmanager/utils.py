@@ -1349,7 +1349,8 @@ def check_auth(user: str, hutch: str) -> bool:
     auth_ok : bool
         True if the user is authorized, False otherwise.
     """
-    lines = open(AUTH_FILE % hutch).readlines()
+    with open(AUTH_FILE % hutch) as fd:
+        lines = fd.readlines()
     lines = [ln.strip() for ln in lines]
     for ln in lines:
         if ln == user:
