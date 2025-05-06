@@ -442,9 +442,16 @@ def test_start_proc(procmgrd: ProcServHelper):
         killProc("localhost", port)
 
 
-def test_read_config():
-    filename = str(CFG_FOLDER / "example.cfg")
-    ftime, iocs, hosts, extra_vars = readConfig(filename)
+@pytest.mark.parametrize(
+    "cfg", (str(CFG_FOLDER / "pytest" / "iocmanager.cfg"), "pytest")
+)
+def test_read_config(cfg: str):
+    ftime, iocs, hosts, extra_vars = readConfig(cfg)
+
+    if Path(cfg).is_file():
+        filename = cfg
+    else:
+        filename = str(CFG_FOLDER / cfg / "iocmanager.cfg")
 
     assert ftime == os.stat(filename).st_mtime
 
@@ -497,14 +504,14 @@ def test_read_config():
 
 def test_write_config(tmp_path: Path):
     # Just write back our example config, it should be the same
-    _, iocs, hosts, vars = readConfig(str(CFG_FOLDER / "example.cfg"))
-    with open(tmp_path / "example.cfg", "w") as fd:
+    _, iocs, hosts, vars = readConfig("pytest")
+    with open(tmp_path / "iocmanager.cfg", "w") as fd:
         writeConfig(hutch="unit_test", hostlist=hosts, cfglist=iocs, vars=vars, f=fd)
 
-    with open(CFG_FOLDER / "example.cfg", "r") as fd:
+    with open(CFG_FOLDER / "pytest" / "iocmanager.cfg", "r") as fd:
         expected = fd.readlines()
 
-    with open(tmp_path / "example.cfg", "r") as fd:
+    with open(tmp_path / "iocmanager.cfg", "r") as fd:
         actual = fd.readlines()
 
     assert actual == expected
