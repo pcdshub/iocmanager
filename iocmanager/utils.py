@@ -1475,7 +1475,8 @@ def readAll(fn: str) -> list[str]:
     if fn[0] != "/":
         fn = EPICS_SITE_TOP + fn
     try:
-        return open(fn).readlines()
+        with open(fn, "r") as fd:
+            return fd.readlines()
     except Exception:
         return []
 
