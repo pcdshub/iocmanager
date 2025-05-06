@@ -1004,12 +1004,7 @@ def installConfig(hutch: str, file: str, fd: None = None) -> None:
     os.rename(file, CONFIG_FILE % hutch)
 
 
-def readStatusDir(
-    cfg: str,
-    readfile: typing.Callable[[str, str], list[str]] = lambda fn, f: open(
-        fn
-    ).readlines(),
-) -> list[dict[str, str | int | bool]]:
+def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
     """
     Update a status directory for a hutch and return its information.
 
@@ -1035,11 +1030,6 @@ def readStatusDir(
     ----------
     cfg : str
         The hutch name associated with the config, such as xpp or tmo.
-    readfile : callable[[str, str], None] -> list[str]
-        An optional callable that expects two positional str arguments,
-        The full path to the status file and the name of the status file.
-        It is expected to return the contents of the file as a list
-        of str, one line per str.
 
     Returns
     -------
@@ -1050,10 +1040,12 @@ def readStatusDir(
     info = {}
     for filename in os.listdir(STATUS_DIR % cfg):
         full_path = (STATUS_DIR % cfg) + "/" + filename
-        mtime = os.stat(full_path).st_mtime
-        lines = readfile(full_path, filename)
+        with open(full_path, "r") as fd:
+            lines = fd.readlines()
         if not lines:
             continue
+        # Must be after we open the file to ensure up-to-date on NFS
+        mtime = os.stat(full_path).st_mtime
         try:
             pid, host, port, directory = lines[0].strip().split()
         except Exception:

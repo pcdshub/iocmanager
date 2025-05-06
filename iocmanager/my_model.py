@@ -69,7 +69,7 @@ class StatusPoll(threading.Thread):
                     self.rmtime = {}  # Force a re-read!
                     self.model.configuration(cfglist, hosts, vdict)
 
-                result = utils.readStatusDir(self.hutch, self.readStatusFile)
+                result = utils.readStatusDir(self.hutch)
                 for line in result:
                     futures.append(executor.submit(self.check_one_file_status, line))
 
@@ -84,22 +84,6 @@ class StatusPoll(threading.Thread):
                 duration = time.monotonic() - start_time
                 if duration < self.interval:
                     time.sleep(self.interval + 1 - duration)
-
-    def readStatusFile(self, fn, ioc):
-        try:
-            # NFS weirdness.  If we don't open it, file status doesn't update!
-            f = open(fn)
-            mtime = os.stat(fn).st_mtime
-            if ioc not in list(self.rmtime.keys()) or mtime > self.rmtime[ioc]:
-                lines = f.readlines()
-                if lines != []:
-                    self.rmtime[ioc] = mtime
-                return lines
-            else:
-                return []
-        except Exception:
-            logger.debug("Error reading status file", exc_info=True)
-            return []
 
     def check_one_file_status(self, line):
         rdir = line["rdir"]
