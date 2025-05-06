@@ -1047,73 +1047,68 @@ def readStatusDir(
         A list of dictionaries containing all information about each
         IOC from the status dir.
     """
-    files = os.listdir(STATUS_DIR % cfg)
-    d = {}
-    for f in files:
-        fn = (STATUS_DIR % cfg) + "/" + f
-        mtime = os.stat(fn).st_mtime
-        lines = readfile(fn, f)
-        if lines != []:
-            stat = lines[0].strip().split()  # PID HOST PORT DIRECTORY
-            if len(stat) == 4:
+    info = {}
+    for filename in os.listdir(STATUS_DIR % cfg):
+        full_path = (STATUS_DIR % cfg) + "/" + filename
+        mtime = os.stat(full_path).st_mtime
+        lines = readfile(full_path, filename)
+        if not lines:
+            continue
+        try:
+            pid, host, port, directory = lines[0].strip().split()
+        except Exception:
+            try:
+                os.remove(full_path)
+            except Exception:
+                logger.debug("Delete file error", exc_info=True)
+                logger.error("Error while trying to delete file %s!" % full_path)
+            continue
+        port = int(port)
+        key = (host, port)
+        if key in info:
+            # Duplicate
+            if info[key]["mtime"] < mtime:
+                # Duplicate, but newer, so delete other!
+                logger.info(
+                    "Deleting obsolete %s in favor of %s",
+                    info[key]["rid"],
+                    filename,
+                )
                 try:
-                    if d[(stat[1], int(stat[2]))]["mtime"] < mtime:
-                        # Duplicate, but newer, so replace!
-                        try:
-                            print(
-                                "Deleting obsolete %s in favor of %s"
-                                % (d[(stat[1], int(stat[2]))]["rid"], f)
-                            )
-                            os.unlink(
-                                (STATUS_DIR % cfg)
-                                + "/"
-                                + d[(stat[1], int(stat[2]))]["rid"]
-                            )
-                        except Exception:
-                            print(
-                                "Error while trying to delete file %s"
-                                % (STATUS_DIR % cfg)
-                                + "/"
-                                + d[(stat[1], int(stat[2]))]["rid"]
-                                + "!"
-                            )
-                        # Leave this here to make sure file is updated.
-                        raise Exception("Need to update cfg file.")
-                    else:
-                        # Duplicate, but older, so ignore!
-                        try:
-                            print(
-                                "Deleting obsolete %s in favor of %s"
-                                % (f, d[(stat[1], int(stat[2]))]["rid"])
-                            )
-                            os.unlink(fn)
-                        except Exception:
-                            logger.debug("Delete file error", exc_info=True)
-                            print("Error while trying to delete file %s!" % fn)
-                except Exception:
-                    try:
-                        d[(stat[1], int(stat[2]))] = {
-                            "rid": f,
-                            "pid": stat[0],
-                            "rhost": stat[1],
-                            "rport": int(stat[2]),
-                            "rdir": stat[3],
-                            "newstyle": True,
-                            "mtime": mtime,
-                            "hard": False,
-                        }
-                    except Exception:
-                        logger.debug("Status dir failure", exc_info=True)
-                        print("Status dir failure!")
-                        print(f)
-                        print(stat)
-            else:
-                try:
-                    os.unlink(fn)
+                    os.remove((STATUS_DIR % cfg) + "/" + info[key]["rid"])
                 except Exception:
                     logger.debug("Delete file error", exc_info=True)
-                    print("Error while trying to delete file %s!" % fn)
-    return list(d.values())
+                    logger.error("Error while trying to delete file %s!" % full_path)
+                new_entry = True
+            else:
+                # Duplicate, but older, so delete this!
+                logger.info(
+                    "Deleting obsolete %s in favor of %s",
+                    filename,
+                    info[key]["rid"],
+                )
+                try:
+                    os.remove(full_path)
+                except Exception:
+                    logger.debug("Delete file error", exc_info=True)
+                    logger.error("Error while trying to delete file %s!" % full_path)
+                new_entry = False
+        else:
+            new_entry = True
+
+        if new_entry:
+            info[key] = {
+                "rid": filename,
+                "pid": pid,
+                "rhost": host,
+                "rport": port,
+                "rdir": directory,
+                "newstyle": True,
+                "mtime": mtime,
+                "hard": False,
+            }
+
+    return list(info.values())
 
 
 #
