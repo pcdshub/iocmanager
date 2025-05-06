@@ -20,6 +20,7 @@ from ..utils import (
     applyConfig,
     check_auth,
     check_special,
+    check_ssh,
     check_status,
     checkTelnetMode,
     fixdir,
@@ -992,3 +993,8 @@ def test_check_special_just_name():
     # With just a name and no variants, we should get true with no version arg
     assert check_special("just_a_name", "pytest")
     assert not check_special("any_other_name", "pytest")
+
+
+def test_check_ssh():
+    assert check_ssh("most_users", "pytest")
+    assert not check_ssh("tstopr", "pytest")
