@@ -922,7 +922,7 @@ def test_apply_config(
         restart_args = new_restart_args
 
     # The situation is set up. Let's run the function.
-    applyConfig(CFG, verify=verify, ioc=ioc)
+    assert applyConfig(CFG, verify=verify, ioc=ioc) == 0
 
     # Verify which things were killed vs not killed
     for args in kill_args:
@@ -963,3 +963,12 @@ def test_apply_config(
                 break
         assert not found_match
     assert mock.startProc.call_count == len(start_args)
+
+
+def test_apply_config_early_fail(monkeypatch: pytest.MonkeyPatch):
+    def fake_read_config(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(utils, "readConfig", fake_read_config)
+
+    assert applyConfig("pytest", ioc="notarealiocpleasedontpbreakproc") != 0
