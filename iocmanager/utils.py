@@ -1666,10 +1666,7 @@ def netconfig(host: str) -> dict[str, str]:
         or an empty dict if there was no information.
     """
     try:
-        env = copy.deepcopy(os.environ)
-        del env["LD_LIBRARY_PATH"]
-        p = subprocess.Popen([NETCONFIG, "view", host], env=env, stdout=subprocess.PIPE)
-        r = [line.strip().split(": ") for line in p.communicate()[0].split("\n")]
+        r = [line.strip().split(": ") for line in _netconfig(host).split("\n")]
         d = {}
         for line in r:
             if len(line) == 2:
@@ -1677,6 +1674,31 @@ def netconfig(host: str) -> dict[str, str]:
         return d
     except Exception:
         return {}
+
+
+def _netconfig(host: str) -> str:
+    """
+    Part of the netconfig helper that shells out to netconfig.
+
+    Keep this separate to test netconfig helper logic without ldap.
+
+    Parameters
+    ----------
+    host : str
+        The hostname
+
+    Returns
+    -------
+    text : str
+        The raw text output from netconfig.
+    """
+    env = copy.deepcopy(os.environ)
+    del env["LD_LIBRARY_PATH"]
+    return subprocess.check_output(
+        [NETCONFIG, "view", host],
+        env=env,
+        universal_newlines=True,
+    )
 
 
 def rebootServer(host: str) -> bool:

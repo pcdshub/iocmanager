@@ -29,6 +29,7 @@ from ..utils import (
     fixTelnetShell,
     getBaseName,
     killProc,
+    netconfig,
     openTelnet,
     readAll,
     readConfig,
@@ -1080,3 +1081,30 @@ def test_find_iocs():
     search2 = find_iocs(host="test-server1")
     assert len(search2) == 1
     assert search2[0][1]["id"] == "ioc-shouter"
+
+
+_example_netconfig_text = """
+        name: ctl-lfe-cam-01
+        subnet: cds-lfe.pcdsn
+        aliases: ctl-lfe-cam-01
+        Ethernet Address: b4:2e:99:af:fd:32
+        IP: 172.21.88.71
+        PC#: 98096
+        Location: B940 (Alcove) R01 E37
+        Contact: uid=omarq,ou=People,dc=reg,o=slac
+        Description: Ciara AMD7282
+        DHCP parameters:
+                filename "pxe/uefi/shim.efi";
+        Puppet Classes:
+"""
+
+
+def test_netconfig_text_processing(monkeypatch: pytest.MonkeyPatch):
+    def fake_netconfig(host: str):
+        return _example_netconfig_text
+
+    monkeypatch.setattr(utils, "_netconfig", fake_netconfig)
+    info = netconfig("ctl-lfe-cam-01")
+    assert info["name"] == "ctl-lfe-cam-01"
+    assert info["subnet"] == "cds-lfe.pcdsn"
+    assert info["pc#"] == "98096"
