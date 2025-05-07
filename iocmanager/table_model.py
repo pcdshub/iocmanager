@@ -1,3 +1,12 @@
+"""
+The table_model module defines a data model for the main GUI table.
+
+This implements a QAbstractTableModel which manages reading and writing data
+for the central QTableView in the main GUI.
+
+See https://doc.qt.io/qt-5/qabstracttablemodel.html#details
+"""
+
 import concurrent.futures
 import logging
 import os
@@ -153,7 +162,7 @@ class commitdialog(QDialog):
         self.ui.buttonBox.button(QDialogButtonBox.Cancel).clicked.connect(self.doCancel)
 
 
-class MyModel(QAbstractTableModel):
+class TableModel(QAbstractTableModel):
     def __init__(self, hutch, parent=None):
         QAbstractTableModel.__init__(self, parent)
         self.myuid = "%s.x%d.x%%d" % (pwd.getpwuid(os.getuid())[0], os.getpid())

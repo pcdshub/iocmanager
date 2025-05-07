@@ -1,4 +1,11 @@
 #!/usr/bin/env python
+"""
+The imgr module contains CLI-specific code for the imgr CLI tool.
+
+imgr is a convenience cli script for accessing iocmanager's functions,
+for example listing IOCs or moving them between hosts.
+"""
+
 import argparse
 import os
 import pwd
