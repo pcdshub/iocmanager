@@ -48,10 +48,14 @@ from ..utils import (
     set_env_var_globals,
     startProc,
     validateConfig,
+    validateDir,
     writeConfig,
 )
-from . import CFG_FOLDER, IOC_FOLDER
+from . import CFG_FOLDER, IOC_FOLDER, TESTS_FOLDER
 from .conftest import ProcServHelper
+
+# All options for booleans for parameterizing tests
+bopts = (True, False)
 
 
 def test_env_var_globals(monkeypatch: pytest.MonkeyPatch):
@@ -627,7 +631,6 @@ def test_read_status_dir():
 
 
 vopts = ("allow", "deny", "skip", "one_ioc")
-bopts = (True, False)
 
 
 @pytest.mark.parametrize(
@@ -1271,3 +1274,33 @@ def test_validate_config():
     ]
     assert validateConfig(good_config)
     assert not validateConfig(bad_config)
+
+
+dname_opts = (
+    "iocs/common_ioc",
+    "iocs/common_ioc/children",
+    "iocs/common_ioc/children/build",
+    "iocs/common_ioc/children/build/iocBoot/child_ioc",
+)
+
+
+@pytest.mark.parametrize(
+    "dirname,abs_path",
+    list(product(dname_opts, bopts)),
+)
+def test_validate_dir(dirname: str, abs_path: bool):
+    # See tests/iocs, valid dirs have st.cmd
+    # Need to cover every case in utils.stpaths:
+    # "%s/children/build/iocBoot/%s/st.cmd"
+    # "%s/build/iocBoot/%s/st.cmd"
+    # "%s/iocBoot/%s/st.cmd"
+    # Plus directory/st.cmd
+    # Also needs to cover abs paths and relative paths to
+    # EPICS_SITE_TOP (Which is set to the tests folder)
+    if abs_path:
+        dirname = str(TESTS_FOLDER / dirname)
+    assert validateDir(dirname, "child_ioc")
+
+
+def test_validate_dir_neg():
+    assert not validateDir(str(TESTS_FOLDER), "child_ioc")
