@@ -29,6 +29,7 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
         monkeypatch.setenv("PROCSERV_EXE", str(get_procserv_bin_path()))
     except RuntimeError:
         monkeypatch.delenv("PROCSERV_EXE")
+    # PYPS_ROOT must be on temp path because we write to it as part of the test
     local_pyps_root = TESTS_PATH / "pyps_root"
     temp_pyps_root = tmp_path / "pyps_root"
     shutil.copytree(local_pyps_root, temp_pyps_root)
