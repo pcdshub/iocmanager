@@ -23,6 +23,7 @@ from ..utils import (
     check_ssh,
     check_status,
     checkTelnetMode,
+    findParent,
     fixdir,
     fixTelnetShell,
     getBaseName,
@@ -37,7 +38,7 @@ from ..utils import (
     startProc,
     writeConfig,
 )
-from . import CFG_FOLDER
+from . import CFG_FOLDER, IOC_FOLDER
 from .conftest import ProcServHelper
 
 
@@ -1014,3 +1015,50 @@ def test_read_all(tmp_path: Path):
     assert readAll("test_read_all") == my_lines
     assert readAll(str(tmp_path / "test_read_all")) == my_lines
     assert readAll("defo_not_a_path") == []
+
+
+def test_find_parent(monkeypatch: pytest.MonkeyPatch):
+    # NOTE: skip testing $$PATH, which is an unused feature
+
+    # Normal template IOC
+    assert (
+        findParent("hutch_ioc", str(IOC_FOLDER / "templated_ioc"))
+        == "/some/absolute/path"
+    )
+
+    # Typical common/children structure
+    common_path = IOC_FOLDER / "common_ioc"
+    assert findParent("child_ioc", str(common_path)) == str(IOC_FOLDER / "common_ioc")
+
+    # A real file without this pattern
+    name1 = "malformed_ioc"
+    assert (common_path / "children" / f"{name1}.cfg").exists()
+    assert findParent(name1, str(common_path)) == ""
+
+    # Not a real file
+    name2 = "asdfasefef"
+    assert not (common_path / "children" / f"{name2}.cfg").exists()
+    assert findParent(name2, str(common_path)) == ""
+
+    # Set up fake readAll for more specific regex testing
+    release_line = ""
+
+    def fake_read_all(*args, **kwargs):
+        return [release_line + "\n"]
+
+    monkeypatch.setattr(utils, "readAll", fake_read_all)
+
+    # Variants to exercise each regex in the original implementation
+    answer = "/true/parent/path"
+    sp_opts = ("", " ", "\t")
+    rel_ops = ("RELEASE",)
+    eq_opts = ("=", " ")
+    answer_opts = (answer, f'"{answer}"', f"'{answer}'")
+
+    lines = product(sp_opts, rel_ops, sp_opts, eq_opts, sp_opts, answer_opts, sp_opts)
+
+    for trial_parts in lines:
+        release_line = "".join(trial_parts)
+        assert (
+            findParent("some_ioc", "/some/dir") == answer
+        ), f"Issue with {release_line}"
