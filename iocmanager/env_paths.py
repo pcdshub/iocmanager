@@ -83,7 +83,6 @@ def set_env_var_globals():
     TOOLS_SITE_TOP = os.getenv("TOOLS_SITE_TOP", "/cds/sw/tools")
     EPICS_SITE_TOP = os.getenv("EPICS_SITE_TOP", "/cds/group/pcds/epics")
     EPICS_DEV_TOP = os.getenv("EPICS_DEV_TOP", EPICS_SITE_TOP + "-dev")
-    EPICS_SITE_TOP += "/"  # Code somewhere expects the trailing /, TODO clean this up
 
     # Use env vars to build config strings
     CAMRECORDER = CAMRECORD_ROOT

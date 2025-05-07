@@ -147,7 +147,9 @@ def fixdir(dir: str, id: str) -> str:
     # Remove ".."
     part = [pth for pth in dir.split("/") if pth != ".."]
     dir = "/".join(part)
-    dir = dir.removeprefix(env_paths.EPICS_SITE_TOP)
+    trunc = dir.removeprefix(env_paths.EPICS_SITE_TOP)
+    if trunc != dir:
+        dir = trunc.removeprefix("/")
     for pth in stpaths:
         ext = pth % ("", id)
         ext = ext.removesuffix("/st.cmd")
@@ -1266,7 +1268,9 @@ def applyConfig(
     for line in restart_list:
         restartProc(current[line]["rhost"], int(current[line]["rport"]))
 
-    time.sleep(1)
+    # TODO figure out why this sleep was here and decide what to do about it
+    # Remove it for now to make test suite faster
+    # time.sleep(1)
     return 0
 
 
@@ -1422,7 +1426,7 @@ def readAll(fn: str) -> list[str]:
         The contents of the file
     """
     if fn[0] != "/":
-        fn = env_paths.EPICS_SITE_TOP + fn
+        fn = os.path.join(env_paths.EPICS_SITE_TOP, fn)
     try:
         with open(fn, "r") as fd:
             return fd.readlines()
@@ -1444,8 +1448,8 @@ def findParent(ioc: str, dir: str) -> str:
     Returns
     -------
     parent : str
-        The full path to the parent IOC release, or an empty
-        string if one could not be determined.
+        The possibly truncated path to the parent IOC release,
+        or an empty string if one could not be determined.
     """
     fn = dir + "/" + ioc + ".cfg"
     lines = readAll(fn)
@@ -1780,7 +1784,7 @@ def validateDir(dir: str, ioc: str) -> bool:
         True if we found the st.cmd file at one of the standard locations.
     """
     if dir[0] != "/":
-        dir = env_paths.EPICS_SITE_TOP + dir
+        dir = os.path.join(env_paths.EPICS_SITE_TOP, dir)
     for p in stpaths:
         if os.path.exists(p % (dir, ioc)):
             return True

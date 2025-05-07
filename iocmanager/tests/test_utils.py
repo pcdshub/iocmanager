@@ -109,6 +109,9 @@ def test_readLogPortBanner(procserv: ProcServHelper):
         with Telnet("localhost", procserv.port, 1) as tn:
             return readLogPortBanner(tn)
 
+    # readLogPortBanner truncates the running dir
+    startup_dir = str(Path(procserv.startup_dir).relative_to(TESTS_FOLDER))
+
     # Always starts with restart = off and process stopped
     assert get_info() == {
         "status": utils.STATUS_SHUTDOWN,
@@ -117,7 +120,7 @@ def test_readLogPortBanner(procserv: ProcServHelper):
         "autorestart": False,
         "autooneshot": False,
         "autorestartmode": True,
-        "rdir": procserv.startup_dir,
+        "rdir": startup_dir,
     }
 
     # Start the process
@@ -145,7 +148,7 @@ def test_readLogPortBanner(procserv: ProcServHelper):
         assert info["rid"] == procserv.proc_name
         # True if procServ's version is high enough
         assert info["autorestartmode"]
-        assert info["rdir"] == procserv.startup_dir
+        assert info["rdir"] == startup_dir
 
     info = wait_status(utils.STATUS_RUNNING, "Subprocess did not start")
     basic_checks()
@@ -182,6 +185,8 @@ def test_readLogPortBanner(procserv: ProcServHelper):
 def test_check_status_good(procserv: ProcServHelper):
     # Should have a similar result to the readLogPortBanner initial test
     server = "localhost"
+    # check_status truncates the running dir
+    startup_dir = str(Path(procserv.startup_dir).relative_to(TESTS_FOLDER))
     assert check_status(server, procserv.port, procserv.proc_name) == {
         "status": utils.STATUS_SHUTDOWN,
         "pid": "-",
@@ -189,7 +194,7 @@ def test_check_status_good(procserv: ProcServHelper):
         "autorestart": False,
         "autooneshot": False,
         "autorestartmode": True,
-        "rdir": procserv.startup_dir,
+        "rdir": startup_dir,
     }
     # ping's exit code
     assert utils.pdict[server][1] == 0
@@ -1028,7 +1033,9 @@ def test_find_parent(monkeypatch: pytest.MonkeyPatch):
 
     # Typical common/children structure
     common_path = IOC_FOLDER / "common_ioc"
-    assert findParent("child_ioc", str(common_path)) == str(IOC_FOLDER / "common_ioc")
+    assert findParent("child_ioc", str(common_path)) == str(
+        IOC_FOLDER.relative_to(TESTS_FOLDER) / "common_ioc"
+    )
 
     # A real file without this pattern
     name1 = "malformed_ioc"
