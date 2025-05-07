@@ -47,6 +47,7 @@ from ..utils import (
     restartProc,
     set_env_var_globals,
     startProc,
+    validateConfig,
     writeConfig,
 )
 from . import CFG_FOLDER, IOC_FOLDER
@@ -1254,3 +1255,19 @@ def test_get_hutch_list():
         "pytest",
         "second_hutch",
     ]
+
+
+def test_validate_config():
+    # Only checks for port conflicts at time of writing
+    good_config = [
+        {"host": "host1", "port": 10000},
+        {"host": "host1", "port": 20000},
+        {"host": "host2", "port": 20000},
+    ]
+    bad_config = [
+        {"host": "host1", "port": 10000},
+        {"host": "host1", "port": 10000},
+        {"host": "host2", "port": 20000},
+    ]
+    assert validateConfig(good_config)
+    assert not validateConfig(bad_config)
