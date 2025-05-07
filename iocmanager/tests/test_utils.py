@@ -23,6 +23,7 @@ from ..utils import (
     check_ssh,
     check_status,
     checkTelnetMode,
+    find_iocs,
     findParent,
     fixdir,
     fixTelnetShell,
@@ -1062,3 +1063,20 @@ def test_find_parent(monkeypatch: pytest.MonkeyPatch):
         assert (
             findParent("some_ioc", "/some/dir") == answer
         ), f"Issue with {release_line}"
+
+
+# Skip testing the following functions which will be removed:
+# read_until
+# flush_input
+# do_write
+# commit_config (needs to be replaced with fabric version)
+
+
+def test_find_iocs():
+    search1 = find_iocs(id="ioc-counter")
+    assert len(search1) == 1
+    assert search1[0][1]["host"] == "test-server2"
+
+    search2 = find_iocs(host="test-server1")
+    assert len(search2) == 1
+    assert search2[0][1]["id"] == "ioc-shouter"
