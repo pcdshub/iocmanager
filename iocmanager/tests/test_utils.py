@@ -38,6 +38,7 @@ from ..utils import (
     readLogPortBanner,
     readStatusDir,
     rebootHIOC,
+    rebootServer,
     restartHIOC,
     restartProc,
     set_env_var_globals,
@@ -1113,7 +1114,13 @@ def test_netconfig_text_processing(monkeypatch: pytest.MonkeyPatch):
     assert info["pc#"] == "99999"
 
 
-# rebootServer intentionally skipped, currently just calls psipmi external program
+def test_reboot_server(capfd: pytest.CaptureFixture):
+    # Fake reboot script tools/bin/psipmi just echoes our command
+    host = "asdfsdfasdf"
+    assert rebootServer(host)
+    captured = capfd.readouterr()
+    assert captured.out.strip() == f"psipmi {host} power cycle"
+    assert captured.err == ""
 
 
 def test_get_hard_ioc_dir():
@@ -1217,5 +1224,5 @@ def test_reboot_hioc(capsys: pytest.CaptureFixture):
     host = "asdfsdfasdf"
     assert rebootHIOC(host)
     captured = capsys.readouterr()
-    assert captured.out.strip() == f"{host} cycle"
+    assert captured.out.strip() == f"power {host} cycle"
     assert captured.err == ""

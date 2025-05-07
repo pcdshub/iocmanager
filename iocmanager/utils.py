@@ -42,6 +42,7 @@ def set_env_var_globals():
     global LOGBASE
     global PVFILE
     global NETCONFIG
+    global PSIPMI
     global HIOC_POWER
     global HIOC_CONSOLE
     global HIOC_STARTUP
@@ -71,6 +72,7 @@ def set_env_var_globals():
     LOGBASE = f"{IOC_DATA}/%s/iocInfo/ioc.log"
     PVFILE = f"{IOC_DATA}/%s/iocInfo/IOC.pvlist"
     NETCONFIG = f"{TOOLS_SITE_TOP}/bin/netconfig"
+    PSIPMI = f"{TOOLS_SITE_TOP}/bin/psipmi"
     HIOC_POWER = f"{TOOLS_SITE_TOP}/bin/power"
     HIOC_CONSOLE = f"{TOOLS_SITE_TOP}/bin/console"
     HIOC_STARTUP = f"{IOC_COMMON}/hioc/%s/startup.cmd"
@@ -1703,7 +1705,7 @@ def _netconfig(host: str) -> str:
 
 def rebootServer(host: str) -> bool:
     """Reboot a server, returning True if successful."""
-    return os.system("/reg/common/tools/bin/psipmi %s power cycle" % host) == 0
+    return os.system(f"{PSIPMI} %s power cycle" % host) == 0
 
 
 def getHardIOCDir(host: str) -> str:
