@@ -1755,13 +1755,13 @@ def rebootHIOC(host: str) -> bool:
     try:
         env = copy.deepcopy(os.environ)
         del env["LD_LIBRARY_PATH"]
-        p = subprocess.Popen(
-            [HIOC_POWER, host, "cycle"],
-            env=env,
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
+        print(
+            subprocess.check_output(
+                [HIOC_POWER, host, "cycle"],
+                env=env,
+                universal_newlines=True,
+            )
         )
-        print(p.communicate()[0])
         return True
     except Exception:
         logger.debug("Power cycle error", exc_info=True)
