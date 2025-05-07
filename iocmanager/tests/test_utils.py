@@ -28,6 +28,7 @@ from ..utils import (
     fixdir,
     fixTelnetShell,
     getBaseName,
+    getHardIOCDir,
     killProc,
     netconfig,
     openTelnet,
@@ -1108,3 +1109,11 @@ def test_netconfig_text_processing(monkeypatch: pytest.MonkeyPatch):
     assert info["name"] == "ctl-lfe-cam-01"
     assert info["subnet"] == "cds-lfe.pcdsn"
     assert info["pc#"] == "98096"
+
+
+# rebootServer intentionally skipped, currently just calls psipmi external program
+
+
+def test_get_hard_ioc_dir():
+    assert getHardIOCDir("test-hioc") == "ioc/pytest/the-pytest-hiocs-folder/R1.0.0"
+    assert getHardIOCDir("not-a-real-name") == "Unknown"

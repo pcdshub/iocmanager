@@ -33,7 +33,7 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
     shutil.copytree(local_pyps_root, temp_pyps_root)
     monkeypatch.setenv("PYPS_ROOT", str(temp_pyps_root))
     monkeypatch.setenv("IOC_DATA", str(TESTS_PATH / "ioc_data"))
-    monkeypatch.setenv("IOC_COMMON", str(tmp_path))
+    monkeypatch.setenv("IOC_COMMON", str(TESTS_PATH / "ioc_common"))
     monkeypatch.setenv("TOOLS_SITE_TOP", str(tmp_path))
     EPICS_SITE_TOP = str(tmp_path)
     if not EPICS_SITE_TOP.endswith("/"):
