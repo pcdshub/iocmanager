@@ -1786,6 +1786,7 @@ def getHutchList() -> list[str]:
         p = subprocess.Popen(
             ["csh", "-c", "cd %s; echo */iocmanager.cfg" % CONFIG_DIR],
             stdout=subprocess.PIPE,
+            universal_newlines=True,
         )
         return [ln.split("/")[0] for ln in p.communicate()[0].strip().split()]
     except Exception:

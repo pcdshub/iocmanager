@@ -33,6 +33,7 @@ from ..utils import (
     fixTelnetShell,
     getBaseName,
     getHardIOCDir,
+    getHutchList,
     killProc,
     netconfig,
     openTelnet,
@@ -1245,3 +1246,11 @@ def test_find_pv():
     ]
     assert len(findPV(re.compile("IOC:PYTEST:.*"), "ioc1")) > 10
     assert not findPV(re.compile(".*BIG:CAT.*"), "ioc1")
+
+
+def test_get_hutch_list():
+    # See folders in pyps_root/config
+    assert sorted(getHutchList()) == [
+        "pytest",
+        "second_hutch",
+    ]
