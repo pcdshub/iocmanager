@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import itertools
-import logging
 import os
 import re
 import shutil
@@ -17,9 +16,7 @@ import pytest
 
 from .. import env_paths, utils
 from ..utils import (
-    SPAM_LEVEL,
     _netconfig,
-    add_spam_level,
     applyConfig,
     check_auth,
     check_special,
@@ -55,19 +52,6 @@ from .conftest import ProcServHelper
 
 # All options for booleans for parameterizing tests
 bopts = (True, False)
-
-
-def test_add_spam_level(caplog: pytest.LogCaptureFixture):
-    logger = logging.getLogger(f"{__file__}.test_add_spam_level")
-    assert not hasattr(logger, "spam")
-    add_spam_level(logger)
-    caplog.set_level(SPAM_LEVEL)
-    caplog.clear()
-    assert not caplog.get_records(when="call")
-    logger.spam("test")
-    records = caplog.get_records(when="call")
-    assert records
-    assert records[0].message == "test"
 
 
 @pytest.mark.parametrize(

@@ -3,7 +3,6 @@ from __future__ import annotations
 import collections
 import copy
 import fcntl
-import functools
 import glob
 import io
 import logging
@@ -18,8 +17,10 @@ import typing
 from pathlib import Path
 
 from . import env_paths
+from .logger import add_spam_level
 
 logger = logging.getLogger(__name__)
+add_spam_level(logger)
 
 # Constants
 BASEPORT = 39050
@@ -53,7 +54,6 @@ MSG_AUTORESTART_IS_ONESHOT = b"auto restart( mode)? is ONESHOT,"
 MSG_AUTORESTART_CHANGE = b"auto restart to "
 MSG_AUTORESTART_MODE_CHANGE = b"auto restart mode to "
 
-SPAM_LEVEL = 5
 
 stpaths = [
     "%s/children/build/iocBoot/%s/st.cmd",
@@ -63,19 +63,6 @@ stpaths = [
 
 hosttype = {}
 
-
-def add_spam_level(lgr: logging.Logger):
-    """
-    Patch a "spam" function onto a logger instance.
-
-    This function will log a message at the spam level,
-    so that it won't appear in normal verbose mode but will appear
-    in double verbose mode.
-    """
-    lgr.spam = functools.partial(lgr.log, SPAM_LEVEL)
-
-
-add_spam_level(logger)
 
 ######################################################################
 #

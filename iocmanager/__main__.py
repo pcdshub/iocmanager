@@ -6,7 +6,7 @@ import sys
 from qtpy import QtWidgets
 
 from .ioc_impl import GraphicUserInterface
-from .utils import SPAM_LEVEL
+from .logger import SPAM_LEVEL
 
 parser = argparse.ArgumentParser(
     prog="iocmanager",
