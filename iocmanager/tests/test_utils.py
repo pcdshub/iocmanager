@@ -1004,18 +1004,16 @@ def test_check_ssh():
     assert not check_ssh("tstopr", "pytest")
 
 
-def test_read_all(tmp_path: Path):
+def test_read_all():
     # This is pretty dumb but whatever
     my_lines = [
         "hey\n",
         "this is an epics thing\n",
         "I guess\n",
     ]
-    with open(tmp_path / "test_read_all", "w") as fd:
-        fd.writelines(my_lines)
 
-    assert readAll("test_read_all") == my_lines
-    assert readAll(str(tmp_path / "test_read_all")) == my_lines
+    assert readAll("iocs/test_read_all.txt") == my_lines
+    assert readAll(str(TESTS_FOLDER / "iocs" / "test_read_all.txt")) == my_lines
     assert readAll("defo_not_a_path") == []
 
 
