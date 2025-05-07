@@ -1756,7 +1756,10 @@ def rebootHIOC(host: str) -> bool:
         env = copy.deepcopy(os.environ)
         del env["LD_LIBRARY_PATH"]
         p = subprocess.Popen(
-            [HIOC_POWER, host, "cycle"], env=env, stdout=subprocess.PIPE
+            [HIOC_POWER, host, "cycle"],
+            env=env,
+            stdout=subprocess.PIPE,
+            universal_newlines=True,
         )
         print(p.communicate()[0])
         return True

@@ -37,6 +37,7 @@ from ..utils import (
     readConfig,
     readLogPortBanner,
     readStatusDir,
+    rebootHIOC,
     restartHIOC,
     restartProc,
     set_env_var_globals,
@@ -1209,3 +1210,12 @@ def test_restart_hioc(monkeypatch: pytest.MonkeyPatch):
         ("write", b"rtemsReboot()\x0a"),  # Force a reboot
         ("close",),  # End telnet connection
     ]
+
+
+def test_reboot_hioc(capsys: pytest.CaptureFixture):
+    # Fake reboot script tools/bin/power just echoes our command
+    host = "asdfsdfasdf"
+    assert rebootHIOC(host)
+    captured = capsys.readouterr()
+    assert captured.out.strip() == f"{host} cycle"
+    assert captured.err == ""
