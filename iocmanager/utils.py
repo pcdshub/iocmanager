@@ -17,69 +17,9 @@ import time
 import typing
 from pathlib import Path
 
+from . import env_paths
+
 logger = logging.getLogger(__name__)
-
-
-# Environment-variable settings: allow us to reset/reload these
-def set_env_var_globals():
-    """
-    Initialize global variables from the shell environment.
-
-    Can be called multiple times in a session for e.g. testing purposes.
-    """
-    global PROCSERV_EXE
-    global EPICS_SITE_TOP
-    global EPICS_DEV_TOP
-    global CAMRECORDER
-    global TMP_DIR
-    global STARTUP_DIR
-    global CONFIG_DIR
-    global CONFIG_FILE
-    global NOSSH_FILE
-    global AUTH_FILE
-    global SPECIAL_FILE
-    global STATUS_DIR
-    global HOST_DIR
-    global LOGBASE
-    global PVFILE
-    global NETCONFIG
-    global PSIPMI
-    global HIOC_POWER
-    global HIOC_CONSOLE
-    global HIOC_STARTUP
-    # Raw env vars with defaults
-    CAMRECORD_ROOT = os.getenv("CAMRECORD_ROOT", "/cds/group/pcds/controls/camrecord")
-    PROCSERV_EXE = os.getenv("PROCSERV_EXE", "procServ").split()[0]
-    PYPS_ROOT = os.getenv("PYPS_ROOT", "/cds/group/pcds/pyps")
-    IOC_DATA = os.getenv("IOC_DATA", "/cds/data/iocData")
-    IOC_COMMON = os.getenv("IOC_COMMON", "/cds/data/iocCommon")
-    TOOLS_SITE_TOP = os.getenv("TOOLS_SITE_TOP", "/cds/sw/tools")
-    EPICS_SITE_TOP = os.getenv("EPICS_SITE_TOP", "/cds/group/pcds/epics")
-    EPICS_DEV_TOP = os.getenv("EPICS_DEV_TOP", EPICS_SITE_TOP + "-dev")
-    EPICS_SITE_TOP += "/"  # Code somewhere expects the trailing /, TODO clean this up
-
-    # Use env vars to build config strings
-    CAMRECORDER = CAMRECORD_ROOT
-    # Note: TMP_DIR and CONFIG_FILE should be on the same file system so os.rename works
-    TMP_DIR = f"{PYPS_ROOT}/config/.status/tmp"
-    STARTUP_DIR = f"{PYPS_ROOT}/config/%s/iocmanager/"
-    CONFIG_DIR = f"{PYPS_ROOT}/config/"
-    CONFIG_FILE = f"{PYPS_ROOT}/config/%s/iocmanager.cfg"
-    NOSSH_FILE = f"{PYPS_ROOT}/config/%s/iocmanager.nossh"
-    AUTH_FILE = f"{PYPS_ROOT}/config/%s/iocmanager.auth"
-    SPECIAL_FILE = f"{PYPS_ROOT}/config/%s/iocmanager.special"
-    STATUS_DIR = f"{PYPS_ROOT}/config/.status/%s"
-    HOST_DIR = f"{PYPS_ROOT}/config/.host"
-    LOGBASE = f"{IOC_DATA}/%s/iocInfo/ioc.log"
-    PVFILE = f"{IOC_DATA}/%s/iocInfo/IOC.pvlist"
-    NETCONFIG = f"{TOOLS_SITE_TOP}/bin/netconfig"
-    PSIPMI = f"{TOOLS_SITE_TOP}/bin/psipmi"
-    HIOC_POWER = f"{TOOLS_SITE_TOP}/bin/power"
-    HIOC_CONSOLE = f"{TOOLS_SITE_TOP}/bin/console"
-    HIOC_STARTUP = f"{IOC_COMMON}/hioc/%s/startup.cmd"
-
-
-set_env_var_globals()
 
 # Constants
 BASEPORT = 39050
@@ -158,7 +98,7 @@ def getBaseName(ioc: str) -> str | None:
     -------
     pvbase : str or None
     """
-    pvInfoPath = PVFILE % ioc
+    pvInfoPath = env_paths.PVFILE % ioc
     if not os.path.isfile(pvInfoPath):
         return None
     try:
@@ -207,7 +147,7 @@ def fixdir(dir: str, id: str) -> str:
     # Remove ".."
     part = [pth for pth in dir.split("/") if pth != ".."]
     dir = "/".join(part)
-    dir = dir.removeprefix(EPICS_SITE_TOP)
+    dir = dir.removeprefix(env_paths.EPICS_SITE_TOP)
     for pth in stpaths:
         ext = pth % ("", id)
         ext = ext.removesuffix("/st.cmd")
@@ -694,18 +634,18 @@ def startProc(cfg: str, entry: dict[str, str | int], local=False) -> None:
 
     sr = os.getenv("SCRIPTROOT")
     if sr is None:
-        sr = STARTUP_DIR % cfg
+        sr = env_paths.STARTUP_DIR % cfg
     elif sr[-1] != "/":
         sr += "/"
     cmd = "%sstartProc %s %d %s %s" % (sr, name, port, cfg, cmd)
-    log = LOGBASE % name
+    log = env_paths.LOGBASE % name
     ctrlport = BASEPORT + 2 * (int(platform) - 1)
     print(
         "Starting %s on port %s of host %s, platform %s..."
         % (name, port, host, platform)
     )
     cmd = "%s --logfile %s --name %s --allow --coresize 0 --savelog %d %s" % (
-        PROCSERV_EXE,
+        env_paths.PROCSERV_EXE,
         log,
         name,
         port,
@@ -773,7 +713,7 @@ def readConfig(
     if os.sep in cfg:
         cfgfn = cfg
     else:
-        cfgfn = CONFIG_FILE % cfg
+        cfgfn = env_paths.CONFIG_FILE % cfg
 
     try:
         mtime = os.stat(cfgfn).st_mtime
@@ -867,7 +807,7 @@ def readConfig(
         hosttype = {}
         for fn in hosts_list:
             try:
-                with open("%s/%s" % (HOST_DIR, fn)) as fd:
+                with open("%s/%s" % (env_paths.HOST_DIR, fn)) as fd:
                     hosttype[fn] = fd.readlines()[0].strip()
             except Exception:
                 ...
@@ -1004,7 +944,7 @@ def installConfig(hutch: str, file: str, fd: None = None) -> None:
     fd : None
         Unused.
     """
-    os.rename(file, CONFIG_FILE % hutch)
+    os.rename(file, env_paths.CONFIG_FILE % hutch)
 
 
 def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
@@ -1041,8 +981,8 @@ def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
         IOC from the status dir.
     """
     info = {}
-    for filename in os.listdir(STATUS_DIR % cfg):
-        full_path = (STATUS_DIR % cfg) + "/" + filename
+    for filename in os.listdir(env_paths.STATUS_DIR % cfg):
+        full_path = (env_paths.STATUS_DIR % cfg) + "/" + filename
         with open(full_path, "r") as fd:
             lines = fd.readlines()
         if not lines:
@@ -1066,7 +1006,7 @@ def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
                     info[key]["rid"],
                     filename,
                 )
-                _lazy_delete_file((STATUS_DIR % cfg) + "/" + info[key]["rid"])
+                _lazy_delete_file((env_paths.STATUS_DIR % cfg) + "/" + info[key]["rid"])
                 new_entry = True
             else:
                 # Duplicate, but older, so delete this!
@@ -1228,9 +1168,9 @@ def applyConfig(
 
     # Camera recorders always seem to be in the wrong directory, so cheat!
     for line in cfglist:
-        if line["dir"] == CAMRECORDER:
+        if line["dir"] == env_paths.CAMRECORDER:
             try:
-                current[line["id"]]["rdir"] = CAMRECORDER
+                current[line["id"]]["rdir"] = env_paths.CAMRECORDER
             except Exception:
                 pass
 
@@ -1311,10 +1251,10 @@ def applyConfig(
             killProc(config[line]["host"], int(config[line]["port"]))
         try:
             # This is dead, so get rid of the status file!
-            os.unlink((STATUS_DIR % cfg) + "/" + line)
+            os.unlink((env_paths.STATUS_DIR % cfg) + "/" + line)
         except Exception:
             print(
-                "Error while trying to delete file %s" % (STATUS_DIR % cfg)
+                "Error while trying to delete file %s" % (env_paths.STATUS_DIR % cfg)
                 + "/"
                 + line
                 + "!"
@@ -1352,7 +1292,7 @@ def check_auth(user: str, hutch: str) -> bool:
     auth_ok : bool
         True if the user is authorized, False otherwise.
     """
-    with open(AUTH_FILE % hutch) as fd:
+    with open(env_paths.AUTH_FILE % hutch) as fd:
         lines = fd.readlines()
     lines = [ln.strip() for ln in lines]
     for ln in lines:
@@ -1388,7 +1328,7 @@ def check_special(
     is_special -> bool
         True if the IOC is toggleable between versions.
     """
-    with open(SPECIAL_FILE % req_hutch) as fp:
+    with open(env_paths.SPECIAL_FILE % req_hutch) as fp:
         lines = fp.readlines()
         lines = [ln.strip() for ln in lines]
         for entry in lines:
@@ -1439,7 +1379,7 @@ def check_ssh(user: str, hutch: str) -> bool:
         True if the user is not in the nossh file
     """
     try:
-        lines = open(NOSSH_FILE % hutch).readlines()
+        lines = open(env_paths.NOSSH_FILE % hutch).readlines()
     except Exception:
         return True
     lines = [ln.strip() for ln in lines]
@@ -1482,7 +1422,7 @@ def readAll(fn: str) -> list[str]:
         The contents of the file
     """
     if fn[0] != "/":
-        fn = EPICS_SITE_TOP + fn
+        fn = env_paths.EPICS_SITE_TOP + fn
     try:
         with open(fn, "r") as fd:
             return fd.readlines()
@@ -1602,7 +1542,7 @@ def commit_config(hutch: str, comment: bytes, fd: int):
         The number of an open file descriptor to an ssh process
         on the commit host
     """
-    config = CONFIG_FILE % hutch
+    config = env_paths.CONFIG_FILE % hutch
     flush_input(fd)
     do_write(fd, "cat >" + config + ".comment <<EOFEOFEOF\n")
     do_write(fd, comment)
@@ -1639,7 +1579,7 @@ def find_iocs(**kwargs) -> list[tuple[str, dict]]:
     iocs : list of tuple
         Each IOC's source config file path and config information
     """
-    cfgs = glob.glob(CONFIG_FILE % "*")
+    cfgs = glob.glob(env_paths.CONFIG_FILE % "*")
     configs = []
     for cfg in cfgs:
         config = readConfig(cfg)[1]
@@ -1698,7 +1638,7 @@ def _netconfig(host: str) -> str:
     env = copy.deepcopy(os.environ)
     del env["LD_LIBRARY_PATH"]
     return subprocess.check_output(
-        [NETCONFIG, "view", host],
+        [env_paths.NETCONFIG, "view", host],
         env=env,
         universal_newlines=True,
     )
@@ -1706,14 +1646,14 @@ def _netconfig(host: str) -> str:
 
 def rebootServer(host: str) -> bool:
     """Reboot a server, returning True if successful."""
-    return os.system(f"{PSIPMI} %s power cycle" % host) == 0
+    return os.system(f"{env_paths.PSIPMI} %s power cycle" % host) == 0
 
 
 def getHardIOCDir(host: str) -> str:
     """Return the hard IOC directory for a given hard IOC host."""
     dir = "Unknown"
     try:
-        lines = [ln.strip() for ln in open(HIOC_STARTUP % host).readlines()]
+        lines = [ln.strip() for ln in open(env_paths.HIOC_STARTUP % host).readlines()]
     except Exception:
         logger.error("Error while trying to read HIOC startup file for %s!" % host)
         return "Unknown"
@@ -1760,7 +1700,7 @@ def rebootHIOC(host: str) -> bool:
         del env["LD_LIBRARY_PATH"]
         print(
             subprocess.check_output(
-                [HIOC_POWER, host, "cycle"],
+                [env_paths.HIOC_POWER, host, "cycle"],
                 env=env,
                 universal_newlines=True,
             )
@@ -1775,7 +1715,7 @@ def rebootHIOC(host: str) -> bool:
 def findPV(regexp: re.Pattern, ioc: str) -> list[str]:
     """Return all PVs belonging to an IOC that match a regular expression."""
     try:
-        lines = [ln.split(",")[0] for ln in open(PVFILE % ioc).readlines()]
+        lines = [ln.split(",")[0] for ln in open(env_paths.PVFILE % ioc).readlines()]
     except Exception:
         return []
     return list(filter(regexp.search, lines))
@@ -1784,7 +1724,7 @@ def findPV(regexp: re.Pattern, ioc: str) -> list[str]:
 def getHutchList() -> list[str]:
     """Return the list of all supported hutches."""
     try:
-        config_paths = Path(CONFIG_DIR).glob("*/iocmanager.cfg")
+        config_paths = Path(env_paths.CONFIG_DIR).glob("*/iocmanager.cfg")
         return [pth.parent.name for pth in config_paths]
     except Exception:
         return []
@@ -1840,7 +1780,7 @@ def validateDir(dir: str, ioc: str) -> bool:
         True if we found the st.cmd file at one of the standard locations.
     """
     if dir[0] != "/":
-        dir = EPICS_SITE_TOP + dir
+        dir = env_paths.EPICS_SITE_TOP + dir
     for p in stpaths:
         if os.path.exists(p % (dir, ioc)):
             return True

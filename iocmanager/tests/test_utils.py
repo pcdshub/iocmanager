@@ -15,7 +15,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from .. import utils
+from .. import env_paths, utils
 from ..utils import (
     SPAM_LEVEL,
     _netconfig,
@@ -45,7 +45,6 @@ from ..utils import (
     rebootServer,
     restartHIOC,
     restartProc,
-    set_env_var_globals,
     startProc,
     validateConfig,
     validateDir,
@@ -56,18 +55,6 @@ from .conftest import ProcServHelper
 
 # All options for booleans for parameterizing tests
 bopts = (True, False)
-
-
-def test_env_var_globals(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("PROCSERV_EXE")
-    set_env_var_globals()
-    assert utils.PROCSERV_EXE == "procServ"
-    monkeypatch.setenv("PROCSERV_EXE", "/some/path/to/procServ --allow --logfile name")
-    set_env_var_globals()
-    assert utils.PROCSERV_EXE == "/some/path/to/procServ"
-    monkeypatch.setenv("PROCSERV_EXE", "/another/path/to/procServ")
-    set_env_var_globals()
-    assert utils.PROCSERV_EXE == "/another/path/to/procServ"
 
 
 def test_add_spam_level(caplog: pytest.LogCaptureFixture):
@@ -107,7 +94,7 @@ for prefix in test_fixdir_prefix:
 
 @pytest.mark.parametrize("ioc_dir,ioc_name", test_fix_dir_params)
 def test_fixdir(ioc_dir: str, ioc_name: str):
-    ioc_dir = ioc_dir.replace("EPICS_SITE_TOP", utils.EPICS_SITE_TOP)
+    ioc_dir = ioc_dir.replace("EPICS_SITE_TOP", env_paths.EPICS_SITE_TOP)
     if "iocBoot" in ioc_dir:
         answer = test_fixdir_iocdir.removesuffix("/")
     else:

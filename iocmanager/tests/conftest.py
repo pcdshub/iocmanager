@@ -10,7 +10,8 @@ from typing import Iterator
 
 import pytest
 
-from iocmanager.utils import BASEPORT, set_env_var_globals
+from iocmanager.env_paths import set_env_var_globals
+from iocmanager.utils import BASEPORT
 
 EPICS_HOST_ARCH = os.getenv("EPICS_HOST_ARCH")
 TESTS_PATH = Path(__file__).parent.resolve()
