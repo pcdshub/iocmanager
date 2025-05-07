@@ -17,6 +17,7 @@ import pytest
 from .. import utils
 from ..utils import (
     SPAM_LEVEL,
+    _netconfig,
     add_spam_level,
     applyConfig,
     check_auth,
@@ -1112,6 +1113,11 @@ def test_netconfig_text_processing(monkeypatch: pytest.MonkeyPatch):
     assert info["name"] == "ctl-pytest-cam-01"
     assert info["subnet"] == "cds-pytest.pcdsn"
     assert info["pc#"] == "99999"
+
+
+def test_netconfig_call():
+    host = "asdfsdf"
+    assert _netconfig(host).strip() == f"netconfig view {host}"
 
 
 def test_reboot_server(capfd: pytest.CaptureFixture):

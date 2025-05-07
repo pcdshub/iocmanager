@@ -1,2 +1,5 @@
 #!/usr/bin/bash
-# TODO maybe move fake netconfig stuff to here?
+# Fake netconfig stuff intentionally omitted here
+# Unlike power and psipmi, we need to separately check inputs and parse outputs
+# Much easier to emulate in the test
+echo netconfig "$@"
