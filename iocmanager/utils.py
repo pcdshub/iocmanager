@@ -1741,11 +1741,11 @@ def restartHIOC(host: str) -> bool:
         logger.debug("Telnet error", exc_info=True)
         print("Error making telnet connection to HIOC %s!" % host)
         return False
-    tn.write("\x0a")
-    tn.read_until("> ", 2)
-    tn.write("exit\x0a")
-    tn.read_until("> ", 2)
-    tn.write("rtemsReboot()\x0a")
+    tn.write(b"\x0a")
+    tn.read_until(b"> ", 2)
+    tn.write(b"exit\x0a")
+    tn.read_until(b"> ", 2)
+    tn.write(b"rtemsReboot()\x0a")
     tn.close()
     return True
 
