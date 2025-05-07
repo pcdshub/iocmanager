@@ -15,6 +15,7 @@ import telnetlib
 import threading
 import time
 import typing
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -1783,12 +1784,8 @@ def findPV(regexp: re.Pattern, ioc: str) -> list[str]:
 def getHutchList() -> list[str]:
     """Return the list of all supported hutches."""
     try:
-        p = subprocess.Popen(
-            ["csh", "-c", "cd %s; echo */iocmanager.cfg" % CONFIG_DIR],
-            stdout=subprocess.PIPE,
-            universal_newlines=True,
-        )
-        return [ln.split("/")[0] for ln in p.communicate()[0].strip().split()]
+        config_paths = Path(CONFIG_DIR).glob("*/iocmanager.cfg")
+        return [pth.parent.name for pth in config_paths]
     except Exception:
         return []
 
