@@ -3,6 +3,7 @@ from __future__ import annotations
 import itertools
 import logging
 import os
+import re
 import shutil
 import subprocess
 import telnetlib
@@ -27,6 +28,7 @@ from ..utils import (
     checkTelnetMode,
     find_iocs,
     findParent,
+    findPV,
     fixdir,
     fixTelnetShell,
     getBaseName,
@@ -1232,3 +1234,14 @@ def test_reboot_hioc(capsys: pytest.CaptureFixture):
     captured = capsys.readouterr()
     assert captured.out.strip() == f"power {host} cycle"
     assert captured.err == ""
+
+
+def test_find_pv():
+    # See tests/ioc_data/ioc1/iocInfo/IOC.pvlist
+    assert sorted(findPV(re.compile("TST:.*"), "ioc1")) == [
+        "TST:FLOAT",
+        "TST:INT",
+        "TST:STRING",
+    ]
+    assert len(findPV(re.compile("IOC:PYTEST:.*"), "ioc1")) > 10
+    assert not findPV(re.compile(".*BIG:CAT.*"), "ioc1")
