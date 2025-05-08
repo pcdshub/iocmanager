@@ -11,7 +11,7 @@ from typing import Iterator
 import pytest
 
 from iocmanager.env_paths import set_env_var_globals
-from iocmanager.utils import BASEPORT
+from iocmanager.procserv_tools import BASEPORT
 
 EPICS_HOST_ARCH = os.getenv("EPICS_HOST_ARCH")
 TESTS_PATH = Path(__file__).parent.resolve()

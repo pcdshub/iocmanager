@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import sys
 
-from .. import utils
+from ..procserv_tools import fixTelnetShell
 
 if __name__ == "__main__":
     port = sys.argv[1]
-    utils.fixTelnetShell("localhost", port)
+    fixTelnetShell("localhost", port)

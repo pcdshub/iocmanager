@@ -37,6 +37,7 @@ from qtpy.QtWidgets import (
 from . import commit_ui, details_ui, utils
 from .epics_paths import get_parent, normalize_path
 from .ioc_info import find_pv, get_base_name
+from .procserv_tools import applyConfig, check_status, restartProc
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class StatusPoll(threading.Thread):
 
     def check_one_file_status(self, line):
         rdir = line["rdir"]
-        line.update(utils.check_status(line["rhost"], line["rport"], line["rid"]))
+        line.update(check_status(line["rhost"], line["rport"], line["rid"]))
         line["stattime"] = time.time()
         if line["rdir"] == "/tmp":
             line["rdir"] = rdir
@@ -121,7 +122,7 @@ class StatusPoll(threading.Thread):
             s["rid"] = line["id"]
             s["rdir"] = line["dir"]
         else:
-            s = utils.check_status(line["host"], line["port"], line["id"])
+            s = check_status(line["host"], line["port"], line["id"])
         s["stattime"] = time.time()
         s["rhost"] = line["host"]
         s["rport"] = line["port"]
@@ -749,7 +750,7 @@ class TableModel(QAbstractTableModel):
             )
             return
         if self.doSave():
-            utils.applyConfig(self.hutch, self.applyVerify, id)
+            applyConfig(self.hutch, self.applyVerify, id)
 
     def doApply(self):
         if not self.validateConfig():
@@ -762,7 +763,7 @@ class TableModel(QAbstractTableModel):
             )
             return
         if self.doSave():
-            utils.applyConfig(self.hutch, self.applyVerify)
+            applyConfig(self.hutch, self.applyVerify)
 
     def doSave(self):
         if not self.validateConfig():
@@ -1207,7 +1208,7 @@ class TableModel(QAbstractTableModel):
                     QMessageBox.Ok,
                 )
         else:
-            if not utils.restartProc(entry["host"], entry["port"]):
+            if not restartProc(entry["host"], entry["port"]):
                 QMessageBox.critical(
                     None,
                     "Error",

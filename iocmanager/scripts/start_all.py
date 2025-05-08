@@ -3,6 +3,7 @@ import sys
 import time
 
 from .. import utils
+from ..procserv_tools import startProc
 
 if __name__ == "__main__":
     cfg = sys.argv[1]
@@ -14,7 +15,7 @@ if __name__ == "__main__":
     (mtime, config, hosts, vdict) = result
     for ioc in config:
         if ioc["host"] == host and not ioc["disable"]:
-            utils.startProc(cfg, ioc, True)
+            startProc(cfg, ioc, True)
             try:
                 time.sleep(ioc["delay"])
             except Exception:

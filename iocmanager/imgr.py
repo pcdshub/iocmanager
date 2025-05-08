@@ -15,9 +15,11 @@ import tempfile
 
 from psp.caput import caput
 
-from . import utils
+from . import env_paths, utils
+from . import procserv_tools as pt
 from .epics_paths import has_stcmd
 from .ioc_info import get_base_name
+from .procserv_tools import applyConfig, check_status, restartProc
 
 
 def match_hutch(h, hlist):
@@ -92,13 +94,13 @@ def info(hutch, ioc, verbose):
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     for c in cl:
         if c["id"] == ioc:
-            d = utils.check_status(c["host"], c["port"], ioc)
+            d = check_status(c["host"], c["port"], ioc)
             if verbose:
                 try:
                     if c["disable"]:
-                        if d["status"] == utils.STATUS_NOCONNECT:
+                        if d["status"] == pt.STATUS_NOCONNECT:
                             d["status"] = "DISABLED"
-                        elif d["status"] == utils.STATUS_RUNNING:
+                        elif d["status"] == pt.STATUS_RUNNING:
                             d["status"] = "DISABLED, BUT RUNNING?!?"
                 except Exception:
                     pass
@@ -130,7 +132,7 @@ def hard_reboot(hutch, ioc):
     (ft, cl, hl, vs) = utils.readConfig(hutch)
     for c in cl:
         if c["id"] == ioc:
-            utils.restartProc(c["host"], c["port"])
+            restartProc(c["host"], c["port"])
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
@@ -149,7 +151,7 @@ def do_connect(hutch, ioc):
 
 def do_commit(hutch, cl, hl, vs):
     try:
-        file = tempfile.NamedTemporaryFile(dir=utils.TMP_DIR, delete=False)
+        file = tempfile.NamedTemporaryFile(dir=env_paths.TMP_DIR, delete=False)
         utils.writeConfig(hutch, hl, cl, vs, file)
         utils.installConfig(hutch, file.name)
     except:
@@ -176,7 +178,7 @@ def set_state(hutch, ioc, enable):
         if c["id"] == ioc:
             c["newdisable"] = not enable
             do_commit(hutch, cl, hl, vs)
-            utils.applyConfig(hutch, None, ioc)
+            applyConfig(hutch, None, ioc)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
@@ -219,7 +221,7 @@ def add(hutch, ioc, version, hostport, disable):
     if host not in hl:
         hl.append(host)
     do_commit(hutch, cl, hl, vs)
-    utils.applyConfig(hutch, None, ioc)
+    applyConfig(hutch, None, ioc)
     sys.exit(0)
 
 
@@ -245,7 +247,7 @@ def upgrade(hutch, ioc, version):
         if c["id"] == ioc:
             c["newdir"] = version
             do_commit(hutch, cl, hl, vs)
-            utils.applyConfig(hutch, None, ioc)
+            applyConfig(hutch, None, ioc)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
@@ -272,7 +274,7 @@ def move(hutch, ioc, hostport):
                 )
                 sys.exit(1)
             do_commit(hutch, cl, hl, vs)
-            utils.applyConfig(hutch, None, ioc)
+            applyConfig(hutch, None, ioc)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)

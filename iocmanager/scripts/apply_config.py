@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import sys
 
-from .. import utils
+from ..procserv_tools import applyConfig
 
 host = None
 
@@ -17,6 +17,6 @@ if __name__ == "__main__":
     hutch = sys.argv[1]
     if len(sys.argv) > 1:
         host = sys.argv[2]
-        sys.exit(utils.applyConfig(hutch, verify_host))
+        sys.exit(applyConfig(hutch, verify_host))
     else:
-        sys.exit(utils.applyConfig(hutch))
+        sys.exit(applyConfig(hutch))
