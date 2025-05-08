@@ -18,6 +18,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from qtpy.QtCore import Qt
 
 from . import auth_ui, table_model, utils
+from .ioc_info import get_base_name
 from .ioc_ui import Ui_MainWindow
 from .table_delegate import TableDelegate
 
@@ -255,9 +256,12 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
             self.disconnectPVs()
             self.currentIOC = ioc
             self.ui.IOCname.setText(ioc)
-            base = utils.getBaseName(ioc)
-            self.currentBase = base
-            if base is not None:
+            try:
+                base = get_base_name(ioc)
+            except Exception:
+                self.currentBase = None
+            else:
+                self.currentBase = base
                 self.dopv(base + ":HEARTBEAT", self.ui.heartbeat, "%d")
                 self.dopv(base + ":TOD", self.ui.tod, "%s")
                 self.dopv(base + ":STARTTOD", self.ui.boottime, "%s")

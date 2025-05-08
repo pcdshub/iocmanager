@@ -1,5 +1,5 @@
 """
-The logger module defines logging setup utilities and constants.
+The log_setup module defines logging setup utilities and constants.
 """
 
 import functools

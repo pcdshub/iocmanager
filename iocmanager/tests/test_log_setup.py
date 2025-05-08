@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from ..logger import SPAM_LEVEL, add_spam_level
+from ..log_setup import SPAM_LEVEL, add_spam_level
 
 
 def test_add_spam_level(caplog: pytest.LogCaptureFixture):

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import itertools
 import os
-import re
 import shutil
 import subprocess
 import telnetlib
@@ -25,10 +24,8 @@ from ..utils import (
     checkTelnetMode,
     find_iocs,
     findParent,
-    findPV,
     fixdir,
     fixTelnetShell,
-    getBaseName,
     getHardIOCDir,
     getHutchList,
     killProc,
@@ -52,15 +49,6 @@ from .conftest import ProcServHelper
 
 # All options for booleans for parameterizing tests
 bopts = (True, False)
-
-
-@pytest.mark.parametrize(
-    "ioc_name,pv_base",
-    [("ioc1", "IOC:PYTEST:01"), ("notanioc", None), ("iocbad", None)],
-)
-def test_getBaseName(ioc_name: str, pv_base: str | None):
-    assert getBaseName(ioc_name) == pv_base
-
 
 # Possible pieces to normalize
 test_fixdir_prefix = ("", "../", "../../", "EPICS_SITE_TOP")
@@ -1215,17 +1203,6 @@ def test_reboot_hioc(capsys: pytest.CaptureFixture):
     captured = capsys.readouterr()
     assert captured.out.strip() == f"power {host} cycle"
     assert captured.err == ""
-
-
-def test_find_pv():
-    # See tests/ioc_data/ioc1/iocInfo/IOC.pvlist
-    assert sorted(findPV(re.compile("TST:.*"), "ioc1")) == [
-        "TST:FLOAT",
-        "TST:INT",
-        "TST:STRING",
-    ]
-    assert len(findPV(re.compile("IOC:PYTEST:.*"), "ioc1")) > 10
-    assert not findPV(re.compile(".*BIG:CAT.*"), "ioc1")
 
 
 def test_get_hutch_list():

@@ -35,6 +35,7 @@ from qtpy.QtWidgets import (
 )
 
 from . import commit_ui, details_ui, utils
+from .ioc_info import find_pv, get_base_name
 
 logger = logging.getLogger(__name__)
 
@@ -1071,8 +1072,9 @@ class TableModel(QAbstractTableModel):
         if int(port) == -1:
             dir = utils.getHardIOCDir(id)
             host = id
-            base = utils.getBaseName(id)
-            if base is None:
+            try:
+                base = get_base_name(id)
+            except Exception:
                 base = ""
             cfg = {
                 "id": id,
@@ -1375,15 +1377,16 @@ class TableModel(QAbstractTableModel):
             regexp = re.compile(name)
         except Exception:
             return "Bad regular expression!"
-        row = 0
         for entry in self.cfglist:
-            ll = utils.findPV(regexp, entry["id"])
+            try:
+                ll = find_pv(regexp, entry["id"])
+            except Exception:
+                continue
             for r in ll:
                 if r == name:  # One exact match, forget the rest!
                     return [(r, entry["id"], entry["alias"])]
                 else:
                     line.append((r, entry["id"], entry["alias"]))
-            row += 1
         return line
 
     def selectPort(self, host, lowport, highport):

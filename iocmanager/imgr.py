@@ -16,6 +16,7 @@ import tempfile
 from psp.caput import caput
 
 from . import utils
+from .ioc_info import get_base_name
 
 
 def match_hutch(h, hlist):
@@ -119,10 +120,7 @@ def info(hutch, ioc, verbose):
 
 
 def soft_reboot(hutch, ioc):
-    base = utils.getBaseName(ioc)
-    if base is None:
-        print("IOC %s not found!" % ioc)
-        sys.exit(1)
+    base = get_base_name(ioc)
     caput(base + ":SYSRESET", 1)
     sys.exit(0)
 

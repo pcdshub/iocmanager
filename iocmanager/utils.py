@@ -17,7 +17,8 @@ import typing
 from pathlib import Path
 
 from . import env_paths
-from .logger import add_spam_level
+from .ioc_info import get_base_name
+from .log_setup import add_spam_level
 
 logger = logging.getLogger(__name__)
 add_spam_level(logger)
@@ -62,45 +63,6 @@ stpaths = [
 ]
 
 hosttype = {}
-
-
-######################################################################
-#
-# Name and Directory Utilities
-#
-
-
-def getBaseName(ioc: str) -> str | None:
-    """
-    Return the basename of the iocAdmin PVs for a given IOC name.
-
-    Upon failure, returns None instead of raising.
-
-    Parameters
-    ----------
-    ioc : str
-        The ioc name
-
-    Returns
-    -------
-    pvbase : str or None
-    """
-    pvInfoPath = env_paths.PVFILE % ioc
-    if not os.path.isfile(pvInfoPath):
-        return None
-    try:
-        with open(pvInfoPath, "r") as fd:
-            lines = fd.readlines()
-    except Exception:
-        print(f"Error reading pvlist file {pvInfoPath}")
-        return
-    try:
-        for ln in lines:
-            pv = ln.split(",")[0]
-            if pv.endswith(":HEARTBEAT"):
-                return pv.removesuffix(":HEARTBEAT")
-    except Exception:
-        print(f"Error parsing {pvInfoPath} for base PV name!")
 
 
 def fixdir(dir: str, id: str) -> str:
@@ -773,7 +735,11 @@ def readConfig(
         ioc.setdefault("alias", "")
         ioc["cfgstat"] = CONFIG_NORMAL
         if ioc["hard"]:
-            ioc["base"] = getBaseName(ioc["id"])
+            try:
+                base = get_base_name(ioc["id"])
+            except Exception:
+                base = None
+            ioc["base"] = base
             ioc["dir"] = getHardIOCDir(ioc["id"])
             ioc["host"] = ioc["id"]
             ioc["port"] = -1
@@ -1701,15 +1667,6 @@ def rebootHIOC(host: str) -> bool:
         logger.debug("Power cycle error", exc_info=True)
         print("Error while trying to power cycle HIOC %s!" % host)
         return False
-
-
-def findPV(regexp: re.Pattern, ioc: str) -> list[str]:
-    """Return all PVs belonging to an IOC that match a regular expression."""
-    try:
-        lines = [ln.split(",")[0] for ln in open(env_paths.PVFILE % ioc).readlines()]
-    except Exception:
-        return []
-    return list(filter(regexp.search, lines))
 
 
 def getHutchList() -> list[str]:
