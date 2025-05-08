@@ -5,18 +5,12 @@ import telnetlib
 import pytest
 
 from .. import server_tools
-from ..server_tools import netconfig
-from ..utils import (
+from ..hioc_tools import (
     getHardIOCDir,
     rebootHIOC,
     restartHIOC,
 )
-
-# Skip testing the following functions which will be removed:
-# read_until
-# flush_input
-# do_write
-# commit_config (needs to be replaced with fabric version)
+from ..server_tools import netconfig
 
 
 def test_get_hard_ioc_dir():

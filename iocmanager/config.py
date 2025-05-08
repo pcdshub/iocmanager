@@ -29,8 +29,8 @@ from pathlib import Path
 
 from . import env_paths
 from .epics_paths import get_parent
+from .hioc_tools import getHardIOCDir
 from .ioc_info import get_base_name
-from .utils import getHardIOCDir
 
 CONFIG_NORMAL = 0
 CONFIG_ADDED = 1

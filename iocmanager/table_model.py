@@ -37,6 +37,7 @@ from qtpy.QtWidgets import (
 from . import commit_ui, details_ui, utils
 from .config import installConfig, readConfig, readStatusDir, writeConfig
 from .epics_paths import get_parent, normalize_path
+from .hioc_tools import getHardIOCDir, rebootHIOC, restartHIOC
 from .ioc_info import find_pv, get_base_name
 from .procserv_tools import applyConfig, check_status, restartProc
 from .server_tools import netconfig, rebootServer
@@ -1074,7 +1075,7 @@ class TableModel(QAbstractTableModel):
 
     def addIOC(self, id, alias, host, port, dir):
         if int(port) == -1:
-            dir = utils.getHardIOCDir(id)
+            dir = getHardIOCDir(id)
             host = id
             try:
                 base = get_base_name(id)
@@ -1201,7 +1202,7 @@ class TableModel(QAbstractTableModel):
             if entry is None:
                 return
         if entry["hard"]:
-            if not utils.restartHIOC(entry["id"]):
+            if not restartHIOC(entry["id"]):
                 QMessageBox.critical(
                     None,
                     "Error",
@@ -1231,7 +1232,7 @@ class TableModel(QAbstractTableModel):
             if entry is None:
                 return
         if entry["hard"]:
-            if not utils.rebootHIOC(entry["id"]):
+            if not rebootHIOC(entry["id"]):
                 QMessageBox.critical(
                     None,
                     "Error",
