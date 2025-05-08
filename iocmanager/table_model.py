@@ -35,6 +35,7 @@ from qtpy.QtWidgets import (
 )
 
 from . import commit_ui, details_ui, utils
+from .epics_paths import get_parent, normalize_path
 from .ioc_info import find_pv, get_base_name
 
 logger = logging.getLogger(__name__)
@@ -1097,7 +1098,11 @@ class TableModel(QAbstractTableModel):
                 "hard": True,
             }
         else:
-            dir = utils.fixdir(dir, id)
+            dir = normalize_path(dir, id)
+            try:
+                pname = get_parent(dir, id)
+            except Exception:
+                pname = ""
             cfg = {
                 "id": id,
                 "host": host,
@@ -1112,7 +1117,7 @@ class TableModel(QAbstractTableModel):
                 "rhost": host,
                 "rport": int(port),
                 "rdir": dir,
-                "pdir": utils.findParent(id, dir),
+                "pdir": pname,
                 "newstyle": True,
                 "alias": alias,
                 "hard": False,

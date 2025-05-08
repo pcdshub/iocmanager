@@ -16,6 +16,7 @@ import tempfile
 from psp.caput import caput
 
 from . import utils
+from .epics_paths import has_stcmd
 from .ioc_info import get_base_name
 
 
@@ -185,7 +186,7 @@ def add(hutch, ioc, version, hostport, disable):
     if not utils.check_auth(pwd.getpwuid(os.getuid())[0], hutch):
         print("Not authorized!")
         sys.exit(1)
-    if not utils.validateDir(version, ioc):
+    if not has_stcmd(version, ioc):
         print("%s does not have an st.cmd for %s!" % (version, ioc))
         sys.exit(1)
     (ft, cl, hl, vs) = utils.readConfig(hutch)
@@ -232,7 +233,7 @@ def upgrade(hutch, ioc, version):
     if not (allow_upgrade or allow_toggle):
         print("Not authorized!")
         sys.exit(1)
-    if not utils.validateDir(version, ioc):
+    if not has_stcmd(version, ioc):
         print("%s does not have an st.cmd for %s!" % (version, ioc))
         sys.exit(1)
     (ft, cl, hl, vs) = utils.readConfig(hutch)

@@ -21,6 +21,7 @@ from qtpy.QtWidgets import (
 )
 
 from . import hostname_ui, table_model, utils
+from .epics_paths import get_parent, normalize_path
 
 
 class hostnamedialog(QDialog):
@@ -96,7 +97,11 @@ class TableDelegate(QStyledItemDelegate):
 
     def setParent(self, gui, ioc, dir):
         if dir != "":
-            gui.setText(utils.findParent(ioc, dir))
+            try:
+                pname = get_parent(dir, ioc)
+            except Exception:
+                pname = ""
+            gui.setText(pname)
 
     def setModelData(self, editor, model, index):
         col = index.column()
@@ -162,7 +167,7 @@ class TableDelegate(QStyledItemDelegate):
                     return
                 try:
                     dir = str(d.selectedFiles()[0])
-                    dir = utils.fixdir(dir, id)
+                    dir = normalize_path(dir, id)
                 except Exception:
                     return
                 editor.setItemText(editor.lastitem, dir)

@@ -13,7 +13,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from .. import env_paths, utils
+from .. import utils
 from ..utils import (
     _netconfig,
     applyConfig,
@@ -23,15 +23,12 @@ from ..utils import (
     check_status,
     checkTelnetMode,
     find_iocs,
-    findParent,
-    fixdir,
     fixTelnetShell,
     getHardIOCDir,
     getHutchList,
     killProc,
     netconfig,
     openTelnet,
-    readAll,
     readConfig,
     readLogPortBanner,
     readStatusDir,
@@ -41,39 +38,13 @@ from ..utils import (
     restartProc,
     startProc,
     validateConfig,
-    validateDir,
     writeConfig,
 )
-from . import CFG_FOLDER, IOC_FOLDER, TESTS_FOLDER
+from . import CFG_FOLDER, TESTS_FOLDER
 from .conftest import ProcServHelper
 
 # All options for booleans for parameterizing tests
 bopts = (True, False)
-
-# Possible pieces to normalize
-test_fixdir_prefix = ("", "../", "../../", "EPICS_SITE_TOP")
-test_fixdir_iocdir = "ioc/common/ci/R1.0.0/"
-test_fixdir_extra_parts = ("", "iocBoot/", "build/iocBoot/", "children/build/iocBoot/")
-test_fixdir_iocnames = ("fake_ioc1", "fake_ioc2")
-
-# Build all the variants
-test_fix_dir_params = []
-for prefix in test_fixdir_prefix:
-    for ext in test_fixdir_extra_parts:
-        for ioc in test_fixdir_iocnames:
-            test_fix_dir_params.append((f"{prefix}{test_fixdir_iocdir}{ext}{ioc}", ioc))
-
-
-@pytest.mark.parametrize("ioc_dir,ioc_name", test_fix_dir_params)
-def test_fixdir(ioc_dir: str, ioc_name: str):
-    ioc_dir = ioc_dir.replace("EPICS_SITE_TOP", env_paths.EPICS_SITE_TOP)
-    if "iocBoot" in ioc_dir:
-        answer = test_fixdir_iocdir.removesuffix("/")
-    else:
-        # Implementation does no special suffix removal if iocBoot isn't here
-        # So the trailing ioc dir remains, but the other processing is done
-        answer = f"{test_fixdir_iocdir}{ioc_name}"
-    assert fixdir(ioc_dir, ioc_name) == answer
 
 
 def test_readLogPortBanner(procserv: ProcServHelper):
@@ -981,68 +952,6 @@ def test_check_ssh():
     assert not check_ssh("tstopr", "pytest")
 
 
-def test_read_all():
-    # This is pretty dumb but whatever
-    my_lines = [
-        "hey\n",
-        "this is an epics thing\n",
-        "I guess\n",
-    ]
-
-    assert readAll("iocs/test_read_all.txt") == my_lines
-    assert readAll(str(TESTS_FOLDER / "iocs" / "test_read_all.txt")) == my_lines
-    assert readAll("defo_not_a_path") == []
-
-
-def test_find_parent(monkeypatch: pytest.MonkeyPatch):
-    # NOTE: skip testing $$PATH, which is an unused feature
-
-    # Normal template IOC
-    assert (
-        findParent("hutch_ioc", str(IOC_FOLDER / "templated_ioc"))
-        == "/some/absolute/path"
-    )
-
-    # Typical common/children structure
-    common_path = IOC_FOLDER / "common_ioc"
-    assert findParent("child_ioc", str(common_path)) == str(
-        IOC_FOLDER.relative_to(TESTS_FOLDER) / "common_ioc"
-    )
-
-    # A real file without this pattern
-    name1 = "malformed_ioc"
-    assert (common_path / "children" / f"{name1}.cfg").exists()
-    assert findParent(name1, str(common_path)) == ""
-
-    # Not a real file
-    name2 = "asdfasefef"
-    assert not (common_path / "children" / f"{name2}.cfg").exists()
-    assert findParent(name2, str(common_path)) == ""
-
-    # Set up fake readAll for more specific regex testing
-    release_line = ""
-
-    def fake_read_all(*args, **kwargs):
-        return [release_line + "\n"]
-
-    monkeypatch.setattr(utils, "readAll", fake_read_all)
-
-    # Variants to exercise each regex in the original implementation
-    answer = "/true/parent/path"
-    sp_opts = ("", " ", "\t")
-    rel_ops = ("RELEASE",)
-    eq_opts = ("=", " ")
-    answer_opts = (answer, f'"{answer}"', f"'{answer}'")
-
-    lines = product(sp_opts, rel_ops, sp_opts, eq_opts, sp_opts, answer_opts, sp_opts)
-
-    for trial_parts in lines:
-        release_line = "".join(trial_parts)
-        assert (
-            findParent("some_ioc", "/some/dir") == answer
-        ), f"Issue with {release_line}"
-
-
 # Skip testing the following functions which will be removed:
 # read_until
 # flush_input
@@ -1227,33 +1136,3 @@ def test_validate_config():
     ]
     assert validateConfig(good_config)
     assert not validateConfig(bad_config)
-
-
-dname_opts = (
-    "iocs/common_ioc",
-    "iocs/common_ioc/children",
-    "iocs/common_ioc/children/build",
-    "iocs/common_ioc/children/build/iocBoot/child_ioc",
-)
-
-
-@pytest.mark.parametrize(
-    "dirname,abs_path",
-    list(product(dname_opts, bopts)),
-)
-def test_validate_dir(dirname: str, abs_path: bool):
-    # See tests/iocs, valid dirs have st.cmd
-    # Need to cover every case in utils.stpaths:
-    # "%s/children/build/iocBoot/%s/st.cmd"
-    # "%s/build/iocBoot/%s/st.cmd"
-    # "%s/iocBoot/%s/st.cmd"
-    # Plus directory/st.cmd
-    # Also needs to cover abs paths and relative paths to
-    # EPICS_SITE_TOP (Which is set to the tests folder)
-    if abs_path:
-        dirname = str(TESTS_FOLDER / dirname)
-    assert validateDir(dirname, "child_ioc")
-
-
-def test_validate_dir_neg():
-    assert not validateDir(str(TESTS_FOLDER), "child_ioc")

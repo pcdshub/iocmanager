@@ -18,6 +18,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from qtpy.QtCore import Qt
 
 from . import auth_ui, table_model, utils
+from .epics_paths import get_parent
 from .ioc_info import get_base_name
 from .ioc_ui import Ui_MainWindow
 from .table_delegate import TableDelegate
@@ -318,7 +319,11 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
 
     def setParent(self, gui, iocfn, dir):
         if dir != "":
-            gui.setText(utils.findParent(iocfn(), dir))
+            try:
+                pname = get_parent(dir, iocfn())
+            except Exception:
+                pname = ""
+            gui.setText(pname)
 
     def selectPort(self, hostgui, portgui, lowport, highport):
         host = hostgui.text()

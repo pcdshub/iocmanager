@@ -17,6 +17,7 @@ import typing
 from pathlib import Path
 
 from . import env_paths
+from .epics_paths import get_parent, normalize_path
 from .ioc_info import get_base_name
 from .log_setup import add_spam_level
 
@@ -26,7 +27,6 @@ add_spam_level(logger)
 # Constants
 BASEPORT = 39050
 COMMITHOST = "psbuild-rhel7"
-
 
 STATUS_INIT = "INITIALIZE WAIT"
 STATUS_NOCONNECT = "NOCONNECT"
@@ -55,56 +55,7 @@ MSG_AUTORESTART_IS_ONESHOT = b"auto restart( mode)? is ONESHOT,"
 MSG_AUTORESTART_CHANGE = b"auto restart to "
 MSG_AUTORESTART_MODE_CHANGE = b"auto restart mode to "
 
-
-stpaths = [
-    "%s/children/build/iocBoot/%s/st.cmd",
-    "%s/build/iocBoot/%s/st.cmd",
-    "%s/iocBoot/%s/st.cmd",
-]
-
 hosttype = {}
-
-
-def fixdir(dir: str, id: str) -> str:
-    """
-    Return a truncated path to a IOC directory.
-
-    - Makes the path relative to EPICS_SITE_TOP
-    - Removes .. from the path
-    - Removes the final "iocBoot" or "build/iocBoot", etc. and
-      the accompanying IOC name
-
-    For example, if we pass in:
-    $EPICS_SITE_TOP/ioc/common/example/R1.0.0/children/build/iocBoot/ioc_name
-    This will return
-    ioc/common/example/R1.0.0
-
-    Note: some of the features require a somewhat standard-looking path.
-    Malformed paths may be returned with few or no changes.
-
-    Parameters
-    ----------
-    dir : str
-        The full path to a running IOC
-    id : str
-        The IOC name
-
-    Returns
-    -------
-    path : str
-    """
-    # Remove ".."
-    part = [pth for pth in dir.split("/") if pth != ".."]
-    dir = "/".join(part)
-    trunc = dir.removeprefix(env_paths.EPICS_SITE_TOP)
-    if trunc != dir:
-        dir = trunc.removeprefix("/")
-    for pth in stpaths:
-        ext = pth % ("", id)
-        ext = ext.removesuffix("/st.cmd")
-        dir = dir.removesuffix(ext)
-    return dir
-
 
 ######################################################################
 #
@@ -182,7 +133,7 @@ def readLogPortBanner(tn: telnetlib.Telnet) -> dict[str, str | bool]:
         "autorestart": arst,
         "autooneshot": arst1,
         "autorestartmode": arstm,
-        "rdir": fixdir(dir, getid),
+        "rdir": normalize_path(dir, getid),
     }
 
 
@@ -754,7 +705,10 @@ def readConfig(
             ioc["rhost"] = ioc["host"]
             ioc["rport"] = ioc["port"]
             ioc["newstyle"] = False
-            ioc["pdir"] = findParent(ioc["id"], ioc["dir"])
+            try:
+                ioc["pdir"] = get_parent(ioc["dir"], ioc["id"])
+            except Exception:
+                ioc["pdir"] = ""
 
     # hosttype is used to display which OS each host is running
     if do_os:
@@ -1346,95 +1300,6 @@ def check_ssh(user: str, hutch: str) -> bool:
     return True
 
 
-# Used in findParent to find "RELEASE = /some/filepath" lines
-# RELEASE = path
-eq = re.compile("^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(.*?)[ \t]*$")
-# RELEASE = "path"
-eqq = re.compile('^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*"([^"]*)"[ \t]*$')
-# RELEASE = 'path'
-eqqq = re.compile("^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*'([^']*)'[ \t]*$")
-# RELEASE path
-sp = re.compile("^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]+(.+?)[ \t]*$")
-# RELEASE "path"
-spq = re.compile('^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]+"([^"]*)"[ \t]*$')
-# RELEASE 'path'
-spqq = re.compile("^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]+'([^']*)'[ \t]*$")
-
-
-def readAll(fn: str) -> list[str]:
-    """
-    Return the contents of a filename.
-
-    The filename can either be an absolute path or it can be relative to
-    EPICS_SITE_TOP.
-
-    Parameters
-    ----------
-    fn : str
-        Filename
-
-    Returns
-    -------
-    text : list of str
-        The contents of the file
-    """
-    if fn[0] != "/":
-        fn = os.path.join(env_paths.EPICS_SITE_TOP, fn)
-    try:
-        with open(fn, "r") as fd:
-            return fd.readlines()
-    except Exception:
-        return []
-
-
-def findParent(ioc: str, dir: str) -> str:
-    """
-    Return the parent (common) ioc path for a templated ioc.
-
-    Parameters
-    ----------
-    ioc : str
-        The name of the ioc
-    dir : str
-        The ioc directory
-
-    Returns
-    -------
-    parent : str
-        The possibly truncated path to the parent IOC release,
-        or an empty string if one could not be determined.
-    """
-    fn = dir + "/" + ioc + ".cfg"
-    lines = readAll(fn)
-    if lines == []:
-        fn = dir + "/children/" + ioc + ".cfg"
-        lines = readAll(fn)
-    if lines == []:
-        return ""
-    lines.reverse()
-    for ln in lines:
-        m = eqqq.search(ln)
-        if m is None:
-            m = eqq.search(ln)
-            if m is None:
-                m = eq.search(ln)
-                if m is None:
-                    m = spqq.search(ln)
-                    if m is None:
-                        m = spq.search(ln)
-                        if m is None:
-                            m = sp.search(ln)
-        if m is not None:
-            var = m.group(1)
-            val = m.group(2)
-            if var == "RELEASE":
-                val = val.replace("$$PATH/", dir + "/" + ioc + ".cfg").replace(
-                    "$$UP(PATH)", dir
-                )
-                return fixdir(val, ioc)
-    return ""
-
-
 def read_until(fd: int, expr: str) -> re.Match[str] | None:
     """
     Read an open file descriptor until regular expression expr finds a match.
@@ -1708,30 +1573,3 @@ def validateConfig(cl: list[dict]) -> bool:
     # Anything else we want to check here?!?
     #
     return True
-
-
-def validateDir(dir: str, ioc: str) -> bool:
-    """
-    Returns True if we can find a st.cmd file in the filetree.
-
-    Parameters
-    ----------
-    dir : str
-        Path to the IOC, either an absolute path or a path relative
-        to EPICS_SITE_TOP
-    ioc : str
-        The name of the IOC
-
-    Returns
-    -------
-    has_stcmd : bool
-        True if we found the st.cmd file at one of the standard locations.
-    """
-    if dir[0] != "/":
-        dir = os.path.join(env_paths.EPICS_SITE_TOP, dir)
-    for p in stpaths:
-        if os.path.exists(p % (dir, ioc)):
-            return True
-    if os.path.exists(dir + "/st.cmd"):
-        return True
-    return False
