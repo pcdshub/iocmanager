@@ -10,6 +10,11 @@ The files handled here and their main functions are:
 - iocmanager.nossh (r): defines which special (opr) users cannot ssh, so we won't try
 - iocmanager.special (r): defines which IOCs can be enabled/disabled
       or have their variants changed and applied by non-authenticated users.
+
+This module also helps manage the files at
+$PYPS_ROOT/config/.status/$hutch
+
+Which are created by the startProc script.
 """
 
 from __future__ import annotations
@@ -490,3 +495,104 @@ def validateConfig(cl: list[dict]) -> bool:
     # Anything else we want to check here?!?
     #
     return True
+
+
+def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
+    """
+    Update a status directory for a hutch and return its information.
+
+    Each hutch has a status directory, nominally at
+    /cds/group/pcds/pyps/config/.status/$hutchname
+
+    This directory contains one file per IOC process, which stores:
+    - PID
+    - hostname
+    - procServ port
+    - path to IOC
+
+    The file stores this info in a single line, for example:
+    14509 ctl-tmo-misc-01 30305 ioc/tmo/pvNotepad/R1.1.5
+
+    This function will open each of these files and do the following:
+    - If the file doesn't have 4 parts, delete the file
+    - If we encounter multiple files with the same host/port combination,
+      delete all but the newest such file.
+    - Collect information about the files that remain and return it all
+
+    Parameters
+    ----------
+    cfg : str
+        The hutch name associated with the config, such as xpp or tmo.
+
+    Returns
+    -------
+    status : list of dict
+        A list of dictionaries containing all information about each
+        IOC from the status dir.
+    """
+    info = {}
+    for filename in os.listdir(env_paths.STATUS_DIR % cfg):
+        full_path = (env_paths.STATUS_DIR % cfg) + "/" + filename
+        with open(full_path, "r") as fd:
+            lines = fd.readlines()
+        if not lines:
+            continue
+        # Must be after we open the file to ensure up-to-date on NFS
+        mtime = os.stat(full_path).st_mtime
+        try:
+            pid, host, port, directory = lines[0].strip().split()
+        except Exception:
+            # Must be the unpack error, file has corrupt data
+            _lazy_delete_file(full_path)
+            continue
+        port = int(port)
+        key = (host, port)
+        if key in info:
+            # Duplicate
+            if info[key]["mtime"] < mtime:
+                # Duplicate, but newer, so delete other!
+                logger.info(
+                    "Deleting obsolete %s in favor of %s",
+                    info[key]["rid"],
+                    filename,
+                )
+                _lazy_delete_file((env_paths.STATUS_DIR % cfg) + "/" + info[key]["rid"])
+                new_entry = True
+            else:
+                # Duplicate, but older, so delete this!
+                logger.info(
+                    "Deleting obsolete %s in favor of %s",
+                    filename,
+                    info[key]["rid"],
+                )
+                _lazy_delete_file(full_path)
+                new_entry = False
+        else:
+            new_entry = True
+
+        if new_entry:
+            info[key] = {
+                "rid": filename,
+                "pid": pid,
+                "rhost": host,
+                "rport": port,
+                "rdir": directory,
+                "newstyle": True,
+                "mtime": mtime,
+                "hard": False,
+            }
+
+    return list(info.values())
+
+
+def _lazy_delete_file(filename: str):
+    """
+    Try to delete the file, but give up easily in case of errors.
+
+    Usually a filesystem permissions thing, no need to crash the GUI for this.
+    """
+    try:
+        os.remove(filename)
+    except Exception:
+        logger.debug("Delete file error", exc_info=True)
+        logger.error("Error while trying to delete file %s!" % filename)
