@@ -22,9 +22,10 @@ import time
 import typing
 
 from . import env_paths
+from .config import readConfig
 from .epics_paths import normalize_path
 from .log_setup import add_spam_level
-from .utils import readConfig, readStatusDir
+from .utils import readStatusDir
 
 # For procmgrd
 BASEPORT = 39050

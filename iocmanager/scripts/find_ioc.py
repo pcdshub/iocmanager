@@ -3,7 +3,7 @@ import sys
 
 from psp.options import Options
 
-from .. import utils
+from ..config import find_iocs
 
 if __name__ == "__main__":
     options = Options(["name"], [], [])
@@ -12,7 +12,7 @@ if __name__ == "__main__":
     except Exception as msg:
         options.usage(str(msg))
         sys.exit(1)
-    iocs = utils.find_iocs(id=options.name)
+    iocs = find_iocs(id=options.name)
     for ioc in iocs:
         print(
             "\tCONFIG:\t\t%s\n\tALIAS:\t\t%s\n\tDIR:\t\t%s\n\tCMD:\t\t%s\n\tHOST:\t\t%s\n\tPORT:\t\t%s\n\tENABLED:\t%s"

@@ -35,6 +35,7 @@ from qtpy.QtWidgets import (
 )
 
 from . import commit_ui, details_ui, utils
+from .config import installConfig, readConfig, writeConfig
 from .epics_paths import get_parent, normalize_path
 from .ioc_info import find_pv, get_base_name
 from .procserv_tools import applyConfig, check_status, restartProc
@@ -75,7 +76,7 @@ class StatusPoll(threading.Thread):
                 start_time = time.monotonic()
                 futures = []
 
-                result = utils.readConfig(self.hutch, self.mtime, do_os=True)
+                result = readConfig(self.hutch, self.mtime, do_os=True)
                 if result is not None:
                     (self.mtime, cfglist, hosts, vdict) = result
                     self.rmtime = {}  # Force a re-read!
@@ -177,7 +178,7 @@ class TableModel(QAbstractTableModel):
         self.userIO = None
         self.poll = StatusPoll(self, 5)
         self.children = []
-        config = utils.readConfig(hutch, do_os=True)
+        config = readConfig(hutch, do_os=True)
         if config is None:
             print("Cannot read configuration for %s!" % hutch)
             sys.exit(-1)
@@ -800,8 +801,8 @@ class TableModel(QAbstractTableModel):
             file = tempfile.NamedTemporaryFile(
                 mode="w", dir=utils.TMP_DIR, delete=False
             )
-            utils.writeConfig(self.hutch, self.hosts, self.cfglist, self.vdict, file)
-            utils.installConfig(self.hutch, file.name)
+            writeConfig(self.hutch, self.hosts, self.cfglist, self.vdict, file)
+            installConfig(self.hutch, file.name)
         except Exception as exc:
             logger.error(f"Error writing config: {exc}")
             logger.debug("Error writing config", exc_info=True)

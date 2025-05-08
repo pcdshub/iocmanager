@@ -17,6 +17,15 @@ from psp.caput import caput
 
 from . import env_paths, utils
 from . import procserv_tools as pt
+from .config import (
+    check_auth,
+    check_special,
+    getHutchList,
+    installConfig,
+    readConfig,
+    validateConfig,
+    writeConfig,
+)
 from .epics_paths import has_stcmd
 from .ioc_info import get_base_name
 from .procserv_tools import applyConfig, check_status, restartProc
@@ -31,7 +40,7 @@ def match_hutch(h, hlist):
 
 
 def get_hutch(ns):
-    hlist = utils.getHutchList()
+    hlist = getHutchList()
     # First, take the --hutch specified on the command line.
     if ns.hutch is not None:
         if ns.hutch not in hlist:
@@ -91,7 +100,7 @@ def port_to_int(port, host, cl):
 
 
 def info(hutch, ioc, verbose):
-    (ft, cl, hl, vs) = utils.readConfig(hutch)
+    (ft, cl, hl, vs) = readConfig(hutch)
     for c in cl:
         if c["id"] == ioc:
             d = check_status(c["host"], c["port"], ioc)
@@ -129,7 +138,7 @@ def soft_reboot(hutch, ioc):
 
 
 def hard_reboot(hutch, ioc):
-    (ft, cl, hl, vs) = utils.readConfig(hutch)
+    (ft, cl, hl, vs) = readConfig(hutch)
     for c in cl:
         if c["id"] == ioc:
             restartProc(c["host"], c["port"])
@@ -139,7 +148,7 @@ def hard_reboot(hutch, ioc):
 
 
 def do_connect(hutch, ioc):
-    (ft, cl, hl, vs) = utils.readConfig(hutch)
+    (ft, cl, hl, vs) = readConfig(hutch)
     for c in cl:
         if c["id"] == ioc:
             os.execvp("telnet", ["telnet", c["host"], str(c["port"])])
@@ -152,8 +161,8 @@ def do_connect(hutch, ioc):
 def do_commit(hutch, cl, hl, vs):
     try:
         file = tempfile.NamedTemporaryFile(dir=env_paths.TMP_DIR, delete=False)
-        utils.writeConfig(hutch, hl, cl, vs, file)
-        utils.installConfig(hutch, file.name)
+        writeConfig(hutch, hl, cl, vs, file)
+        installConfig(hutch, file.name)
     except:
         try:
             os.unlink(file.name)  # Clean up!
@@ -164,12 +173,12 @@ def do_commit(hutch, cl, hl, vs):
 
 
 def set_state(hutch, ioc, enable):
-    if not utils.check_special(ioc, hutch) and not utils.check_auth(
+    if not check_special(ioc, hutch) and not check_auth(
         pwd.getpwuid(os.getuid())[0], hutch
     ):
         print("Not authorized!")
         sys.exit(1)
-    (ft, cl, hl, vs) = utils.readConfig(hutch)
+    (ft, cl, hl, vs) = readConfig(hutch)
     try:
         utils.COMMITHOST = vs["COMMITHOST"]
     except Exception:
@@ -185,13 +194,13 @@ def set_state(hutch, ioc, enable):
 
 
 def add(hutch, ioc, version, hostport, disable):
-    if not utils.check_auth(pwd.getpwuid(os.getuid())[0], hutch):
+    if not check_auth(pwd.getpwuid(os.getuid())[0], hutch):
         print("Not authorized!")
         sys.exit(1)
     if not has_stcmd(version, ioc):
         print("%s does not have an st.cmd for %s!" % (version, ioc))
         sys.exit(1)
-    (ft, cl, hl, vs) = utils.readConfig(hutch)
+    (ft, cl, hl, vs) = readConfig(hutch)
     try:
         utils.COMMITHOST = vs["COMMITHOST"]
     except Exception:
@@ -227,10 +236,10 @@ def add(hutch, ioc, version, hostport, disable):
 
 def upgrade(hutch, ioc, version):
     # check if the version change is permissible
-    allow_toggle = utils.check_special(ioc, hutch, version)
+    allow_toggle = check_special(ioc, hutch, version)
 
     # check if user is authed to do any upgrade
-    allow_upgrade = utils.check_auth(pwd.getpwuid(os.getuid())[0], hutch)
+    allow_upgrade = check_auth(pwd.getpwuid(os.getuid())[0], hutch)
 
     if not (allow_upgrade or allow_toggle):
         print("Not authorized!")
@@ -238,7 +247,7 @@ def upgrade(hutch, ioc, version):
     if not has_stcmd(version, ioc):
         print("%s does not have an st.cmd for %s!" % (version, ioc))
         sys.exit(1)
-    (ft, cl, hl, vs) = utils.readConfig(hutch)
+    (ft, cl, hl, vs) = readConfig(hutch)
     try:
         utils.COMMITHOST = vs["COMMITHOST"]
     except Exception:
@@ -254,10 +263,10 @@ def upgrade(hutch, ioc, version):
 
 
 def move(hutch, ioc, hostport):
-    if not utils.check_auth(pwd.getpwuid(os.getuid())[0], hutch):
+    if not check_auth(pwd.getpwuid(os.getuid())[0], hutch):
         print("Not authorized!")
         sys.exit(1)
-    (ft, cl, hl, vs) = utils.readConfig(hutch)
+    (ft, cl, hl, vs) = readConfig(hutch)
     try:
         utils.COMMITHOST = vs["COMMITHOST"]
     except Exception:
@@ -268,7 +277,7 @@ def move(hutch, ioc, hostport):
             c["newhost"] = hp[0]
             if len(hp) > 1:
                 c["newport"] = port_to_int(hp[1], hp[0], cl)
-            if not utils.validateConfig(cl):
+            if not validateConfig(cl):
                 print(
                     "Port conflict when moving %s to %s, not moved!" % (ioc, hostport)
                 )
@@ -281,7 +290,7 @@ def move(hutch, ioc, hostport):
 
 
 def do_list(hutch, ns):
-    (ft, cl, hl, vs) = utils.readConfig(hutch)
+    (ft, cl, hl, vs) = readConfig(hutch)
     h = ns.host
     show_disabled = not ns.enabled_only
     show_enabled = not ns.disabled_only

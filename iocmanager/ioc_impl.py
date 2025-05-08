@@ -18,6 +18,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from qtpy.QtCore import Qt
 
 from . import auth_ui, table_model, utils
+from .config import check_auth, check_ssh
 from .epics_paths import get_parent
 from .ioc_info import get_base_name
 from .ioc_ui import Ui_MainWindow
@@ -470,7 +471,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         if user == "":
             user = self.myuid
         need_su = self.myuid != user
-        if not utils.check_ssh(user, self.hutch):
+        if not check_ssh(user, self.hutch):
             if self.model.userIO is not None:
                 try:
                     os.close(self.model.userIO)
@@ -592,17 +593,15 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
 
     def authorize_action(self, file_action):
         # The user might be OK.
-        if utils.check_auth(self.model.user, self.hutch) and (
-            not file_action
-            or utils.check_ssh(self.model.user, self.hutch) == file_action
+        if check_auth(self.model.user, self.hutch) and (
+            not file_action or check_ssh(self.model.user, self.hutch) == file_action
         ):
             return True
         # If the user isn't OK, give him or her a chance to authenticate.
         if self.model.user == self.myuid:
             self.doAuthenticate()
-        if utils.check_auth(self.model.user, self.hutch) and (
-            not file_action
-            or utils.check_ssh(self.model.user, self.hutch) == file_action
+        if check_auth(self.model.user, self.hutch) and (
+            not file_action or check_ssh(self.model.user, self.hutch) == file_action
         ):
             return True
         QtWidgets.QMessageBox.critical(

@@ -2,13 +2,13 @@
 import sys
 import time
 
-from .. import utils
+from ..config import readConfig
 from ..procserv_tools import startProc
 
 if __name__ == "__main__":
     cfg = sys.argv[1]
     host = sys.argv[2]
-    result = utils.readConfig(cfg)
+    result = readConfig(cfg)
     if result is None:
         print("Cannot read configuration for %s!" % cfg)
         sys.exit(-1)
