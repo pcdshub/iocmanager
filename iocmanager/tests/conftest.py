@@ -143,10 +143,7 @@ class ProcServHelper:
             stderr=subprocess.DEVNULL,
             cwd=self.startup_dir,
         )
-        # This is rude but it makes it more consistent...
-        # TODO be better
-        time.sleep(0.1)
-        self.tn = Telnet("localhost", self.port, 1)
+        self.tn = self.telnet_when_procserv_started()
         return self.proc
 
     def close_procserv(self):
@@ -164,9 +161,8 @@ class ProcServHelper:
             self.toggle_running()
             # Now that nothing is running, we can try to close again.
             self.close_cmd()
-            # Give it a second to catch up
-            # TODO more sophisticated waiting
-            time.sleep(1)
+            # Make sure it closes
+            self.wait_procserv_closed()
             # Always kill just in case
             self.proc.kill()
             self.proc = None
@@ -248,6 +244,32 @@ class ProcServHelper:
         This is the equivalent of pressing ctrl+X
         """
         self._ctrl_char("x")
+
+    def telnet_when_procserv_started(self, timeout: float = 1.0) -> Telnet:
+        """
+        Helper to get a working Telnet object as early as possible during startup.
+        """
+        start_time = time.monotonic()
+        while time.monotonic() - start_time < timeout:
+            try:
+                return Telnet("localhost", self.port, 1)
+            except OSError:
+                time.sleep(0.01)
+        raise RuntimeError("Could not connect to procServ!")
+
+    def wait_procserv_closed(self, timeout: float = 0.1):
+        """
+        Returns once the procServ process is closed.
+        """
+        start_time = time.monotonic()
+        while time.monotonic() - start_time < timeout:
+            try:
+                with Telnet("localhost", self.port, 1):
+                    ...
+            except OSError:
+                break
+            else:
+                time.sleep(0.01)
 
 
 def get_procserv_bin_path() -> Path:
