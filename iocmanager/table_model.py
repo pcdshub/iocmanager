@@ -39,6 +39,7 @@ from .config import installConfig, readConfig, readStatusDir, writeConfig
 from .epics_paths import get_parent, normalize_path
 from .ioc_info import find_pv, get_base_name
 from .procserv_tools import applyConfig, check_status, restartProc
+from .server_tools import netconfig, rebootServer
 
 logger = logging.getLogger(__name__)
 
@@ -1149,7 +1150,7 @@ class TableModel(QAbstractTableModel):
         #
         try:
             if entry["hard"]:
-                for line in utils.netconfig(entry["id"])["console port dn"].split(","):
+                for line in netconfig(entry["id"])["console port dn"].split(","):
                     if line[:7] == "cn=port":
                         port = 2000 + int(line[7:])
                     if line[:7] == "cn=digi":
@@ -1244,7 +1245,7 @@ class TableModel(QAbstractTableModel):
         d.setWindowTitle("Reboot Server " + host)
         d.layout = QVBoxLayout(d)
         ihost = host + "-ipmi"
-        nc = utils.netconfig(ihost)
+        nc = netconfig(ihost)
         try:
             nc["name"]
         except Exception:
@@ -1285,7 +1286,7 @@ class TableModel(QAbstractTableModel):
         d.buttonBox.accepted.connect(d.accept)
         d.buttonBox.rejected.connect(d.reject)
         if d.exec_() == QDialog.Accepted:
-            if not utils.rebootServer(ihost):
+            if not rebootServer(ihost):
                 QMessageBox.critical(
                     None,
                     "Error",

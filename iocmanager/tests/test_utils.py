@@ -4,13 +4,11 @@ import telnetlib
 
 import pytest
 
-from .. import utils
+from .. import server_tools
+from ..server_tools import netconfig
 from ..utils import (
-    _netconfig,
     getHardIOCDir,
-    netconfig,
     rebootHIOC,
-    rebootServer,
     restartHIOC,
 )
 
@@ -19,46 +17,6 @@ from ..utils import (
 # flush_input
 # do_write
 # commit_config (needs to be replaced with fabric version)
-
-
-_example_netconfig_text = """
-        name: ctl-pytest-cam-01
-        subnet: cds-pytest.pcdsn
-        Ethernet Address: 00:00:00:00:00:00
-        IP: 10.0.0.1
-        PC#: 99999
-        Location: SLAC
-        Contact: uid=user,ou=People,dc=reg,o=slac
-        Description: Ciara AMD7282
-        DHCP parameters:
-                filename "pxe/uefi/shim.efi";
-        Puppet Classes:
-"""
-
-
-def test_netconfig_text_processing(monkeypatch: pytest.MonkeyPatch):
-    def fake_netconfig(host: str):
-        return _example_netconfig_text
-
-    monkeypatch.setattr(utils, "_netconfig", fake_netconfig)
-    info = netconfig("ctl-pytest-cam-01")
-    assert info["name"] == "ctl-pytest-cam-01"
-    assert info["subnet"] == "cds-pytest.pcdsn"
-    assert info["pc#"] == "99999"
-
-
-def test_netconfig_call():
-    host = "asdfsdf"
-    assert _netconfig(host).strip() == f"netconfig view {host}"
-
-
-def test_reboot_server(capfd: pytest.CaptureFixture):
-    # Fake reboot script tools/bin/psipmi just echoes our command
-    host = "asdfsdfasdf"
-    assert rebootServer(host)
-    captured = capfd.readouterr()
-    assert captured.out.strip() == f"psipmi {host} power cycle"
-    assert captured.err == ""
 
 
 def test_get_hard_ioc_dir():
@@ -107,7 +65,7 @@ def test_restart_hioc(monkeypatch: pytest.MonkeyPatch):
         else:
             raise RuntimeError("Not a host")
 
-    monkeypatch.setattr(utils, "_netconfig", fake_netconfig)
+    monkeypatch.setattr(server_tools, "_netconfig", fake_netconfig)
 
     class FakeTelnet:
         registry: list[FakeTelnet] = []

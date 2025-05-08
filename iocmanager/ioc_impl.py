@@ -22,6 +22,7 @@ from .config import check_auth, check_ssh
 from .epics_paths import get_parent
 from .ioc_info import get_base_name
 from .ioc_ui import Ui_MainWindow
+from .server_tools import netconfig
 from .table_delegate import TableDelegate
 
 logger = logging.getLogger(__name__)
@@ -268,7 +269,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
                 self.dopv(base + ":TOD", self.ui.tod, "%s")
                 self.dopv(base + ":STARTTOD", self.ui.boottime, "%s")
                 pyca.flush_io()
-            d = utils.netconfig(host)
+            d = netconfig(host)
             try:
                 self.ui.location.setText(d["location"])
             except Exception:
