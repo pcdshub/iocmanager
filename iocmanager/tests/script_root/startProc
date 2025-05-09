@@ -1,0 +1,17 @@
+#!/usr/bin/bash
+# Instead of the normal startProc, just run the specified ioc
+
+# IOC's name
+IOC="$1"
+# procServ port, used in the real startProc to write out a file
+PORT="$2"
+# e.g. XPP, TST
+CFG="$3"
+# e.g. ./st.cmd
+CMD="$4"
+
+echo "Starting fake IOC ${IOC} on port ${PORT} for hutch ${CFG} using cmd ${CMD}"
+
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+cd "${THIS_DIR}/../iocs/${IOC}" || exit
+$CMD

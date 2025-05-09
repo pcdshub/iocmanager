@@ -1,0 +1,5 @@
+#!/usr/bin/bash
+if [ -x /cds/group/pcds/setup/epicsenv-cur.sh ]; then
+    source /cds/group/pcds/setup/epicsenv-cur.sh
+fi
+exec $(which caRepeater)
