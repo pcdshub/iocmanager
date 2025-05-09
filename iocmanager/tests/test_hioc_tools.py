@@ -6,16 +6,23 @@ import pytest
 
 from .. import server_tools
 from ..hioc_tools import (
-    getHardIOCDir,
-    rebootHIOC,
-    restartHIOC,
+    get_hard_ioc_dir,
+    get_hard_ioc_dir_for_display,
+    reboot_hioc,
+    restart_hioc,
 )
 from ..server_tools import netconfig
 
 
 def test_get_hard_ioc_dir():
-    assert getHardIOCDir("test-hioc") == "ioc/pytest/the-pytest-hiocs-folder/R1.0.0"
-    assert getHardIOCDir("not-a-real-name") == "Unknown"
+    assert get_hard_ioc_dir("test-hioc") == "ioc/pytest/the-pytest-hiocs-folder/R1.0.0"
+    with pytest.raises(OSError):
+        get_hard_ioc_dir("not-a-real-name")
+    assert (
+        get_hard_ioc_dir_for_display("test-hioc")
+        == "ioc/pytest/the-pytest-hiocs-folder/R1.0.0"
+    )
+    assert get_hard_ioc_dir_for_display("not-a-real-name") == "Unknown"
 
 
 _hioc_netconfig_no_console_info = """
@@ -83,16 +90,18 @@ def test_restart_hioc(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(telnetlib, "Telnet", FakeTelnet)
 
-    # Invalid host -> returns False I guess, netconfig should have no info for us
+    # Invalid host -> RuntimeError, netconfig should have no info for us
     assert not netconfig("asdfsdf")
-    assert not restartHIOC("asdfsdf")
+    with pytest.raises(RuntimeError):
+        restart_hioc("asdfsdf")
 
-    # Host without port should also return False, even though netconfig doesn't error
+    # Host without port should also raise RuntimeError
     assert netconfig("ioc-pytest-hioc1")
-    assert not restartHIOC("ioc-pytest-hioc1")
+    with pytest.raises(RuntimeError):
+        restart_hioc("ioc-pytest-hioc1")
 
     # Host with proper info should create the correct Telnet and use it appropriately
-    assert restartHIOC("ioc-pytest-hioc2")
+    restart_hioc("ioc-pytest-hioc2")
     assert len(FakeTelnet.registry) == 1
     tn = FakeTelnet.registry[0]
     assert tn.host == "digi-pytest-01"
@@ -109,10 +118,10 @@ def test_restart_hioc(monkeypatch: pytest.MonkeyPatch):
     ]
 
 
-def test_reboot_hioc(capsys: pytest.CaptureFixture):
+def test_reboot_hioc(capfd: pytest.CaptureFixture):
     # Fake reboot script tools/bin/power just echoes our command
     host = "asdfsdfasdf"
-    assert rebootHIOC(host)
-    captured = capsys.readouterr()
+    reboot_hioc(host)
+    captured = capfd.readouterr()
     assert captured.out.strip() == f"power {host} cycle"
     assert captured.err == ""

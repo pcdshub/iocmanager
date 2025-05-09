@@ -21,64 +21,83 @@ from .server_tools import netconfig
 logger = logging.getLogger(__name__)
 
 
-def getHardIOCDir(host: str) -> str:
-    """Return the hard IOC directory for a given hard IOC host."""
-    dir = "Unknown"
-    try:
-        lines = [ln.strip() for ln in open(env_paths.HIOC_STARTUP % host).readlines()]
-    except Exception:
-        logger.error("Error while trying to read HIOC startup file for %s!" % host)
-        return "Unknown"
-    for ln in lines:
+def get_hard_ioc_dir(host: str) -> str:
+    """
+    Return the hard IOC directory for a given hard IOC host.
+
+    May raise if the directory cannot be determined.
+    """
+    with open(env_paths.HIOC_STARTUP % host, "r") as fd:
+        lines = fd.readlines()
+    for ln in [ln.strip() for ln in lines]:
         if ln[:5] == "chdir":
             try:
-                dir = "ioc/" + re.search('"/iocs/(.*)/iocBoot', ln).group(1)
+                return "ioc/" + re.search('"/iocs/(.*)/iocBoot', ln).group(1)
             except Exception:
-                pass  # Having dir show "Unknown" should suffice.
-    return dir
+                ...
+    raise RuntimeError("Did not find chdir in startup file for {host}")
 
 
-def restartHIOC(host: str) -> bool:
-    """Console into a HIOC and reboot it via the shell, return True if successful."""
+def get_hard_ioc_dir_for_display(host: str) -> str:
+    """
+    Return the hard IOC directory, or Unknown for a given hard IOC host.
+
+    For user display purposes, we don't really care why this fails, we just
+    want to display a placeholder.
+    """
+    try:
+        return get_hard_ioc_dir(host)
+    except OSError:
+        logger.error("Error while trying to read HIOC startup file for %s!", host)
+    except Exception:
+        ...
+    return "Unknown"
+
+
+def restart_hioc(host: str):
+    """
+    Console into a HIOC and reboot it via the shell.
+
+    May raise if something goes wrong.
+    """
     try:
         for line in netconfig(host)["console port dn"].split(","):
             if line[:7] == "cn=port":
                 port = 2000 + int(line[7:])
             if line[:7] == "cn=digi":
                 host = line[3:]
-    except Exception:
+    except Exception as exc:
         logger.debug("Netconfig error", exc_info=True)
-        print("Error parsing netconfig for HIOC %s console info!" % host)
-        return False
+        raise RuntimeError(
+            f"Error parsing netconfig for HIOC {host} console info!"
+        ) from exc
     try:
         tn = telnetlib.Telnet(host, port, 1)
-    except Exception:
+    except Exception as exc:
         logger.debug("Telnet error", exc_info=True)
-        print("Error making telnet connection to HIOC %s!" % host)
-        return False
+        raise RuntimeError(f"Error making telnet connection to HIOC {host}!") from exc
     tn.write(b"\x0a")
     tn.read_until(b"> ", 2)
     tn.write(b"exit\x0a")
     tn.read_until(b"> ", 2)
     tn.write(b"rtemsReboot()\x0a")
     tn.close()
-    return True
 
 
-def rebootHIOC(host: str) -> bool:
-    """Power cycle a HIOC via the PDU entry in netconfig, return True if successful."""
+def reboot_hioc(host: str):
+    """
+    Power cycle a HIOC via the PDU entry in netconfig.
+
+    May raise if unsuccessful.
+    """
     try:
         env = copy.deepcopy(os.environ)
         del env["LD_LIBRARY_PATH"]
-        print(
-            subprocess.check_output(
-                [env_paths.HIOC_POWER, host, "cycle"],
-                env=env,
-                universal_newlines=True,
-            )
+        subprocess.run(
+            [env_paths.HIOC_POWER, host, "cycle"],
+            env=env,
+            universal_newlines=True,
         )
-        return True
-    except Exception:
+    except Exception as exc:
         logger.debug("Power cycle error", exc_info=True)
-        print("Error while trying to power cycle HIOC %s!" % host)
-        return False
+        raise RuntimeError(f"Error while trying to power cycle HIOC {host}!") from exc

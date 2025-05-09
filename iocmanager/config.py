@@ -29,7 +29,7 @@ from pathlib import Path
 
 from . import env_paths
 from .epics_paths import get_parent
-from .hioc_tools import getHardIOCDir
+from .hioc_tools import get_hard_ioc_dir_for_display
 from .ioc_info import get_base_name
 
 CONFIG_NORMAL = 0
@@ -146,7 +146,7 @@ def readConfig(
             except Exception:
                 base = None
             ioc["base"] = base
-            ioc["dir"] = getHardIOCDir(ioc["id"])
+            ioc["dir"] = get_hard_ioc_dir_for_display(ioc["id"])
             ioc["host"] = ioc["id"]
             ioc["port"] = -1
             ioc["rhost"] = ioc["id"]
