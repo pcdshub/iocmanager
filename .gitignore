@@ -3,6 +3,7 @@
 .pdbrc
 *~
 .vscode
+.venv
 __pycache__
 core.*
 
