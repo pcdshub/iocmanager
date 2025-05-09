@@ -7,9 +7,11 @@ columns in the central QTableView of the GUI.
 See https://doc.qt.io/qt-5/qstyleditemdelegate.html#details
 """
 
+from __future__ import annotations
+
 import os
 
-from qtpy.QtCore import QSize, Qt, QUrl, QVariant
+from qtpy.QtCore import QModelIndex, QSize, Qt, QUrl, QVariant
 from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
@@ -17,29 +19,38 @@ from qtpy.QtWidgets import (
     QLabel,
     QLineEdit,
     QStyledItemDelegate,
+    QStyleOptionViewItem,
     QWidget,
 )
 
 from . import hostname_ui, table_model, utils
 from .epics_paths import get_parent, normalize_path
+from .table_model import TableModel
+from .type_hints import ParentWidget
 
 
-class hostnamedialog(QDialog):
-    def __init__(self, parent=None):
-        QWidget.__init__(self, parent)
+class HostnameDialog(QDialog):
+    """
+    Load the pyuic-compiled ui/hostname.ui into a QDialog.
+    """
+
+    def __init__(self, parent: ParentWidget = None):
+        super().__init__(parent)
         self.ui = hostname_ui.Ui_Dialog()
         self.ui.setupUi(self)
 
 
 class TableDelegate(QStyledItemDelegate):
-    def __init__(self, parent, hutch):
-        QStyledItemDelegate.__init__(self, parent)
-        self.parent = parent
+    def __init__(self, hutch: str, parent: ParentWidget = None):
+        super().__init__(parent)
         self.hutch = hutch
         self.boxsize = None
-        self.hostdialog = hostnamedialog(parent)
+        self.hostdialog = HostnameDialog(parent)
 
-    def createEditor(self, parent, option, index):
+    def createEditor(
+        self, parent: QWidget, option: QStyleOptionViewItem, index: QModelIndex
+    ):
+        """https://doc.qt.io/qt-5/qstyleditemdelegate.html#createEditor"""
         col = index.column()
         if (
             col == table_model.HOST
@@ -69,7 +80,8 @@ class TableDelegate(QStyledItemDelegate):
         else:
             return QStyledItemDelegate.createEditor(self, parent, option, index)
 
-    def setEditorData(self, editor, index):
+    def setEditorData(self, editor: QWidget | QComboBox, index: QModelIndex):
+        """https://doc.qt.io/qt-5/qstyleditemdelegate.html#setEditorData"""
         col = index.column()
         if col == table_model.HOST:
             value = index.model().data(index, Qt.EditRole).value()
@@ -95,15 +107,10 @@ class TableDelegate(QStyledItemDelegate):
         else:
             QStyledItemDelegate.setEditorData(self, editor, index)
 
-    def setParent(self, gui, ioc, dir):
-        if dir != "":
-            try:
-                pname = get_parent(dir, ioc)
-            except Exception:
-                pname = ""
-            gui.setText(pname)
-
-    def setModelData(self, editor, model, index):
+    def setModelData(
+        self, editor: QWidget | QComboBox, model: TableModel, index: QModelIndex
+    ):
+        """https://doc.qt.io/qt-5/qstyleditemdelegate.html#setModelData"""
         col = index.column()
         if col == table_model.HOST:
             idx = editor.currentIndex()
@@ -135,11 +142,13 @@ class TableDelegate(QStyledItemDelegate):
                     except Exception:
                         print("Error picking new directory!")
                 row = index.row()
-                id = model.getID(row)
-                d = QFileDialog(self.parent, "New Version for %s" % id, r)
-                d.setFileMode(QFileDialog.Directory)
-                d.setOptions(QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog)
-                d.setSidebarUrls(
+                idm = model.getID(row)
+                dlg = QFileDialog(self.parent(), "New Version for %s" % idm, r)
+                dlg.setFileMode(QFileDialog.Directory)
+                dlg.setOptions(
+                    QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog
+                )
+                dlg.setSidebarUrls(
                     [
                         QUrl("file://" + r),
                         QUrl("file://" + os.getenv("HOME")),
@@ -148,7 +157,7 @@ class TableDelegate(QStyledItemDelegate):
                         QUrl("file://" + utils.EPICS_DEV_TOP),
                     ]
                 )
-                dialog_layout = d.layout()
+                dialog_layout = dlg.layout()
                 tmp = QLabel()
                 tmp.setText("Parent")
                 dialog_layout.addWidget(tmp, 4, 0)
@@ -156,24 +165,24 @@ class TableDelegate(QStyledItemDelegate):
                 parentgui.setReadOnly(True)
                 dialog_layout.addWidget(parentgui, 4, 1)
 
-                def fn(dir):
-                    self.setParent(parentgui, id, dir)
+                def fn(dirname):
+                    self.set_ioc_parent(parentgui, idm, dirname)
 
-                d.directoryEntered.connect(fn)
-                d.currentChanged.connect(fn)
+                dlg.directoryEntered.connect(fn)
+                dlg.currentChanged.connect(fn)
 
-                if d.exec_() == QDialog.Rejected:
+                if dlg.exec_() == QDialog.Rejected:
                     editor.setCurrentIndex(0)
                     return
                 try:
-                    dir = str(d.selectedFiles()[0])
-                    dir = normalize_path(dir, id)
+                    directory = str(dlg.selectedFiles()[0])
+                    directory = normalize_path(directory, idm)
                 except Exception:
                     return
-                editor.setItemText(editor.lastitem, dir)
+                editor.setItemText(editor.lastitem, directory)
                 editor.addItem("New Version")
                 editor.lastitem += 1
-                model.setData(index, QVariant(dir), Qt.EditRole)
+                model.setData(index, QVariant(directory), Qt.EditRole)
             else:
                 model.setData(index, QVariant(str(editor.currentText())), Qt.EditRole)
         elif col == table_model.STATE:
@@ -182,7 +191,8 @@ class TableDelegate(QStyledItemDelegate):
         else:
             QStyledItemDelegate.setModelData(self, editor, model, index)
 
-    def sizeHint(self, option, index):
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex):
+        """https://doc.qt.io/qt-5/qstyleditemdelegate.html#sizeHint"""
         col = index.column()
         if col == table_model.HOST:
             if self.boxsize is None:
@@ -193,5 +203,14 @@ class TableDelegate(QStyledItemDelegate):
             result = QStyledItemDelegate.sizeHint(self, option, index)
         return result
 
-    def do_commit(self, n, editor):
+    def do_commit(self, _, editor: QComboBox):
+        """https://doc.qt.io/qt-5/qabstractitemdelegate.html#commitData"""
         self.commitData.emit(editor)
+
+    def set_ioc_parent(self, gui: QLineEdit, ioc: str, directory: str):
+        if directory != "":
+            try:
+                pname = get_parent(directory, ioc)
+            except Exception:
+                pname = ""
+            gui.setText(pname)

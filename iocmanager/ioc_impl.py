@@ -78,7 +78,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         self.authdialog = authdialog(self)
         self.model = table_model.TableModel(hutch)
         self.utimer = QtCore.QTimer()
-        self.delegate = TableDelegate(None, hutch)
+        self.delegate = TableDelegate(hutch)
         self.ui.actionApply.triggered.connect(self.doApply)
         self.ui.actionSave.triggered.connect(self.doSave)
         self.ui.actionRevert.triggered.connect(self.model.doRevert)
