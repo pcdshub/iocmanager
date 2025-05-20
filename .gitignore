@@ -13,6 +13,9 @@ details_ui.py
 hostname_ui.py
 ioc_ui.py
 
+_version.py
+iocmanager.egg-info
+
 procserv/build
 
 ioc.log*

@@ -17,8 +17,6 @@ $PYPS_ROOT/config/.status/$hutch
 Which are created by the startProc script.
 """
 
-from __future__ import annotations
-
 import glob
 import io
 import logging

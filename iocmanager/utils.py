@@ -2,8 +2,6 @@
 The utils module contains deprecated functions scheduled for removal and replacement.
 """
 
-from __future__ import annotations
-
 import fcntl
 import os
 import re

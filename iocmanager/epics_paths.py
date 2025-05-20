@@ -4,8 +4,6 @@ The epics_paths module defines helper functions for paths in the EPICS filetree.
 This is everything under EPICS_SITE_TOP.
 """
 
-from __future__ import annotations
-
 import os
 import re
 

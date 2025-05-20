@@ -7,8 +7,6 @@ columns in the central QTableView of the GUI.
 See https://doc.qt.io/qt-5/qstyleditemdelegate.html#details
 """
 
-from __future__ import annotations
-
 import os
 
 from qtpy.QtCore import QModelIndex, QSize, Qt, QUrl, QVariant

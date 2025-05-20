@@ -10,8 +10,6 @@ It is typically used to run EPICS IOCs.
 Managing these procServ processes is the key role of iocmanager.
 """
 
-from __future__ import annotations
-
 import collections
 import logging
 import os

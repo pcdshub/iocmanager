@@ -1,16 +1,19 @@
+#!/usr/bin/bash
 # TODO: find a consistent way to get procServ available without pkgmgr
 if [ -x /etc/pathinit ]; then
     # TODO: figure out if this is actually used anywhere
     source /etc/pathinit
 fi
-if [ -z "${PCDS_CONDA_VER}" ]; then
-    export PCDS_CONDA_VER=pcds-5.9.1
+if [ -z "${SCRIPTROOT}" ]; then
+    SCRIPTROOT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+    export SCRIPTROOT
+fi
+if [ -z "${IOCMAN_PY_BIN}" ]; then
+    REPO_ROOT="$(realpath "${SCRIPTROOT}"/../)"
+    export IOCMAN_PY_BIN="${REPO_ROOT}"/.venv/bin
 fi
 if [ -z "${PYPS_ROOT}" ]; then
     export PYPS_ROOT=/cds/group/pcds/pyps
-fi
-if [ -z "${IOCMAN_PY_BIN}" ]; then
-    export IOCMAN_PY_BIN="${PYPS_ROOT}"/conda/py39/envs/"${PCDS_CONDA_VER}"/bin
 fi
 if [ -z "${PACKAGE_SITE_TOP}" ]; then
     export PACKAGE_SITE_TOP=/cds/group/pcds/package
@@ -26,7 +29,4 @@ if [ -z "${IOC_DATA}" ]; then
 fi
 if [ -z "${IOC_COMMON}" ]; then
     export IOC_COMMON=/cds/data/iocCommon
-fi
-if [ -z "${SCRIPTROOT}" ]; then
-    export SCRIPTROOT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 fi

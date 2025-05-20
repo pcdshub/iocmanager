@@ -1,8 +1,52 @@
 #!/bin/bash
+set -e
 THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-cd "${THIS_DIR}" || exit
+cd "${THIS_DIR}"
 source ./scripts/default_env
 
+echo "Compile with python bin ${IOCMAN_PY_BIN}"
+
+if [ "${IOCMAN_PY_BIN}" == "${THIS_DIR}"/.venv/bin ]; then
+    echo "Using in-dir .venv, check installs"
+
+    # Standard is to use a .venv at the repo root
+    # Seed using a conda release of choice, possibly pcds-6.0.0
+    # Any new enough conda with a working qt should be ok
+    if [ ! -d "${IOCMAN_PY_BIN}" ]; then
+        echo "Creating .venv from base python3=$(which python3)"
+        python3 -m venv --system-site-packages .venv
+    else
+        echo ".venv already created"
+    fi
+    source .venv/bin/activate
+
+    # This pulls in any extra dependencies we define here
+    # And any other install steps we need
+    if ! python3 -m iocmanager --version; then
+        echo "Installing iocmanager in developer mode into .venv"
+        pip install -e .
+    else
+        echo "IOC Manager already installed"
+    fi
+
+    # This populates or local .venv bin with some exectuables from system-site-packages
+    # Otherwise we don't actually have access to pyuic5, for example
+    BASE_BIN="$(grep 'home = ' .venv/pyenv.cfg | cut -d ' ' -f 3)"
+    for exe in pyuic5 python python3; do
+        link_name=".venv/bin/${exe}"
+        target_name="${BASE_BIN}/${exe}"
+        if [ ! -x "${link_name}" ]; then
+            echo "Linking ${link_name} to ${target_name}"
+            ln -s "${target_name}" "${link_name}"
+        else
+            echo "Executable ${link_name} already exists"
+        fi
+    done
+else
+    echo "Not using in-dir .conda, skip installs"
+fi
+
+echo "(re-)build .py files from .ui"
 "${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ioc_ui.py ui/ioc.ui
 "${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/hostname_ui.py ui/hostname.ui
 "${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/auth_ui.py ui/auth.ui
