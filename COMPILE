@@ -31,7 +31,7 @@ if [ "${IOCMAN_PY_BIN}" == "${THIS_DIR}"/.venv/bin ]; then
 
     # This populates or local .venv bin with some exectuables from system-site-packages
     # Otherwise we don't actually have access to pyuic5, for example
-    BASE_BIN="$(grep 'home = ' .venv/pyenv.cfg | cut -d ' ' -f 3)"
+    BASE_BIN="$(grep 'home = ' .venv/pyvenv.cfg | cut -d ' ' -f 3)"
     for exe in pyuic5 python python3; do
         link_name=".venv/bin/${exe}"
         target_name="${BASE_BIN}/${exe}"
