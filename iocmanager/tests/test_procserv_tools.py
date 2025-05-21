@@ -722,8 +722,8 @@ def test_apply_config(
 
 def test_apply_config_early_fail(monkeypatch: pytest.MonkeyPatch):
     def fake_read_config(*args, **kwargs):
-        return None
+        raise RuntimeError()
 
-    monkeypatch.setattr(pt, "readConfig", fake_read_config)
+    monkeypatch.setattr(pt, "read_config", fake_read_config)
 
     assert applyConfig("pytest", ioc="notarealiocpleasedontpbreakproc") != 0
