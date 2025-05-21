@@ -21,7 +21,7 @@ from .config import (
     IOCProc,
     check_auth,
     check_special,
-    getHutchList,
+    get_hutch_list,
     read_config,
     validateConfig,
     write_config,
@@ -40,7 +40,7 @@ def match_hutch(h, hlist):
 
 
 def get_hutch(ns):
-    hlist = getHutchList()
+    hlist = get_hutch_list()
     # First, take the --hutch specified on the command line.
     if ns.hutch is not None:
         if ns.hutch not in hlist:

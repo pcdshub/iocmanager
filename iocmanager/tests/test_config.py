@@ -13,7 +13,7 @@ from ..config import (
     check_special,
     check_ssh,
     find_iocs,
-    getHutchList,
+    get_hutch_list,
     read_config,
     readStatusDir,
     validateConfig,
@@ -122,7 +122,7 @@ def test_find_iocs():
 
 def test_get_hutch_list():
     # See folders in pyps_root/config
-    assert sorted(getHutchList()) == [
+    assert sorted(get_hutch_list()) == [
         "pytest",
         "second_hutch",
     ]

@@ -447,7 +447,7 @@ def find_iocs(**kwargs) -> list[tuple[str, IOCProc]]:
     return configs
 
 
-def getHutchList() -> list[str]:
+def get_hutch_list() -> list[str]:
     """Return the list of all supported hutches."""
     try:
         config_paths = Path(env_paths.CONFIG_DIR).glob("*/iocmanager.cfg")
