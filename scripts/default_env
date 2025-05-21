@@ -9,8 +9,7 @@ if [ -z "${SCRIPTROOT}" ]; then
     export SCRIPTROOT
 fi
 if [ -z "${IOCMAN_PY_BIN}" ]; then
-    REPO_ROOT="$(realpath "${SCRIPTROOT}"/../)"
-    export IOCMAN_PY_BIN="${REPO_ROOT}"/.venv/bin
+    export IOCMAN_PY_BIN=/cds/group/pcds/conda/py312/envs/pcds-6.0.0/bin
 fi
 if [ -z "${PYPS_ROOT}" ]; then
     export PYPS_ROOT=/cds/group/pcds/pyps

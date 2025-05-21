@@ -1,7 +1,5 @@
-import io
 import socket
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -23,7 +21,6 @@ def test_commit_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local: b
         monkeypatch.setattr(commit, "get_commithost", lambda: "localhost")
     else:
         # Force us to ssh to our same server by forcing get_commithost and gethostname
-        pytest.xfail("Having trouble figuring out kerberos auth")
         monkeypatch.setattr(commit, "get_commithost", lambda: socket.gethostname())
         monkeypatch.setattr(commit, "gethostname", lambda: "localhost")
 
@@ -50,16 +47,13 @@ def test_commit_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local: b
 
     # Commit the file with our function to test
     msg = "added newhost"
-    with monkeypatch.context() as mp:
-        # fabric and pytest do not play nice with each other unless you disable stdin
-        mp.setattr(sys, "stdin", io.StringIO(""))
-        result = commit_config("pytest", msg)
+    result = commit_config("pytest", msg)
 
-    did_connect = hasattr(result, "connection")
+    did_ssh = result.args[0] == "ssh"
     if local:
-        assert not did_connect, "Test writing error: local mode did an ssh"
+        assert not did_ssh, "Test writing error: local mode did an ssh"
     else:
-        assert did_connect, "Test writing error: nonlocal mode did not ssh"
+        assert did_ssh, "Test writing error: nonlocal mode did not ssh"
 
     # Check the commit again
     info = subprocess.check_output(log_cmd, cwd=repo_dir, universal_newlines=True)

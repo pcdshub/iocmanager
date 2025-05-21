@@ -16,16 +16,17 @@ configure a different host from the default.
 If COMMITHOST is localhost we'll commit without ssh-ing.
 """
 
-import os
+import subprocess
+from pathlib import Path
 from socket import gethostname
-
-from fabric import Connection, Result
 
 from . import env_paths
 from .config import read_config
 
+COMMIT_SCRIPT = str(Path(__file__).parent / "commit.sh")
 
-def commit_config(hutch: str, comment: str) -> Result:
+
+def commit_config(hutch: str, comment: str) -> subprocess.CompletedProcess:
     """
     Open a connection to COMMITHOST and commit the iocmanager.cfg file.
 
@@ -42,33 +43,17 @@ def commit_config(hutch: str, comment: str) -> Result:
 
     Returns
     -------
-    result : Result
-        The result of the git operation as returned by fabric.
+    result : CompletedProcess
+        The result of the git operation as returned by subprocess.run.
     """
     commit_host = get_commithost()
     config_file = env_paths.CONFIG_FILE % hutch
-    # Quotation marks in comment will break us
-    comment = comment.replace('"', "'")
 
-    with Connection(
-        commit_host,
-        connect_kwargs={
-            "gss_auth": True,
-            "gss_deleg_creds": True,
-            "gss_kex": True,
-            "look_for_keys": False,
-        },
-    ) as conn:
-        if commit_host in ("localhost", gethostname()):
-            cmd = conn.local
-        else:
-            cmd = conn.run
-        cmd(f"cat {config_file}")
-        return cmd(
-            f"cd {os.path.dirname(config_file)}; "
-            "umask 2; "
-            f'git commit -m "{comment}" {config_file}'
-        )
+    if commit_host in ("localhost", gethostname()):
+        cmd = [COMMIT_SCRIPT, config_file, comment]
+    else:
+        cmd = ["ssh", commit_host, f"{COMMIT_SCRIPT} {config_file} '{comment}'"]
+    return subprocess.run(cmd, universal_newlines=True, check=True)
 
 
 def get_commithost(hutch: str) -> str:

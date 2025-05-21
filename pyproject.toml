@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 
 [options]
 zip_safe = false
-include_package_data = false
+include_package_data = true
 
 [[project.authors]]
 name = "SLAC National Accelerator Laboratory"
