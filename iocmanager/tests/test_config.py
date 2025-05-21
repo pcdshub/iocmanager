@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from copy import copy
 from pathlib import Path
 
 import pytest
@@ -9,13 +10,14 @@ import pytest
 from ..config import (
     ConfigStat,
     IOCProc,
+    IOCStatusFile,
     check_auth,
     check_special,
     check_ssh,
     find_iocs,
     get_hutch_list,
     read_config,
-    readStatusDir,
+    read_status_dir,
     validate_config,
     write_config,
 )
@@ -157,40 +159,29 @@ def test_read_status_dir():
 
     # Set up some expectations/starting state
     counter_path = status_dir / "ioc-counter"
-    counter_info = {
-        "rid": counter_path.name,
-        "pid": "12345",
-        "rhost": "test-server2",
-        "rport": 30002,
-        "rdir": "iocs/counter",
-        "newstyle": True,
-        "mtime": os.stat(counter_path).st_mtime,
-        "hard": False,
-    }
+    counter_info = IOCStatusFile(
+        name=counter_path.name,
+        port=30002,
+        host="test-server2",
+        path="iocs/counter",
+        pid=12345,
+        mtime=os.stat(counter_path).st_mtime,
+    )
     shouter_path = status_dir / "ioc-shouter"
-    shouter_info = {
-        "rid": shouter_path.name,
-        "pid": "23456",
-        "rhost": "test-server1",
-        "rport": 30001,
-        "rdir": "iocs/shouter",
-        "newstyle": True,
-        "mtime": os.stat(shouter_path).st_mtime,
-        "hard": False,
-    }
-
-    def assert_dict_info_in_list(info, lst):
-        for dct in lst:
-            if dct["rdir"] == info["rdir"]:
-                assert info == dct
-                return
-        raise RuntimeError("No matching rdir in list.")
+    shouter_info = IOCStatusFile(
+        name=shouter_path.name,
+        port=30001,
+        host="test-server1",
+        path="iocs/shouter",
+        pid=23456,
+        mtime=os.stat(shouter_path).st_mtime,
+    )
 
     # Run once: files should not change, result should be complete
-    iocs1 = readStatusDir("pytest")
+    iocs1 = read_status_dir("pytest")
     assert len(iocs1) == 2
-    assert_dict_info_in_list(counter_info, iocs1)
-    assert_dict_info_in_list(shouter_info, iocs1)
+    assert counter_info in iocs1
+    assert shouter_info in iocs1
     assert counter_path.is_file()
     assert shouter_path.is_file()
 
@@ -198,15 +189,15 @@ def test_read_status_dir():
     # These should supercede the old ones
     new_counter_path = status_dir / "ioc-a-counter"
     shutil.copy(counter_path, new_counter_path)
-    new_counter_info = counter_info.copy()
-    new_counter_info["rid"] = new_counter_path.name
-    new_counter_info["mtime"] = os.stat(new_counter_path).st_mtime
+    new_counter_info = copy(counter_info)
+    new_counter_info.name = new_counter_path.name
+    new_counter_info.mtime = os.stat(new_counter_path).st_mtime
 
     new_shouter_path = status_dir / "ioc-z-counter"
     shutil.copy(shouter_path, new_shouter_path)
-    new_shouter_info = shouter_info.copy()
-    new_shouter_info["rid"] = new_shouter_path.name
-    new_shouter_info["mtime"] = os.stat(new_shouter_path).st_mtime
+    new_shouter_info = copy(shouter_info)
+    new_shouter_info.name = new_shouter_path.name
+    new_shouter_info.mtime = os.stat(new_shouter_path).st_mtime
 
     # Make some bad files, it should be deleted and no info returned
     bad_file_path = status_dir / "not-an-ioc"
@@ -221,10 +212,10 @@ def test_read_status_dir():
     assert empty_file_path.is_file()
 
     # Run again: should have new info, the old and bad files should be gone
-    iocs2 = readStatusDir("pytest")
+    iocs2 = read_status_dir("pytest")
     assert len(iocs2) == 2
-    assert_dict_info_in_list(new_counter_info, iocs2)
-    assert_dict_info_in_list(new_shouter_info, iocs2)
+    assert new_counter_info in iocs2
+    assert new_shouter_info in iocs2
     assert not counter_path.exists()
     assert not shouter_path.exists()
     assert not bad_file_path.exists()

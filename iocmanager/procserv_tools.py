@@ -20,7 +20,7 @@ import time
 import typing
 
 from . import env_paths
-from .config import IOCProc, read_config, readStatusDir
+from .config import IOCProc, IOCStatusFile, read_config, read_status_dir
 from .epics_paths import normalize_path
 from .log_setup import add_spam_level
 
@@ -626,46 +626,21 @@ def applyConfig(
         if ioc is None or ioc == iocproc.name:
             desired_iocs[iocproc.name] = iocproc
 
-    runninglist = readStatusDir(cfg)
+    runninglist = read_status_dir(cfg)
 
-    current = {}
-    notrunning = {}
-    for line in runninglist:
-        if ioc is None or ioc == line["rid"]:
-            result = check_status(line["rhost"], line["rport"], line["rid"])
-            rdir = line["rdir"]
-            line.update(result)
-            if line["rdir"] == "/tmp":
-                line["rdir"] = rdir
-            else:
-                line["newstyle"] = False
+    current: dict[str, IOCStatusFile] = {}
+    notrunning: dict[str, IOCStatusFile] = {}
+    for ioc_status in runninglist:
+        if ioc is None or ioc == ioc_status.name:
+            result = check_status(ioc_status.host, ioc_status.port, ioc_status.name)
             if result["status"] == STATUS_RUNNING:
-                current[line["rid"]] = line
+                current[ioc_status.name] = ioc_status
             else:
-                notrunning[line["rid"]] = line
+                notrunning[ioc_status.name] = ioc_status
 
-    running = list(current.keys())
-    wanted = list(desired_iocs.keys())
+    running = list(current)
+    wanted = list(desired_iocs)
 
-    # Double-check for old-style IOCs that don't have an indicator file!
-    for line in wanted:
-        if line not in running:
-            result = check_status(
-                desired_iocs[line].host,
-                int(desired_iocs[line].port),
-                desired_iocs[line].name,
-            )
-            if result["status"] == STATUS_RUNNING:
-                result.update(
-                    {
-                        "rhost": desired_iocs[line].host,
-                        "rport": desired_iocs[line].port,
-                        "newstyle": False,
-                    }
-                )
-                current[line] = result
-
-    running = list(current.keys())
     neww = []
     notw = []
     for line in wanted:
@@ -687,7 +662,7 @@ def applyConfig(
     for iocproc in config.procs:
         if iocproc.path == env_paths.CAMRECORDER:
             try:
-                current[iocproc.name]["rdir"] = env_paths.CAMRECORDER
+                current[iocproc.name].name = env_paths.CAMRECORDER
             except Exception:
                 pass
 
@@ -701,12 +676,8 @@ def applyConfig(
         line
         for line in running
         if line not in wanted
-        or current[line]["rhost"] != desired_iocs[line].host
-        or current[line]["rport"] != desired_iocs[line].port
-        or (
-            (not current[line]["newstyle"])
-            and current[line]["rdir"] != desired_iocs[line].path
-        )
+        or current[line].host != desired_iocs[line].host
+        or current[line].port != desired_iocs[line].port
     ]
 
     #
@@ -725,7 +696,7 @@ def applyConfig(
     now = time.time()
     for line in notw:
         try:
-            if line not in running and now - notrunning[line]["mtime"] < 600:
+            if line not in running and now - notrunning[line].mtime < 600:
                 kill_list.append(line)
         except Exception:
             pass
@@ -736,12 +707,8 @@ def applyConfig(
         line
         for line in wanted
         if line not in running
-        or current[line]["rhost"] != desired_iocs[line].host
-        or current[line]["rport"] != desired_iocs[line].port
-        or (
-            not current[line]["newstyle"]
-            and current[line]["rdir"] != desired_iocs[line].path
-        )
+        or current[line].host != desired_iocs[line].host
+        or current[line].port != desired_iocs[line].port
     ]
 
     # Anyone running the wrong version, newstyle, on the right host and port
@@ -750,10 +717,9 @@ def applyConfig(
         line
         for line in wanted
         if line in running
-        and current[line]["rhost"] == desired_iocs[line].host
-        and current[line]["newstyle"]
-        and current[line]["rport"] == desired_iocs[line].port
-        and current[line]["rdir"] != desired_iocs[line].path
+        and current[line].host == desired_iocs[line].host
+        and current[line].port == desired_iocs[line].port
+        and current[line].path != desired_iocs[line].path
     ]
 
     if verify is not None:
@@ -763,7 +729,7 @@ def applyConfig(
 
     for line in kill_list:
         try:
-            killProc(current[line]["rhost"], int(current[line]["rport"]))
+            killProc(current[line].host, int(current[line].port))
         except Exception:
             killProc(desired_iocs[line].host, int(desired_iocs[line].port))
         try:
@@ -781,7 +747,7 @@ def applyConfig(
         startProc(cfg, desired_iocs[line])
 
     for line in restart_list:
-        restartProc(current[line]["rhost"], int(current[line]["rport"]))
+        restartProc(current[line].host, int(current[line].port))
 
     # TODO figure out why this sleep was here and decide what to do about it
     # Remove it for now to make test suite faster

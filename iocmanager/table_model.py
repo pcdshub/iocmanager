@@ -37,7 +37,7 @@ from qtpy.QtWidgets import (
 )
 
 from . import commit_ui, details_ui, utils
-from .config import get_host_os, read_config, readStatusDir, write_config
+from .config import get_host_os, read_config, read_status_dir, write_config
 from .epics_paths import get_parent, normalize_path
 from .hioc_tools import get_hard_ioc_dir_for_display, reboot_hioc, restart_hioc
 from .ioc_info import find_pv, get_base_name
@@ -90,7 +90,7 @@ class StatusPoll(threading.Thread):
                     self.rmtime = {}  # Force a re-read!
                     self.model.configuration(config)
 
-                result = readStatusDir(self.hutch)
+                result = read_status_dir(self.hutch)
                 for line in result:
                     futures.append(executor.submit(self.check_one_file_status, line))
 

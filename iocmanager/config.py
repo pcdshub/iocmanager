@@ -476,9 +476,23 @@ def validate_config(iocproc: list[IOCProc]) -> bool:
     return True
 
 
-def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
+@dataclass(eq=True)
+class IOCStatusFile:
+    name: str
+    port: int
+    host: str
+    path: str
+    pid: int
+    mtime: float = 0.0
+
+
+def read_status_dir(cfg: str) -> list[IOCStatusFile]:
     """
     Update a status directory for a hutch and return its information.
+
+    This can remove outdated info in the status directory, but it
+    will not add new information. The new information is provided
+    by start_proc.
 
     Each hutch has a status directory, nominally at
     /cds/group/pcds/pyps/config/.status/$hutchname
@@ -505,11 +519,11 @@ def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
 
     Returns
     -------
-    status : list of dict
-        A list of dictionaries containing all information about each
+    status : list of IOCStatus
+        A list of structured data containing all information about each
         IOC from the status dir.
     """
-    info = {}
+    info: dict[tuple[str, str], IOCStatusFile] = {}
     for filename in os.listdir(env_paths.STATUS_DIR % cfg):
         full_path = (env_paths.STATUS_DIR % cfg) + "/" + filename
         with open(full_path, "r") as fd:
@@ -524,25 +538,24 @@ def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
             # Must be the unpack error, file has corrupt data
             _lazy_delete_file(full_path)
             continue
-        port = int(port)
         key = (host, port)
         if key in info:
             # Duplicate
-            if info[key]["mtime"] < mtime:
+            if info[key].mtime < mtime:
                 # Duplicate, but newer, so delete other!
                 logger.info(
                     "Deleting obsolete %s in favor of %s",
-                    info[key]["rid"],
+                    info[key].name,
                     filename,
                 )
-                _lazy_delete_file((env_paths.STATUS_DIR % cfg) + "/" + info[key]["rid"])
+                _lazy_delete_file((env_paths.STATUS_DIR % cfg) + "/" + info[key].name)
                 new_entry = True
             else:
                 # Duplicate, but older, so delete this!
                 logger.info(
                     "Deleting obsolete %s in favor of %s",
                     filename,
-                    info[key]["rid"],
+                    info[key].name,
                 )
                 _lazy_delete_file(full_path)
                 new_entry = False
@@ -550,16 +563,14 @@ def readStatusDir(cfg: str) -> list[dict[str, str | int | bool]]:
             new_entry = True
 
         if new_entry:
-            info[key] = {
-                "rid": filename,
-                "pid": pid,
-                "rhost": host,
-                "rport": port,
-                "rdir": directory,
-                "newstyle": True,
-                "mtime": mtime,
-                "hard": False,
-            }
+            info[key] = IOCStatusFile(
+                name=filename,
+                port=int(port),
+                host=host,
+                path=directory,
+                pid=int(pid),
+                mtime=mtime,
+            )
 
     return list(info.values())
 

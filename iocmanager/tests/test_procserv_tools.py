@@ -11,7 +11,7 @@ from unittest.mock import Mock
 import pytest
 
 from .. import procserv_tools as pt
-from ..config import Config, IOCProc
+from ..config import Config, IOCProc, IOCStatusFile
 from ..procserv_tools import (
     applyConfig,
     check_status,
@@ -411,7 +411,7 @@ def test_apply_config(
     # We'll monkeypatch read_config, readStatusDir, check_status too
     # We don't want to mess around with real processes in this test
     read_config_result = Config(path="")
-    read_status_dir_result = []
+    read_status_dir_result: list[IOCStatusFile] = []
 
     def fake_read_config(*args, **kwargs):
         return read_config_result
@@ -423,7 +423,7 @@ def test_apply_config(
         # Simplify: presume status dir is correct, all hosts up
         status = pt.STATUS_SHUTDOWN
         for res in read_status_dir_result:
-            if (res["rhost"], res["rport"]) == (host, port):
+            if (res.host, res.port) == (host, port):
                 status = pt.STATUS_RUNNING
                 break
         return {
@@ -436,7 +436,7 @@ def test_apply_config(
         }
 
     monkeypatch.setattr(pt, "read_config", fake_read_config)
-    monkeypatch.setattr(pt, "readStatusDir", fake_read_status_dir)
+    monkeypatch.setattr(pt, "read_status_dir", fake_read_status_dir)
     monkeypatch.setattr(pt, "check_status", fake_check_status)
 
     # Change our verify approach based on the input arg
@@ -472,16 +472,13 @@ def test_apply_config(
         port: int | None = None,
         directory: str | None = None,
     ):
-        return {
-            "rid": name,
-            "pid": "10000",
-            "rhost": host or f"ctl-pytest-{name}",
-            "rport": port or 20000,
-            "rdir": directory or f"ioc/pytest/{name}",
-            "newstyle": True,
-            "mtime": 0,
-            "hard": False,
-        }
+        return IOCStatusFile(
+            name=name,
+            port=port or 20000,
+            host=host or f"ctl-pytest-{name}",
+            path=directory or f"ioc/pytest/{name}",
+            pid=10000,
+        )
 
     # killProc(host, port)
     kill_args = []
