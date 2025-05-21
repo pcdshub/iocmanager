@@ -18,78 +18,105 @@ Which are created by the startProc script.
 """
 
 import glob
-import io
 import logging
 import os
 import stat
-import typing
+from copy import deepcopy
+from dataclasses import dataclass
+from enum import IntEnum
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from . import env_paths
 from .epics_paths import get_parent
-from .hioc_tools import get_hard_ioc_dir_for_display
-from .ioc_info import get_base_name
-
-CONFIG_NORMAL = 0
-CONFIG_ADDED = 1
-CONFIG_DELETED = 2
 
 logger = logging.getLogger(__name__)
-hosttype = {}
+
+DEFAULT_COMMITHOST = "psbuild-rhel7"
 
 
-def readConfig(
-    cfg: str, last_mtime: float | None = None, do_os: bool = False
-) -> tuple[float, list[dict], list[str], dict[str, typing.Any]] | None:
+class ConfigStat(IntEnum):
+    NORMAL = 0
+    ADDED = 1
+    DELETED = 2
+
+
+@dataclass(eq=True)
+class IOCProc:
+    name: str
+    port: int
+    host: str
+    path: str
+    alias: str
+    status: ConfigStat
+    disable: bool
+    cmd: str
+    history: list[str]
+    parent: str = ""
+    hard: bool = False
+
+    def __post_init__(self):
+        if self.name == self.host:
+            self.hard = True
+        else:
+            self.parent = get_parent(self.path, self.name)
+
+
+@dataclass(eq=True)
+class Config:
+    path: str
+    commithost: str
+    allow_console: bool
+    hosts: list[str]
+    procs: list[IOCProc]
+    mtime: float
+
+
+config_cache: dict[str, Config] = {}
+
+
+def read_config(cfgname: str) -> Config:
     """
-    Read the configuration file for a given hutch if newer than time.
+    Read the configuration file for a given hutch.
 
-    Returns None on failure or no change,
-    otherwise returns a tuple of various config information.
+    Skips the reading and returns a cached config if the file
+    has not been modified since the last call to readConfig.
+
+    May raise in case of failure.
 
     Parameters
     ----------
-    cfg : str
+    cfgname : str
         A path to a config file or the name of a hutch.
-    last_mtime : float, optional
-        The last file modification timestamp.
-    do_os : bool
-        If True, scan the .hosts directory to rebuild a host type lookup table.
 
     Returns
     -------
-    filetime, configlist, hostlist, varlist: tuple or None
-        - filetime: float, last modified time of the config file
-        - configlist: list of dict, the various ioc configs
-        - hostlist: list of str, the hostnames valid for the hutch
-        - vardict: dict with str keys, other variables set in the config file
+    config: Config
+        The configuration data.
     """
     # Check if we have a file or a hutch name
-    if os.sep in cfg:
-        cfgfn = cfg
+    cfgfn = env_paths.CONFIG_FILE % cfgname
+    if not os.path.exists(cfgfn):
+        cfgfn = cfgname
+
+    mtime = os.stat(cfgfn).st_mtime
+    try:
+        cached = config_cache[cfgfn]
+    except KeyError:
+        ...
     else:
-        cfgfn = env_paths.CONFIG_FILE % cfg
+        # Skip if no modifications
+        if cached.mtime == mtime:
+            return deepcopy(config_cache[cfgfn])
 
-    try:
-        mtime = os.stat(cfgfn).st_mtime
-    except Exception as exc:
-        logger.debug("os.stat exception in readConfig", exc_info=True)
-        logger.error(f"readConfig: could not read {cfgfn}: {exc}")
-        return
-    # Skip if no modifications
-    if last_mtime == mtime:
-        return
-
-    try:
-        with open(cfgfn, "rb") as fd:
-            cfgbytes = fd.read()
-    except Exception as exc:
-        logger.debug("readConfig file io exception", exc_info=True)
-        logger.error("readConfig file error: %s" % str(exc))
-        return
+    with open(cfgfn, "rb") as fd:
+        cfgbytes = fd.read()
 
     # This dict gets filled by exec based on the cfg file contents
-    config = {
+    # It also contains some strings, apparently so that these
+    # variables can be included without putting quotes around them
+    # in the config file
+    cfg_env = {
         "procmgr_config": None,
         "hosts": None,
         "dir": "dir",
@@ -104,209 +131,150 @@ def readConfig(
         "alias": "alias",
         "hard": "hard",
     }
-    stardard_vars_names = set(config)
-    try:
-        exec(compile(cfgbytes, cfgfn, "exec"), {}, config)
-        cfg_unique_vars = set(config).difference(stardard_vars_names)
-        vdict = {}
-        for v in cfg_unique_vars:
-            vdict[v] = config[v]
-        res = (mtime, config["procmgr_config"], config["hosts"], vdict)
-    except Exception as exc:
-        logger.debug("readConfig parsing exception", exc_info=True)
-        logger.error("readConfig error: %s" % str(exc))
-        return
+    exec(compile(cfgbytes, cfgfn, "exec"), {}, cfg_env)
+    procs = []
+    for procmgr_cfg in cfg_env["procmgr_config"]:
+        procmgr_cfg: dict
+        procs.append(
+            IOCProc(
+                name=procmgr_cfg["id"],
+                port=procmgr_cfg["port"],
+                host=procmgr_cfg["host"],
+                path=procmgr_cfg["dir"],
+                alias=procmgr_cfg.get("alias", ""),
+                status=ConfigStat.NORMAL,
+                disable=procmgr_cfg.get("disable", False),
+                hard=procmgr_cfg.get("hard", False),
+                cmd=procmgr_cfg.get("cmd", ""),
+                history=procmgr_cfg.get("history", []),
+            )
+        )
+    config = Config(
+        path=cfgfn,
+        commithost=cfg_env.get("COMMITHOST", DEFAULT_COMMITHOST),
+        allow_console=cfg_env.get("allow_console", True),
+        hosts=cfg_env["hosts"],
+        procs=procs,
+        mtime=mtime,
+    )
 
-    # Add some malformed config checks for better errors
-    # and to help the IDE type checkers
-    procmgr_config = res[1]
-    if not isinstance(procmgr_config, list):
-        logger.error("procmgr_config must be a list of dictionaries!")
-        return
-
-    hosts_list = res[2]
-    if not isinstance(hosts_list, list):
-        logger.error("hosts must be a list of str!")
-        return
-
-    for ioc in procmgr_config:
-        if not isinstance(ioc, dict):
-            logger.error("Each ioc in procmgr_config must be a dict!")
-            return
-        ioc.setdefault("disable", False)
-        ioc.setdefault("hard", False)
-        ioc.setdefault("history", [])
-        ioc.setdefault("alias", "")
-        ioc["cfgstat"] = CONFIG_NORMAL
-        if ioc["hard"]:
-            try:
-                base = get_base_name(ioc["id"])
-            except Exception:
-                base = None
-            ioc["base"] = base
-            ioc["dir"] = get_hard_ioc_dir_for_display(ioc["id"])
-            ioc["host"] = ioc["id"]
-            ioc["port"] = -1
-            ioc["rhost"] = ioc["id"]
-            ioc["rport"] = -1
-            ioc["rdir"] = ioc["dir"]
-            ioc["newstyle"] = False
-            ioc["pdir"] = ""
-        else:
-            ioc["rid"] = ioc["id"]
-            ioc["rdir"] = ioc["dir"]
-            ioc["rhost"] = ioc["host"]
-            ioc["rport"] = ioc["port"]
-            ioc["newstyle"] = False
-            try:
-                ioc["pdir"] = get_parent(ioc["dir"], ioc["id"])
-            except Exception:
-                ioc["pdir"] = ""
-
-    # hosttype is used to display which OS each host is running
-    if do_os:
-        global hosttype
-        hosttype = {}
-        for fn in hosts_list:
-            try:
-                with open("%s/%s" % (env_paths.HOST_DIR, fn)) as fd:
-                    hosttype[fn] = fd.readlines()[0].strip()
-            except Exception:
-                ...
-
-    return res
+    config_cache[cfgfn] = config
+    return deepcopy(config)
 
 
-#
-# Writes a hutch configuration file, dealing with possible changes ("new*" fields).
-#
-def writeConfig(
-    hutch: str,
-    hostlist: list[str],
-    cfglist: list[dict[str, str | int]],
-    vars: dict[str, str | bool | int],
-    f: io.TextIOWrapper | None = None,
-) -> None:
+def get_host_os(hosts_list: list[str]) -> dict[str, str]:
+    """
+    Returns the OS of each host.
+
+    Results are available in the global hosttype variable.
+    This is used to display which OS each host is running.
+
+    Parameters
+    ----------
+    hosts_list: list[str]
+        The hosts to check.
+
+    Returns
+    -------
+    hosttype : dict[str, str]
+        Dictionary from hostname to OS.
+    """
+    hosttype = {}
+    for fn in hosts_list:
+        try:
+            with open("%s/%s" % (env_paths.HOST_DIR, fn)) as fd:
+                hosttype[fn] = fd.readlines()[0].strip()
+        except Exception:
+            ...
+    return hosttype
+
+
+def _cfg_file_lines(config: Config) -> list[str]:
+    """
+    Given some config data, return the lines of the file to write.
+
+    Parameters
+    ----------
+    config : Config
+        The configuration data to write.
+
+    Returns
+    -------
+    lines : list[str]
+        The "serialization" of the config file, without newlines.
+        This is written to disk in write_config.
+    """
+    lines = []
+
+    lines.append(f"COMMITHOST = {config.commithost}")
+    lines.append(f"allow_console = {config.allow_console}")
+    lines.append("")
+
+    lines.append("hosts = [")
+    for host in config.hosts:
+        lines.append(f"   {host}")
+    lines.append("]")
+    lines.append("")
+
+    lines.append("procmgr_config = [")
+
+    for ioc in sorted(config.procs, key=lambda x: x.name):
+        if ioc.status == ConfigStat.DELETED:
+            continue
+        extra = ""
+        if ioc.disable:
+            extra += ", disable: True"
+        if ioc.alias:
+            extra += f", alias: '{ioc.alias}'"
+        if ioc.history:
+            extra += (
+                ",\n  history: ["
+                + ", ".join(["'" + path + "'" for path in ioc.history])
+                + "]"
+            )
+        if ioc.cmd:
+            extra += f", cmd: '{ioc.cmd}'"
+        lines.append(
+            " {"
+            f"id: '{ioc.name}', "
+            f"host: '{ioc.host}', "
+            f"port: {ioc.port}, "
+            f"dir: '{ioc.path}'"
+            f"{extra}"
+            "},"
+        )
+    lines.append("]")
+
+    return lines
+
+
+def write_config(cfgname: str, config: Config) -> None:
     """
     Write the configuration file for a given hutch.
 
-    Deals with the existence of uncomitted changes ("new*" fields).
+    Writes to a temp file first, then copies over to the prod location
+    to give us an atomic write.
 
     Parameters
     ----------
-    hutch : str
-        Unused. Probably was used in a past version of this function.
-    hostlist : list of str
-        Hosts that are available for the hutch to include in the config.
-    cfglist : list of dict
-        List of dictionaries that each correspond to an IOC's config.
-    vars: dict mapping of string to value
-        Dictionary mapping of additional variables to include in the
-        config file. These each must be literal strings "True", "False",
-        or something that can be converted to an integer.
-    f: open file
-        A file-like object such as the one returned by the open built-in.
+    cfgname : str
+        A path to a config file or the name of a hutch.
+    config : Config
+        The configuration data to write.
     """
-    if f is None:
-        raise Exception("Must specify output file!")
-    f.truncate()
-    for k, v in list(vars.items()):
-        try:
-            if v not in ["True", "False"]:
-                int(v)
-            f.write("%s = %s\n" % (k, str(v)))
-        except Exception:
-            f.write('%s = "%s"\n' % (k, str(v)))
-    f.write("\nhosts = [\n")
-    for h in hostlist:
-        f.write("   '%s',\n" % h)
-    f.write("]\n\n")
-    f.write("procmgr_config = [\n")
-    cl = sorted(cfglist, key=lambda x: x["id"])
-    for entry in cl:
-        if entry["cfgstat"] == CONFIG_DELETED:
-            continue
-        try:
-            id = entry[
-                "newid"
-            ].strip()  # Bah.  Sometimes we add a space so this becomes blue!
-        except Exception:
-            id = entry["id"]
-        try:
-            alias = entry["newalias"]
-        except Exception:
-            alias = entry["alias"]
-        if entry["hard"]:
-            if alias != "":
-                extra = ", alias: '%s'" % alias
-            else:
-                extra = ""
-            f.write(" {id:'%s', hard: True%s},\n" % (id, extra))
-            continue
-        try:
-            host = entry["newhost"]
-        except Exception:
-            host = entry["host"]
-        try:
-            port = entry["newport"]
-        except Exception:
-            port = entry["port"]
-        try:
-            dir = entry["newdir"]
-        except Exception:
-            dir = entry["dir"]
-        extra = ""
-        try:
-            disable = entry["newdisable"]
-        except Exception:
-            disable = entry["disable"]
-        if disable:
-            extra += ", disable: True"
-        if alias != "":
-            extra += ", alias: '%s'" % alias
-        try:
-            h = entry["history"]
-            if h != []:
-                extra += (
-                    ",\n  history: ["
-                    + ", ".join(["'" + path + "'" for path in h])
-                    + "]"
-                )
-        except Exception:
-            pass
-        try:
-            extra += ", delay: %d" % entry["delay"]
-        except Exception:
-            pass
-        try:
-            extra += ", cmd: '%s'" % entry["cmd"]
-        except Exception:
-            pass
-        f.write(
-            " {id:'%s', host: '%s', port: %s, dir: '%s'%s},\n"
-            % (id, host, port, dir, extra)
+    # Check if we have a file or a hutch name
+    cfgfn = env_paths.CONFIG_FILE % cfgname
+    if not os.path.exists(os.path.dirname(cfgfn)):
+        cfgfn = cfgname
+    lines = _cfg_file_lines(config=config)
+    with NamedTemporaryFile("w", dir=env_paths.TMP_DIR, delete_on_close=False) as fd:
+        fd.writelines(ln + "\n" for ln in lines)
+        fd.close()
+        os.chmod(
+            fd.name,
+            stat.S_IRUSR | stat.S_IRGRP | stat.S_IWUSR | stat.S_IWGRP | stat.S_IROTH,
         )
-    f.write("]\n")
-    f.close()
-    os.chmod(
-        f.name, stat.S_IRUSR | stat.S_IRGRP | stat.S_IWUSR | stat.S_IWGRP | stat.S_IROTH
-    )
-
-
-def installConfig(hutch: str, file: str, fd: None = None) -> None:
-    """
-    Install an existing file as the hutch configuration file.
-
-    Parameters
-    ----------
-    hutch : str
-        The name of the hutch, such as tmo or xpp.
-    file : str
-        Path to the file to use as the new hutch configuration file.
-    fd : None
-        Unused.
-    """
-    os.rename(file, env_paths.CONFIG_FILE % hutch)
+        os.rename(fd.name, cfgfn)
 
 
 def check_auth(user: str, hutch: str) -> bool:
@@ -422,7 +390,7 @@ def check_ssh(user: str, hutch: str) -> bool:
     return True
 
 
-def find_iocs(**kwargs) -> list[tuple[str, dict]]:
+def find_iocs(**kwargs) -> list[tuple[str, IOCProc]]:
     """
     Find IOCs matching the inputs in any hutch config.
 
@@ -443,10 +411,10 @@ def find_iocs(**kwargs) -> list[tuple[str, dict]]:
     cfgs = glob.glob(env_paths.CONFIG_FILE % "*")
     configs = []
     for cfg in cfgs:
-        config = readConfig(cfg)[1]
-        for ioc in config:
+        config = read_config(cfg)
+        for ioc in config.procs:
             for k in list(kwargs.items()):
-                if ioc.get(k[0]) != k[1]:
+                if getattr(ioc, k[0]) != k[1]:
                     break
             else:
                 configs.append([cfg, ioc])
@@ -463,31 +431,19 @@ def getHutchList() -> list[str]:
         return []
 
 
-def validateConfig(cl: list[dict]) -> bool:
+def validateConfig(iocproc: list[IOCProc]) -> bool:
     """
     Returns True if the list of IOC configurations looks valid.
 
     Currently, just checks if there is a duplicate host/port combination.
     """
-    for i in range(len(cl)):
-        try:
-            h = cl[i]["newhost"]
-        except Exception:
-            h = cl[i]["host"]
-        try:
-            p = cl[i]["newport"]
-        except Exception:
-            p = cl[i]["port"]
-        for j in range(i + 1, len(cl)):
-            try:
-                h2 = cl[j]["newhost"]
-            except Exception:
-                h2 = cl[j]["host"]
-            try:
-                p2 = cl[j]["newport"]
-            except Exception:
-                p2 = cl[j]["port"]
-            if h == h2 and p == p2:
+    for idx in range(len(iocproc)):
+        host1 = iocproc[idx].host
+        port1 = iocproc[idx].port
+        for jdx in range(idx + 1, len(iocproc)):
+            host2 = iocproc[jdx].host
+            port2 = iocproc[jdx].port
+            if host1 == host2 and port1 == port2:
                 return False
     #
     # Anything else we want to check here?!?

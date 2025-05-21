@@ -7,6 +7,8 @@ for the central QTableView in the main GUI.
 See https://doc.qt.io/qt-5/qabstracttablemodel.html#details
 """
 
+# TODO: big fix
+# self.cfglist, self.hosts, self.vdict must be replaced with self.config
 import concurrent.futures
 import logging
 import os
@@ -35,7 +37,7 @@ from qtpy.QtWidgets import (
 )
 
 from . import commit_ui, details_ui, utils
-from .config import installConfig, readConfig, readStatusDir, writeConfig
+from .config import get_host_os, read_config, readStatusDir, write_config
 from .epics_paths import get_parent, normalize_path
 from .hioc_tools import get_hard_ioc_dir_for_display, reboot_hioc, restart_hioc
 from .ioc_info import find_pv, get_base_name
@@ -62,7 +64,7 @@ statecombolist = ["Off", "Dev/Prod"]
 
 
 class StatusPoll(threading.Thread):
-    def __init__(self, model, interval):
+    def __init__(self, model, interval, hosttype):
         threading.Thread.__init__(self)
         self.model = model
         self.hutch = model.hutch
@@ -71,6 +73,7 @@ class StatusPoll(threading.Thread):
         self.rmtime = {}
         self.daemon = True
         self.dialog = None
+        self.hosttype = hosttype
 
     def run(self):
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -78,11 +81,14 @@ class StatusPoll(threading.Thread):
                 start_time = time.monotonic()
                 futures = []
 
-                result = readConfig(self.hutch, self.mtime, do_os=True)
-                if result is not None:
-                    (self.mtime, cfglist, hosts, vdict) = result
+                try:
+                    config = read_config(self.hutch)
+                except Exception:
+                    ...
+                else:
+                    self.hosttype = get_host_os(config.hosts)
                     self.rmtime = {}  # Force a re-read!
-                    self.model.configuration(cfglist, hosts, vdict)
+                    self.model.configuration(config)
 
                 result = readStatusDir(self.hutch)
                 for line in result:
@@ -178,15 +184,16 @@ class TableModel(QAbstractTableModel):
         self.hutch = hutch
         self.user = ""
         self.userIO = None
-        self.poll = StatusPoll(self, 5)
         self.children = []
-        config = readConfig(hutch, do_os=True)
-        if config is None:
+        try:
+            self.config = read_config(hutch)
+        except Exception:
             print("Cannot read configuration for %s!" % hutch)
             sys.exit(-1)
-        (self.poll.mtime, self.cfglist, self.hosts, self.vdict) = config
+        self.poll = StatusPoll(self, 5, get_host_os(self.config.hosts))
+        self.poll.mtime = self.config.mtime
         try:
-            utils.COMMITHOST = self.vdict["COMMITHOST"]
+            utils.COMMITHOST = self.config.commithost
         except Exception:
             pass
         self.addUsedHosts()
@@ -434,7 +441,7 @@ class TableModel(QAbstractTableModel):
             return entry["status"]
         if c == OSVER:
             try:
-                return utils.hosttype[entry["host"]]
+                return self.poll.hosttype[entry["host"]]
             except Exception:
                 return ""
         elif c == EXTRA:
@@ -803,8 +810,7 @@ class TableModel(QAbstractTableModel):
             file = tempfile.NamedTemporaryFile(
                 mode="w", dir=utils.TMP_DIR, delete=False
             )
-            writeConfig(self.hutch, self.hosts, self.cfglist, self.vdict, file)
-            installConfig(self.hutch, file.name)
+            write_config(self.hutch, self.hosts, self.cfglist, self.vdict, file)
         except Exception as exc:
             logger.error(f"Error writing config: {exc}")
             logger.debug("Error writing config", exc_info=True)

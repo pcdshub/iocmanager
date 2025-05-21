@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from .. import commit
-from ..commit import DEFAULT_COMMITHOST, commit_config, get_commithost
-from ..config import readConfig, writeConfig
+from ..commit import commit_config, get_commithost
+from ..config import DEFAULT_COMMITHOST, read_config, write_config
 
 
 def test_get_commithost():
@@ -43,10 +43,9 @@ def test_commit_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local: b
     assert msg in info
 
     # Typical read/write operation
-    _, cfg, hosts, opts = readConfig("pytest")
-    hosts.append("newhost")
-    with open(repo_dir / "iocmanager.cfg", "w") as fd:
-        writeConfig("pytest", hosts, cfg, opts, fd)
+    config = read_config("pytest")
+    config.hosts.append("newhost")
+    write_config("pytest", config)
 
     # Commit the file with our function to test
     msg = "added newhost"

@@ -20,7 +20,7 @@ import time
 import typing
 
 from . import env_paths
-from .config import readConfig, readStatusDir
+from .config import IOCProc, read_config, readStatusDir
 from .epics_paths import normalize_path
 from .log_setup import add_spam_level
 
@@ -615,16 +615,16 @@ def applyConfig(
     return_code : int
         Zero if completed successfully.
     """
-    result = readConfig(cfg)
-    if result is None:
+    try:
+        config = read_config(cfg)
+    except Exception:
         print("Cannot read configuration for %s!" % cfg)
         return -1
-    (mtime, cfglist, hostlist, vdict) = result
 
-    config = {}
-    for line in cfglist:
-        if ioc is None or ioc == line["id"]:
-            config[line["id"]] = line
+    desired_iocs: dict[str, IOCProc] = {}
+    for iocproc in config.procs:
+        if ioc is None or ioc == iocproc.name:
+            desired_iocs[iocproc.name] = iocproc
 
     runninglist = readStatusDir(cfg)
 
@@ -645,19 +645,21 @@ def applyConfig(
                 notrunning[line["rid"]] = line
 
     running = list(current.keys())
-    wanted = list(config.keys())
+    wanted = list(desired_iocs.keys())
 
     # Double-check for old-style IOCs that don't have an indicator file!
     for line in wanted:
         if line not in running:
             result = check_status(
-                config[line]["host"], int(config[line]["port"]), config[line]["id"]
+                desired_iocs[line].host,
+                int(desired_iocs[line].port),
+                desired_iocs[line].name,
             )
             if result["status"] == STATUS_RUNNING:
                 result.update(
                     {
-                        "rhost": config[line]["host"],
-                        "rport": config[line]["port"],
+                        "rhost": desired_iocs[line].host,
+                        "rport": desired_iocs[line].port,
                         "newstyle": False,
                     }
                 )
@@ -667,18 +669,12 @@ def applyConfig(
     neww = []
     notw = []
     for line in wanted:
-        try:
-            if not config[line]["hard"]:
-                if not config[line]["newdisable"]:
-                    neww.append(line)
-                else:
-                    notw.append(line)
-        except Exception:
-            if not config[line]["hard"]:
-                if not config[line]["disable"]:
-                    neww.append(line)
-                else:
-                    notw.append(line)
+        if not desired_iocs[line].hard:
+            if not desired_iocs[line].disable:
+                neww.append(line)
+            else:
+                notw.append(line)
+
     wanted = neww
 
     #
@@ -688,10 +684,10 @@ def applyConfig(
     #
 
     # Camera recorders always seem to be in the wrong directory, so cheat!
-    for line in cfglist:
-        if line["dir"] == env_paths.CAMRECORDER:
+    for iocproc in config.procs:
+        if iocproc.path == env_paths.CAMRECORDER:
             try:
-                current[line["id"]]["rdir"] = env_paths.CAMRECORDER
+                current[iocproc.name]["rdir"] = env_paths.CAMRECORDER
             except Exception:
                 pass
 
@@ -705,11 +701,11 @@ def applyConfig(
         line
         for line in running
         if line not in wanted
-        or current[line]["rhost"] != config[line]["host"]
-        or current[line]["rport"] != config[line]["port"]
+        or current[line]["rhost"] != desired_iocs[line].host
+        or current[line]["rport"] != desired_iocs[line].port
         or (
             (not current[line]["newstyle"])
-            and current[line]["rdir"] != config[line]["dir"]
+            and current[line]["rdir"] != desired_iocs[line].path
         )
     ]
 
@@ -740,11 +736,11 @@ def applyConfig(
         line
         for line in wanted
         if line not in running
-        or current[line]["rhost"] != config[line]["host"]
-        or current[line]["rport"] != config[line]["port"]
+        or current[line]["rhost"] != desired_iocs[line].host
+        or current[line]["rport"] != desired_iocs[line].port
         or (
             not current[line]["newstyle"]
-            and current[line]["rdir"] != config[line]["dir"]
+            and current[line]["rdir"] != desired_iocs[line].path
         )
     ]
 
@@ -754,22 +750,22 @@ def applyConfig(
         line
         for line in wanted
         if line in running
-        and current[line]["rhost"] == config[line]["host"]
+        and current[line]["rhost"] == desired_iocs[line].host
         and current[line]["newstyle"]
-        and current[line]["rport"] == config[line]["port"]
-        and current[line]["rdir"] != config[line]["dir"]
+        and current[line]["rport"] == desired_iocs[line].port
+        and current[line]["rdir"] != desired_iocs[line].path
     ]
 
     if verify is not None:
         (kill_list, start_list, restart_list) = verify(
-            current, config, kill_list, start_list, restart_list
+            current, desired_iocs, kill_list, start_list, restart_list
         )
 
     for line in kill_list:
         try:
             killProc(current[line]["rhost"], int(current[line]["rport"]))
         except Exception:
-            killProc(config[line]["host"], int(config[line]["port"]))
+            killProc(desired_iocs[line].host, int(desired_iocs[line].port))
         try:
             # This is dead, so get rid of the status file!
             os.unlink((env_paths.STATUS_DIR % cfg) + "/" + line)
@@ -782,7 +778,7 @@ def applyConfig(
             )
 
     for line in start_list:
-        startProc(cfg, config[line])
+        startProc(cfg, desired_iocs[line])
 
     for line in restart_list:
         restartProc(current[line]["rhost"], int(current[line]["rport"]))

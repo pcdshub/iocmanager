@@ -2,19 +2,19 @@
 import sys
 import time
 
-from ..config import readConfig
+from ..config import read_config
 from ..procserv_tools import startProc
 
 if __name__ == "__main__":
     cfg = sys.argv[1]
     host = sys.argv[2]
-    result = readConfig(cfg)
-    if result is None:
+    try:
+        config = read_config(cfg)
+    except Exception:
         print("Cannot read configuration for %s!" % cfg)
         sys.exit(-1)
-    (mtime, config, hosts, vdict) = result
-    for ioc in config:
-        if ioc["host"] == host and not ioc["disable"]:
+    for ioc in config.procs:
+        if ioc.host == host and not ioc.disable:
             startProc(cfg, ioc, True)
             try:
                 time.sleep(ioc["delay"])

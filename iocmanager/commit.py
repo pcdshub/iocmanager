@@ -22,9 +22,7 @@ from socket import gethostname
 from fabric import Connection, Result
 
 from . import env_paths
-from .config import readConfig
-
-DEFAULT_COMMITHOST = "psbuild-rhel7"
+from .config import read_config
 
 
 def commit_config(hutch: str, comment: str) -> Result:
@@ -82,5 +80,5 @@ def get_commithost(hutch: str) -> str:
     commithost : str
         Which host to commit on.
     """
-    _, _, _, extra_settings = readConfig(hutch)
-    return extra_settings.get("COMMITHOST", DEFAULT_COMMITHOST)
+    config = read_config(hutch)
+    return config.commithost

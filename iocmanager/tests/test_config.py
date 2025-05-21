@@ -7,15 +7,17 @@ from pathlib import Path
 import pytest
 
 from ..config import (
+    ConfigStat,
+    IOCProc,
     check_auth,
     check_special,
     check_ssh,
     find_iocs,
     getHutchList,
-    readConfig,
+    read_config,
     readStatusDir,
     validateConfig,
-    writeConfig,
+    write_config,
 )
 from . import CFG_FOLDER
 
@@ -24,67 +26,57 @@ from . import CFG_FOLDER
     "cfg", (str(CFG_FOLDER / "pytest" / "iocmanager.cfg"), "pytest")
 )
 def test_read_config(cfg: str):
-    ftime, iocs, hosts, extra_vars = readConfig(cfg)
+    config = read_config(cfg)
 
     if Path(cfg).is_file():
         filename = cfg
     else:
         filename = str(CFG_FOLDER / cfg / "iocmanager.cfg")
 
-    assert ftime == os.stat(filename).st_mtime
+    assert config.mtime == os.stat(filename).st_mtime
 
-    assert iocs == [
-        {
-            "id": "ioc-counter",
-            "host": "test-server2",
-            "port": 30002,
-            "dir": "iocs/counter",
-            "history": ["iocs/old"],
-            "disable": False,
-            "hard": False,
-            "alias": "",
-            "cfgstat": 0,
-            "rid": "ioc-counter",
-            "rdir": "iocs/counter",
-            "rhost": "test-server2",
-            "rport": 30002,
-            "newstyle": False,
-            "pdir": "",
-        },
-        {
-            "id": "ioc-shouter",
-            "host": "test-server1",
-            "port": 30001,
-            "dir": "iocs/shouter",
-            "alias": "SHOUTER",
-            "disable": False,
-            "hard": False,
-            "history": [],
-            "cfgstat": 0,
-            "rid": "ioc-shouter",
-            "rdir": "iocs/shouter",
-            "rhost": "test-server1",
-            "rport": 30001,
-            "newstyle": False,
-            "pdir": "",
-        },
+    assert config.procs == [
+        IOCProc(
+            name="ioc-counter",
+            host="test-server2",
+            port=30002,
+            path="iocs/counter",
+            alias="",
+            status=ConfigStat.NORMAL,
+            disable=False,
+            cmd="",
+            history=["iocs/old"],
+            parent="",
+            hard=False,
+        ),
+        IOCProc(
+            name="ioc-shouter",
+            host="test-server1",
+            port=30001,
+            path="iocs/shouter",
+            alias="SHOUTER",
+            status=ConfigStat.NORMAL,
+            disable=False,
+            cmd="",
+            history=["iocs/old"],
+            parent="",
+            hard=False,
+        ),
     ]
 
-    assert hosts == [
+    assert config.hosts == [
         "test-server1",
         "test-server2",
     ]
 
-    assert extra_vars == {
-        "COMMITHOST": "localhost",
-    }
+    assert config.commithost == "localhost"
+    assert config.allow_console
 
 
 def test_write_config(tmp_path: Path):
     # Just write back our example config, it should be the same
-    _, iocs, hosts, vars = readConfig("pytest")
-    with open(tmp_path / "iocmanager.cfg", "w") as fd:
-        writeConfig(hutch="unit_test", hostlist=hosts, cfglist=iocs, vars=vars, f=fd)
+    config = read_config("pytest")
+    write_config(cfgname=str(tmp_path / "iocmanager.cfg"), config=config)
 
     with open(CFG_FOLDER / "pytest" / "iocmanager.cfg", "r") as fd:
         expected = fd.readlines()

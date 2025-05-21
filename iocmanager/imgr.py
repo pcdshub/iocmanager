@@ -11,20 +11,20 @@ import os
 import pwd
 import socket
 import sys
-import tempfile
 
 from psp.caput import caput
 
-from . import env_paths, utils
 from . import procserv_tools as pt
+from . import utils
 from .config import (
+    ConfigStat,
+    IOCProc,
     check_auth,
     check_special,
     getHutchList,
-    installConfig,
-    readConfig,
+    read_config,
     validateConfig,
-    writeConfig,
+    write_config,
 )
 from .epics_paths import has_stcmd
 from .ioc_info import get_base_name
@@ -81,13 +81,13 @@ def usage():
 
 # Convert the port string to an integer.
 # We need the host and the config list in case of 'open' or 'closed'.
-def port_to_int(port, host, cl):
+def port_to_int(port, host, procs):
     if port != "closed" and port != "open":
         return int(port)
     plist = []
-    for c in cl:
-        if c["host"] == host:
-            plist.append(int(c["port"]))
+    for iocproc in procs:
+        if iocproc.host == host:
+            plist.append(int(iocproc.port))
     if port == "closed":
         r = list(range(30001, 39000))
     else:
@@ -100,13 +100,13 @@ def port_to_int(port, host, cl):
 
 
 def info(hutch, ioc, verbose):
-    (ft, cl, hl, vs) = readConfig(hutch)
-    for c in cl:
-        if c["id"] == ioc:
-            d = check_status(c["host"], c["port"], ioc)
+    config = read_config(hutch)
+    for iocproc in config.procs:
+        if iocproc.name == ioc:
+            d = check_status(iocproc.host, iocproc.port, ioc)
             if verbose:
                 try:
-                    if c["disable"]:
+                    if iocproc.disable:
                         if d["status"] == pt.STATUS_NOCONNECT:
                             d["status"] = "DISABLED"
                         elif d["status"] == pt.STATUS_RUNNING:
@@ -114,15 +114,15 @@ def info(hutch, ioc, verbose):
                 except Exception:
                     pass
                 try:
-                    if c["alias"] != "":
-                        print("%s (%s):" % (ioc, c["alias"]))
+                    if iocproc.alias != "":
+                        print("%s (%s):" % (ioc, iocproc.alias))
                     else:
                         print("%s:" % (ioc))
                 except Exception:
                     print("%s:" % (ioc))
-                print("    host  : %s" % c["host"])
-                print("    port  : %s" % c["port"])
-                print("    dir   : %s" % c["dir"])
+                print("    host  : %s" % iocproc.host)
+                print("    port  : %s" % iocproc.port)
+                print("    dir   : %s" % iocproc.path)
                 print("    status: %s" % d["status"])
             else:
                 print(d["status"])
@@ -138,38 +138,24 @@ def soft_reboot(hutch, ioc):
 
 
 def hard_reboot(hutch, ioc):
-    (ft, cl, hl, vs) = readConfig(hutch)
-    for c in cl:
-        if c["id"] == ioc:
-            restartProc(c["host"], c["port"])
+    config = read_config(hutch)
+    for iocproc in config.procs:
+        if iocproc.name == ioc:
+            restartProc(iocproc.host, iocproc.port)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
 
 
 def do_connect(hutch, ioc):
-    (ft, cl, hl, vs) = readConfig(hutch)
-    for c in cl:
-        if c["id"] == ioc:
-            os.execvp("telnet", ["telnet", c["host"], str(c["port"])])
+    config = read_config(hutch)
+    for iocproc in config.procs:
+        if iocproc.name == ioc:
+            os.execvp("telnet", ["telnet", iocproc.host, str(iocproc.port)])
             print("Exec failed?!?")
             sys.exit(1)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
-
-
-def do_commit(hutch, cl, hl, vs):
-    try:
-        file = tempfile.NamedTemporaryFile(dir=env_paths.TMP_DIR, delete=False)
-        writeConfig(hutch, hl, cl, vs, file)
-        installConfig(hutch, file.name)
-    except:
-        try:
-            os.unlink(file.name)  # Clean up!
-            pass
-        except Exception:
-            pass
-        raise
 
 
 def set_state(hutch, ioc, enable):
@@ -178,15 +164,15 @@ def set_state(hutch, ioc, enable):
     ):
         print("Not authorized!")
         sys.exit(1)
-    (ft, cl, hl, vs) = readConfig(hutch)
+    config = read_config(hutch)
     try:
-        utils.COMMITHOST = vs["COMMITHOST"]
+        utils.COMMITHOST = config.commithost
     except Exception:
         pass
-    for c in cl:
-        if c["id"] == ioc:
-            c["newdisable"] = not enable
-            do_commit(hutch, cl, hl, vs)
+    for iocproc in config.procs:
+        if iocproc.name == ioc:
+            iocproc.disable = not enable
+            write_config(hutch, config)
             applyConfig(hutch, None, ioc)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
@@ -200,9 +186,9 @@ def add(hutch, ioc, version, hostport, disable):
     if not has_stcmd(version, ioc):
         print("%s does not have an st.cmd for %s!" % (version, ioc))
         sys.exit(1)
-    (ft, cl, hl, vs) = readConfig(hutch)
+    config = read_config(hutch)
     try:
-        utils.COMMITHOST = vs["COMMITHOST"]
+        utils.COMMITHOST = config.commithost
     except Exception:
         pass
     hp = hostport.split(":")
@@ -211,25 +197,27 @@ def add(hutch, ioc, version, hostport, disable):
     if len(hp) != 2:
         print("Must specify host and port!")
         sys.exit(1)
-    for c in cl:
-        if c["id"] == ioc:
+    for iocproc in config.procs:
+        if iocproc["id"] == ioc:
             print("IOC %s already exists in hutch %s!" % (ioc, hutch))
             sys.exit(1)
-    port = port_to_int(port, host, cl)
-    d = {
-        "id": ioc,
-        "host": host,
-        "port": port,
-        "dir": version,
-        "cfgstat": utils.CONFIG_ADDED,
-        "alias": "",
-        "hard": False,
-        "disable": disable,
-    }
-    cl.append(d)
-    if host not in hl:
-        hl.append(host)
-    do_commit(hutch, cl, hl, vs)
+    port = port_to_int(port, host, config.procs)
+    config.procs.append(
+        IOCProc(
+            name=ioc,
+            port=port,
+            host=host,
+            path=version,
+            alias="",
+            status=ConfigStat.ADDED,
+            disable=disable,
+            cmd="",
+            history=[],
+        )
+    )
+    if host not in config.hosts:
+        config.hosts.append(host)
+    write_config(hutch, config)
     applyConfig(hutch, None, ioc)
     sys.exit(0)
 
@@ -247,15 +235,15 @@ def upgrade(hutch, ioc, version):
     if not has_stcmd(version, ioc):
         print("%s does not have an st.cmd for %s!" % (version, ioc))
         sys.exit(1)
-    (ft, cl, hl, vs) = readConfig(hutch)
+    config = read_config(hutch)
     try:
-        utils.COMMITHOST = vs["COMMITHOST"]
+        utils.COMMITHOST = config.commithost
     except Exception:
         pass
-    for c in cl:
-        if c["id"] == ioc:
-            c["newdir"] = version
-            do_commit(hutch, cl, hl, vs)
+    for iocproc in config.procs:
+        if iocproc.name == ioc:
+            iocproc.path = version
+            write_config(hutch, config)
             applyConfig(hutch, None, ioc)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
@@ -266,23 +254,23 @@ def move(hutch, ioc, hostport):
     if not check_auth(pwd.getpwuid(os.getuid())[0], hutch):
         print("Not authorized!")
         sys.exit(1)
-    (ft, cl, hl, vs) = readConfig(hutch)
+    config = read_config(hutch)
     try:
-        utils.COMMITHOST = vs["COMMITHOST"]
+        utils.COMMITHOST = config.commithost
     except Exception:
         pass
-    for c in cl:
-        if c["id"] == ioc:
+    for iocproc in config.procs:
+        if iocproc.name == ioc:
             hp = hostport.split(":")
-            c["newhost"] = hp[0]
+            iocproc.host = hp[0]
             if len(hp) > 1:
-                c["newport"] = port_to_int(hp[1], hp[0], cl)
-            if not validateConfig(cl):
+                iocproc["newport"] = port_to_int(hp[1], hp[0], config.procs)
+            if not validateConfig(config.procs):
                 print(
                     "Port conflict when moving %s to %s, not moved!" % (ioc, hostport)
                 )
                 sys.exit(1)
-            do_commit(hutch, cl, hl, vs)
+            write_config(hutch, config)
             applyConfig(hutch, None, ioc)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
@@ -290,19 +278,19 @@ def move(hutch, ioc, hostport):
 
 
 def do_list(hutch, ns):
-    (ft, cl, hl, vs) = readConfig(hutch)
+    config = read_config(hutch)
     h = ns.host
     show_disabled = not ns.enabled_only
     show_enabled = not ns.disabled_only
-    for c in cl:
-        if h is not None and c["host"] != h:
+    for iocproc in config.procs:
+        if h is not None and iocproc.host != h:
             continue
-        if not (show_disabled if c["disable"] else show_enabled):
+        if not (show_disabled if iocproc.disable else show_enabled):
             continue
-        if c["alias"] != "":
-            print(("%s (%s)" % (c["id"], c["alias"])))
+        if iocproc.alias != "":
+            print(("%s (%s)" % (iocproc.name, iocproc.alias)))
         else:
-            print(("%s" % c["id"]))
+            print(("%s" % iocproc.name))
     sys.exit(0)
 
 
