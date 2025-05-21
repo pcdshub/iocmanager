@@ -11,6 +11,7 @@ from unittest.mock import Mock
 import pytest
 
 from .. import procserv_tools as pt
+from ..config import Config, IOCProc
 from ..procserv_tools import (
     applyConfig,
     check_status,
@@ -407,10 +408,9 @@ def test_apply_config(
     monkeypatch.setattr(pt, "startProc", mock.startProc)
     monkeypatch.setattr(pt, "restartProc", mock.restartProc)
 
-    # We'll monkeypatch readConfig, readStatusDir, check_status too
+    # We'll monkeypatch read_config, readStatusDir, check_status too
     # We don't want to mess around with real processes in this test
-    read_config_list = []
-    read_config_result = (0, read_config_list, [], {})
+    read_config_result = Config(path="")
     read_status_dir_result = []
 
     def fake_read_config(*args, **kwargs):
@@ -435,7 +435,7 @@ def test_apply_config(
             "rdir": "/tmp",
         }
 
-    monkeypatch.setattr(pt, "readConfig", fake_read_config)
+    monkeypatch.setattr(pt, "read_config", fake_read_config)
     monkeypatch.setattr(pt, "readStatusDir", fake_read_status_dir)
     monkeypatch.setattr(pt, "check_status", fake_check_status)
 
@@ -458,23 +458,13 @@ def test_apply_config(
         disable: bool = False,
         directory: str | None = None,
     ):
-        config = {
-            "id": name,
-            "dir": directory or f"ioc/pytest/{name}",
-            "host": host or f"ctl-pytest-{name}",
-            "port": port or 20000,
-            "disable": disable,
-            "hard": False,
-            "history": [],
-            "alias": "",
-            "newstyle": False,
-            "pdir": f"ioc/common/{name}",
-        }
-        config["rid"] = config["id"]
-        config["rdir"] = config["dir"]
-        config["rhost"] = config["host"]
-        config["rport"] = config["port"]
-        return config
+        return IOCProc(
+            name=name,
+            port=port or 20000,
+            host=host or f"ctl-pytest-{name}",
+            path=directory or f"ioc/pytest/{name}",
+            disable=disable,
+        )
 
     def basic_fake_status(
         name: str,
@@ -508,7 +498,7 @@ def test_apply_config(
     kill_1_args = ("ctl-pytest-kill_1", 20000)
     if do_kill:
         # Disabled, do kill
-        read_config_list.append(
+        read_config_result.procs.append(
             basic_fake_config(
                 name="kill_1",
                 disable=True,
@@ -522,7 +512,7 @@ def test_apply_config(
         kill_args.append(kill_1_args)
     else:
         # Enabled, don't kill
-        read_config_list.append(
+        read_config_result.procs.append(
             basic_fake_config(
                 name="kill_1",
             )
@@ -541,7 +531,7 @@ def test_apply_config(
     start_3_args = ("ctl-pytest-kill_3", 10000)
     if do_kill and do_start:
         # New host, kill and start
-        read_config_list.append(
+        read_config_result.procs.append(
             basic_fake_config(
                 name="kill_2",
                 host="kill_2_new_server",
@@ -556,7 +546,7 @@ def test_apply_config(
         kill_args.append(kill_2_args)
         start_args.append(start_2_args)
         # New port, kill and start
-        read_config_list.append(
+        read_config_result.procs.append(
             basic_fake_config(
                 name="kill_3",
                 port=10000,
@@ -572,7 +562,7 @@ def test_apply_config(
         start_args.append(start_3_args)
     else:
         # Same host, same port, don't kill
-        read_config_list.append(
+        read_config_result.procs.append(
             basic_fake_config(
                 name="kill_2",
             )
@@ -584,7 +574,7 @@ def test_apply_config(
         )
         not_kill_args.append(kill_2_args)
         not_start_args.append(start_2_args)
-        read_config_list.append(
+        read_config_result.procs.append(
             basic_fake_config(
                 name="kill_3",
             )
@@ -601,7 +591,7 @@ def test_apply_config(
     start_1_args = ("ctl-pytest-start_1", 20000)
     if do_start:
         # New or newly enabled IOC
-        read_config_list.append(
+        read_config_result.procs.append(
             basic_fake_config(
                 name="start_1",
             )
@@ -614,7 +604,7 @@ def test_apply_config(
     restart_1_args = ("ctl-pytest-restart_1", 20000)
     if do_restart:
         # New version, do restart
-        read_config_list.append(
+        read_config_result.procs.append(
             basic_fake_config(name="restart_1", directory="ioc/new/version")
         )
         read_status_dir_result.append(
@@ -626,7 +616,7 @@ def test_apply_config(
         restart_args.append(restart_1_args)
     else:
         # Same version, no need to restart
-        read_config_list.append(
+        read_config_result.procs.append(
             basic_fake_config(
                 name="restart_1",
             )
@@ -639,12 +629,11 @@ def test_apply_config(
         not_restart_args.append(restart_1_args)
 
     # Always include a hard ioc, it should be ignored
-    hioc_cfg = basic_fake_config("hioc-pytest")
-    hioc_cfg["hard"] = True
-    read_config_list.append(hioc_cfg)
-    not_start_args.append((hioc_cfg["host"], hioc_cfg["port"]))
-    not_kill_args.append((hioc_cfg["host"], hioc_cfg["port"]))
-    not_restart_args.append((hioc_cfg["host"], hioc_cfg["port"]))
+    hioc_cfg = basic_fake_config(name="hioc-pytest", host="hioc-pytest")
+    read_config_result.procs.append(hioc_cfg)
+    not_start_args.append((hioc_cfg.host, hioc_cfg.port))
+    not_kill_args.append((hioc_cfg.host, hioc_cfg.port))
+    not_restart_args.append((hioc_cfg.host, hioc_cfg.port))
 
     ioc = None
     if do_verify == "deny":
@@ -717,20 +706,14 @@ def test_apply_config(
     for args in start_args:
         found_match = False
         for sp_call in mock.startProc.call_args_list:
-            if (
-                args[0] == sp_call.args[1]["host"]
-                and args[1] == sp_call.args[1]["port"]
-            ):
+            if args[0] == sp_call.args[1].host and args[1] == sp_call.args[1].port:
                 found_match = True
                 break
         assert found_match
     for args in not_start_args:
         found_match = False
         for sp_call in mock.startProc.call_args_list:
-            if (
-                args[0] == sp_call.args[1]["host"]
-                and args[1] == sp_call.args[1]["port"]
-            ):
+            if args[0] == sp_call.args[1].host and args[1] == sp_call.args[1].port:
                 found_match = True
                 break
         assert not found_match

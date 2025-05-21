@@ -52,7 +52,12 @@ def commit_config(hutch: str, comment: str) -> Result:
 
     with Connection(
         commit_host,
-        connect_kwargs={"gss_auth": True, "gss_deleg_creds": True, "gss_kex": True},
+        connect_kwargs={
+            "gss_auth": True,
+            "gss_deleg_creds": True,
+            "gss_kex": True,
+            "look_for_keys": False,
+        },
     ) as conn:
         if commit_host in ("localhost", gethostname()):
             cmd = conn.local

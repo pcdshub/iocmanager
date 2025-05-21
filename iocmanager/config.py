@@ -47,11 +47,11 @@ class IOCProc:
     port: int
     host: str
     path: str
-    alias: str
-    status: ConfigStat
-    disable: bool
-    cmd: str
-    history: list[str]
+    alias: str = ""
+    status: ConfigStat = ConfigStat.NORMAL
+    disable: bool = False
+    cmd: str = ""
+    history: list[str] = None
     parent: str = ""
     hard: bool = False
 
@@ -59,17 +59,28 @@ class IOCProc:
         if self.name == self.host:
             self.hard = True
         else:
-            self.parent = get_parent(self.path, self.name)
+            try:
+                self.parent = get_parent(self.path, self.name)
+            except Exception:
+                ...
+        if self.history is None:
+            self.history = []
 
 
 @dataclass(eq=True)
 class Config:
     path: str
-    commithost: str
-    allow_console: bool
-    hosts: list[str]
-    procs: list[IOCProc]
-    mtime: float
+    commithost: str = DEFAULT_COMMITHOST
+    allow_console: bool = True
+    hosts: list[str] = None
+    procs: list[IOCProc] = None
+    mtime: float = 0.0
+
+    def __post_init__(self):
+        if self.hosts is None:
+            self.hosts = []
+        if self.procs is None:
+            self.procs = []
 
 
 config_cache: dict[str, Config] = {}
@@ -206,13 +217,13 @@ def _cfg_file_lines(config: Config) -> list[str]:
     """
     lines = []
 
-    lines.append(f"COMMITHOST = {config.commithost}")
+    lines.append(f'COMMITHOST = "{config.commithost}"')
     lines.append(f"allow_console = {config.allow_console}")
     lines.append("")
 
     lines.append("hosts = [")
     for host in config.hosts:
-        lines.append(f"   {host}")
+        lines.append(f"   '{host}',")
     lines.append("]")
     lines.append("")
 
@@ -236,7 +247,7 @@ def _cfg_file_lines(config: Config) -> list[str]:
             extra += f", cmd: '{ioc.cmd}'"
         lines.append(
             " {"
-            f"id: '{ioc.name}', "
+            f"id:'{ioc.name}', "
             f"host: '{ioc.host}', "
             f"port: {ioc.port}, "
             f"dir: '{ioc.path}'"
@@ -390,6 +401,12 @@ def check_ssh(user: str, hutch: str) -> bool:
     return True
 
 
+old_keymap = {
+    "id": "name",
+    "dir": "path",
+}
+
+
 def find_iocs(**kwargs) -> list[tuple[str, IOCProc]]:
     """
     Find IOCs matching the inputs in any hutch config.
@@ -408,12 +425,20 @@ def find_iocs(**kwargs) -> list[tuple[str, IOCProc]]:
     iocs : list of tuple
         Each IOC's source config file path and config information
     """
+    # Translate from old format
+    kw = kwargs.copy()
+    for old, new in old_keymap.items():
+        try:
+            kw[new] = kw.pop(old)
+        except KeyError:
+            ...
+
     cfgs = glob.glob(env_paths.CONFIG_FILE % "*")
     configs = []
     for cfg in cfgs:
         config = read_config(cfg)
         for ioc in config.procs:
-            for k in list(kwargs.items()):
+            for k in list(kw.items()):
                 if getattr(ioc, k[0]) != k[1]:
                     break
             else:

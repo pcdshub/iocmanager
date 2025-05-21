@@ -1,4 +1,5 @@
 fabric
 pyasn1
+python-gssapi
 pyca
 qtpy

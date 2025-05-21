@@ -10,7 +10,7 @@ if [ "${IOCMAN_PY_BIN}" == "${THIS_DIR}"/.venv/bin ]; then
     echo "Using in-dir .venv, check installs"
 
     # Standard is to use a .venv at the repo root
-    # Seed using a conda release of choice, possibly pcds-6.0.0
+    # Seed using a conda release of choice, possibly pcds-6.0.1
     # Any new enough conda with a working qt should be ok
     if [ ! -d "${IOCMAN_PY_BIN}" ]; then
         echo "Creating .venv from base python3=$(which python3)"

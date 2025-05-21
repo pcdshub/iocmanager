@@ -58,7 +58,7 @@ def test_read_config(cfg: str):
             status=ConfigStat.NORMAL,
             disable=False,
             cmd="",
-            history=["iocs/old"],
+            history=[],
             parent="",
             hard=False,
         ),
@@ -113,11 +113,11 @@ def test_check_ssh():
 def test_find_iocs():
     search1 = find_iocs(id="ioc-counter")
     assert len(search1) == 1
-    assert search1[0][1]["host"] == "test-server2"
+    assert search1[0][1].host == "test-server2"
 
     search2 = find_iocs(host="test-server1")
     assert len(search2) == 1
-    assert search2[0][1]["id"] == "ioc-shouter"
+    assert search2[0][1].name == "ioc-shouter"
 
 
 def test_get_hutch_list():
@@ -131,14 +131,14 @@ def test_get_hutch_list():
 def test_validate_config():
     # Only checks for port conflicts at time of writing
     good_config = [
-        {"host": "host1", "port": 10000},
-        {"host": "host1", "port": 20000},
-        {"host": "host2", "port": 20000},
+        IOCProc(name="", host="host1", port=10000, path=""),
+        IOCProc(name="", host="host1", port=20000, path=""),
+        IOCProc(name="", host="host2", port=20000, path=""),
     ]
     bad_config = [
-        {"host": "host1", "port": 10000},
-        {"host": "host1", "port": 10000},
-        {"host": "host2", "port": 20000},
+        IOCProc(name="", host="host1", port=10000, path=""),
+        IOCProc(name="", host="host1", port=10000, path=""),
+        IOCProc(name="", host="host2", port=20000, path=""),
     ]
     assert validateConfig(good_config)
     assert not validateConfig(bad_config)
