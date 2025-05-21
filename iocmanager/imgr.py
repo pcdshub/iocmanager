@@ -23,7 +23,7 @@ from .config import (
     check_special,
     get_hutch_list,
     read_config,
-    validateConfig,
+    validate_config,
     write_config,
 )
 from .epics_paths import has_stcmd
@@ -265,7 +265,7 @@ def move(hutch, ioc, hostport):
             iocproc.host = hp[0]
             if len(hp) > 1:
                 iocproc["newport"] = port_to_int(hp[1], hp[0], config.procs)
-            if not validateConfig(config.procs):
+            if not validate_config(config.procs):
                 print(
                     "Port conflict when moving %s to %s, not moved!" % (ioc, hostport)
                 )

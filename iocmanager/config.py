@@ -456,7 +456,7 @@ def get_hutch_list() -> list[str]:
         return []
 
 
-def validateConfig(iocproc: list[IOCProc]) -> bool:
+def validate_config(iocproc: list[IOCProc]) -> bool:
     """
     Returns True if the list of IOC configurations looks valid.
 

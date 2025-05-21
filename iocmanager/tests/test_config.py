@@ -16,7 +16,7 @@ from ..config import (
     get_hutch_list,
     read_config,
     readStatusDir,
-    validateConfig,
+    validate_config,
     write_config,
 )
 from . import CFG_FOLDER
@@ -140,8 +140,8 @@ def test_validate_config():
         IOCProc(name="", host="host1", port=10000, path=""),
         IOCProc(name="", host="host2", port=20000, path=""),
     ]
-    assert validateConfig(good_config)
-    assert not validateConfig(bad_config)
+    assert validate_config(good_config)
+    assert not validate_config(bad_config)
 
 
 def test_read_status_dir():
