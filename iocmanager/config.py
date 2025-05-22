@@ -22,7 +22,7 @@ import logging
 import os
 import stat
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -53,7 +53,7 @@ class IOCProc:
     status: ConfigStat = ConfigStat.NORMAL
     disable: bool = False
     cmd: str = ""
-    history: list[str] = None
+    history: list[str] = field(default_factory=list)
     parent: str = ""
     hard: bool = False
 
@@ -65,8 +65,6 @@ class IOCProc:
                 self.parent = get_parent(self.path, self.name)
             except Exception:
                 ...
-        if self.history is None:
-            self.history = []
 
 
 @dataclass(eq=True)
@@ -76,15 +74,9 @@ class Config:
     path: str
     commithost: str = DEFAULT_COMMITHOST
     allow_console: bool = True
-    hosts: list[str] = None
-    procs: list[IOCProc] = None
+    hosts: list[str] = field(default_factory=list)
+    procs: list[IOCProc] = field(default_factory=list)
     mtime: float = 0.0
-
-    def __post_init__(self):
-        if self.hosts is None:
-            self.hosts = []
-        if self.procs is None:
-            self.procs = []
 
 
 config_cache: dict[str, Config] = {}
