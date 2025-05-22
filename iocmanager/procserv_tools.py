@@ -18,6 +18,8 @@ import telnetlib
 import threading
 import time
 import typing
+from dataclasses import dataclass
+from enum import Enum, StrEnum
 
 from . import env_paths
 from .config import IOCProc, IOCStatusFile, read_config, read_status_dir
@@ -27,14 +29,39 @@ from .log_setup import add_spam_level
 # For procmgrd
 BASEPORT = 39050
 
-# Process status options
-# TODO enum-ify?
-STATUS_INIT = "INITIALIZE WAIT"
-STATUS_NOCONNECT = "NOCONNECT"
-STATUS_RUNNING = "RUNNING"
-STATUS_SHUTDOWN = "SHUTDOWN"
-STATUS_DOWN = "HOST DOWN"
-STATUS_ERROR = "ERROR"
+logger = logging.getLogger(__name__)
+add_spam_level(logger)
+
+
+class ProcServStatus(StrEnum):
+    """procServ Process status options"""
+
+    INIT = "INITIALIZE WAIT"
+    NOCONNECT = "NOCONNECT"
+    RUNNING = "RUNNING"
+    SHUTDOWN = "SHUTDOWN"
+    DOWN = "HOST DOWN"
+    ERROR = "ERROR"
+
+
+class AutoRestartMode(Enum):
+    ON = 0
+    ONESHOT = 1
+    OFF = 2
+
+
+@dataclass
+class IOCStatusLive:
+    """Information about an IOC from inspecting the live process."""
+
+    name: str
+    port: int
+    host: str
+    path: str
+    pid: int | None
+    status: ProcServStatus
+    autorestart_mode: AutoRestartMode
+
 
 # messages expected from procServ
 # need to be bytes type for telnetlib
@@ -50,15 +77,19 @@ MSG_AUTORESTART_MODE = b"auto restart mode"
 MSG_AUTORESTART_IS_ON = b"auto restart( mode)? is ON,"
 MSG_AUTORESTART_IS_ONESHOT = b"auto restart( mode)? is ONESHOT,"
 MSG_AUTORESTART_CHANGE = b"auto restart to "
-MSG_AUTORESTART_MODE_CHANGE = b"auto restart mode to "
-
-logger = logging.getLogger(__name__)
-add_spam_level(logger)
+MSG_AUTORESTART_MODE_CHANGE = b"@@@ Toggled auto restart"
 
 
-def readLogPortBanner(tn: telnetlib.Telnet) -> dict[str, str | bool]:
+def read_port_banner(tn: telnetlib.Telnet) -> IOCStatusLive:
     """
     Read and parse the connection information from a new telnet connection.
+
+    This is the part of check_status that collects information from a
+    telnet session. Usually you'd call check_status directly which includes
+    other checks too.
+
+    The resulting status here won't have information about the
+    hostname or port. These should be added by the caller.
 
     Parameters
     ----------
@@ -67,80 +98,64 @@ def readLogPortBanner(tn: telnetlib.Telnet) -> dict[str, str | bool]:
 
     Returns
     -------
-    info : dict
+    ioc_status_live : IOCStatusLive
         Various information about the connection and procServ status.
     """
+    ioc_status_live = IOCStatusLive(
+        name="",
+        port=0,
+        host="",
+        path="",
+        pid=None,
+        status=ProcServStatus.ERROR,
+        autorestart_mode=AutoRestartMode.OFF,
+    )
     try:
         response = tn.read_until(MSG_BANNER_END, 1)
     except Exception:
         response = b""
     if not response.count(MSG_BANNER_END):
-        return {
-            "status": STATUS_ERROR,
-            "pid": "-",
-            "rid": "-",
-            "autorestart": False,
-            "autooneshot": False,
-            "autorestartmode": False,
-            "rdir": "/tmp",
-        }
+        return ioc_status_live
     if re.search(b"SHUT DOWN", response):
-        tmpstatus = STATUS_SHUTDOWN
-        pid = "-"
+        ioc_status_live.status = ProcServStatus.SHUTDOWN
     else:
-        tmpstatus = STATUS_RUNNING
-        pid = (
+        ioc_status_live.status = ProcServStatus.RUNNING
+        ioc_status_live.pid = int(
             re.search(b'@@@ Child "(.*)" PID: ([0-9]*)', response)
             .group(2)
             .decode("ascii")
         )
     match = re.search(b'@@@ Child "(.*)" start', response)
-    getid = "-"
     if match:
-        getid = match.group(1).decode("ascii")
+        ioc_status_live.name = match.group(1).decode("ascii")
     match = re.search(b"@@@ Server startup directory: (.*)", response)
-    dir = "/tmp"
     if match:
-        dir = match.group(1).decode("ascii")
-        if dir[-1] == "\r":
-            dir = dir[:-1]
+        ioc_status_live.path = normalize_path(
+            match.group(1).decode("ascii").removesuffix("\r"), ioc_status_live.name
+        )
+
     # Note: This means that ONESHOT counts as OFF!
     if re.search(MSG_AUTORESTART_IS_ON, response):
-        arst = True
-    else:
-        arst = False
-    if re.search(MSG_AUTORESTART_IS_ONESHOT, response):
-        arst1 = True
-    else:
-        arst1 = False
-    # procServ 2.8 changed "auto restart" to "auto restart mode"
-    if re.search(MSG_AUTORESTART_MODE, response):
-        arstm = True
-    else:
-        arstm = False
+        ioc_status_live.autorestart_mode = AutoRestartMode.ON
+    elif re.search(MSG_AUTORESTART_IS_ONESHOT, response):
+        ioc_status_live.autorestart_mode = AutoRestartMode.ONESHOT
 
-    return {
-        "status": tmpstatus,
-        "pid": pid,
-        "rid": getid,
-        "autorestart": arst,
-        "autooneshot": arst1,
-        "autorestartmode": arstm,
-        "rdir": normalize_path(dir, getid),
-    }
+    # Note: this function doesn't know the host or port information.
+    # The caller of this function will need to add this information to the result.
+    return ioc_status_live
 
 
 pdict = {}
 lockdict = collections.defaultdict(threading.RLock)
 
 
-def check_status(host: str, port: int, id: str) -> dict[str, str | bool]:
+def check_status(host: str, port: int, name: str) -> IOCStatusLive:
     """
     Returns the status of an IOC via information from ping and telnet.
 
     Pings the host first if it hasn't been pinged recently.
     If the ping succeeds or has succeeded recently, telnet to the procServ port.
-    If telnet succeeds, uses readLogPortBanner to determine the procServ status.
+    If telnet succeeds, uses read_port_banner to determine the procServ status.
 
     Parameters
     ----------
@@ -148,12 +163,12 @@ def check_status(host: str, port: int, id: str) -> dict[str, str | bool]:
         The network hostname the IOC runs on.
     port : int
         The port the procServ process listens for telnet on.
-    id : str
+    name : str
         The name of the IOC.
 
     Returns
     -------
-    status : dict
+    status : IOCStatusLive
         Various information about the IOC health and status.
     """
     # Lock to ensure only 1 ping at a time per host
@@ -174,35 +189,42 @@ def check_status(host: str, port: int, id: str) -> dict[str, str | bool]:
             pdict[host] = (now, pingrc)
     if pingrc != 0:
         logger.spam(f"{host} is down")
-        return {
-            "status": STATUS_DOWN,
-            "rid": id,
-            "pid": "-",
-            "autorestart": False,
-            "rdir": "/tmp",
-        }
+        return IOCStatusLive(
+            name=name,
+            port=port,
+            host=host,
+            path="",
+            pid=None,
+            status=ProcServStatus.DOWN,
+            autorestart_mode=AutoRestartMode.OFF,
+        )
     logger.spam(f"Check telnet to {host}:{port}")
     try:
-        tn = telnetlib.Telnet(host, port, 1)
+        with telnetlib.Telnet(host, port, 1) as tn:
+            status = read_port_banner(tn)
     except Exception:
         logger.spam(f"{host}:{port} is down")
-        return {
-            "status": STATUS_NOCONNECT,
-            "rid": id,
-            "pid": "-",
-            "autorestart": False,
-            "autorestartmode": False,
-            "rdir": "/tmp",
-        }
-    result = readLogPortBanner(tn)
-    tn.close()
+        return IOCStatusLive(
+            name=name,
+            port=port,
+            host=host,
+            path="",
+            pid=None,
+            status=ProcServStatus.NOCONNECT,
+            autorestart_mode=AutoRestartMode.OFF,
+        )
     logger.spam(f"Done checking {host}:{port}")
-    return result
+    # Fill in some aux info that read_port_banner doesn't know
+    status.host = host
+    status.port = port
+    return status
 
 
-def openTelnet(host: str, port: int) -> telnetlib.Telnet | None:
+def open_telnet(host: str, port: int) -> telnetlib.Telnet:
     """
     Try multiple times to open a telnet connection.
+
+    Raises if unsuccessful.
 
     Parameters
     ----------
@@ -213,7 +235,7 @@ def openTelnet(host: str, port: int) -> telnetlib.Telnet | None:
 
     Returns
     -------
-    telnet : telnetlib.Telnet or None
+    telnet : telnetlib.Telnet
         The Telnet object if successful, otherwise None
     """
     connected = False
@@ -229,10 +251,10 @@ def openTelnet(host: str, port: int) -> telnetlib.Telnet | None:
     if connected:
         return tn
     else:
-        return None
+        raise RuntimeError(f"Unable to open telnet to {host}:{port}")
 
 
-def fixTelnetShell(host: str, port: int) -> None:
+def fix_telnet_shell(host: str, port: int) -> None:
     """
     Connect to a telnet port running sh and set the prompt to >
 
@@ -246,24 +268,23 @@ def fixTelnetShell(host: str, port: int) -> None:
     port : int
         The port on the hostname to connect to.
     """
-    tn = openTelnet(host, port)
-    tn.write(b"\x15\x0d")
-    tn.expect([MSG_PROMPT_OLD], 2)
-    tn.write(b"export PS1='> '\n")
-    tn.read_until(MSG_PROMPT, 2)
-    tn.close()
+    with open_telnet(host, port) as tn:
+        tn.write(b"\x15\x0d")
+        tn.expect([MSG_PROMPT_OLD], 2)
+        tn.write(b"export PS1='> '\n")
+        tn.read_until(MSG_PROMPT, 2)
 
 
-def checkTelnetMode(
+def set_telnet_mode(
     host: str,
     port: int,
-    onOK: bool = True,
-    offOK: bool = False,
-    oneshotOK: bool = False,
-    verbose: bool = False,
-) -> bool:
+    mode: AutoRestartMode,
+) -> AutoRestartMode:
     """
     Ensure the procServ is in an acceptable state among on/off/oneshot.
+
+    Raises if something went wrong with telnet or if we can't get to the
+    desired state within five toggles.
 
     Parameters
     ----------
@@ -271,92 +292,54 @@ def checkTelnetMode(
         The hostname to connect to.
     port : int
         The port on the hostname to connect to.
-    onOk : bool
-        True if the "on" state is acceptable, False otherwise.
-        Defaults to True.
-    offOk : bool
-        True if the "off" state is acceptable, False otherwise.
-        Defaults to False.
-    oneshotOk : bool
-        True if the "oneshot" state is acceptable, False otherwise.
-        Defaults to False.
-    verbose : bool
-        Set to True to get more debug prints.
-        Defaults to False.
+    mode: AutoRestartMode
+        One of ON, ONESHOT, or OFF from the enum options
 
     Returns
     -------
-    status : bool
-        True if everything went well.
+    mode : AutoRestartMode
+        The final mode after all operations.
+        In the current implemenation, this will always match the input
+        because we'll raise when this fails.
     """
-    while True:
-        tn = openTelnet(host, port)
-        if not tn:
-            print("ERROR: checkTelnetMode() telnet to %s port %s failed" % (host, port))
-            return False
-        try:
-            statd = readLogPortBanner(tn)
-        except Exception:
-            logger.debug("checkTelnetMode() failed to readLogPortBanner", exc_info=True)
-            print(
-                "ERROR: checkTelnetMode() failed to readLogPortBanner on %s port %s"
-                % (host, port)
+    att_remaining = 5
+    start_att_remaining = att_remaining
+    status = check_status(host=host, port=port, name="")
+    while status.autorestart_mode != mode:
+        if att_remaining <= 0:
+            raise RuntimeError(
+                f"Unable to change telnet mode to {mode.name} "
+                f"within {start_att_remaining} attempts, "
+                f"ended at {status.autorestart_mode.name}."
             )
-            tn.close()
-            return False
-        try:
-            if verbose:
-                print(
-                    "checkTelnetMode: %s port %s status is %s"
-                    % (host, port, statd["status"])
-                )
-            if statd["autorestart"]:
-                if onOK:
-                    tn.close()
-                    return True
-            elif statd["autooneshot"]:
-                if oneshotOK:
-                    tn.close()
-                    return True
-            else:
-                if offOK:
-                    tn.close()
-                    return True
-            if verbose:
-                print(
-                    "checkTelnetMode: turning off autorestart on %s port %s"
-                    % (host, port)
-                )
+        logger.debug(
+            "set_telnet_mode: %s port %s status is %s",
+            host,
+            port,
+            status.status.value,
+        )
+        with open_telnet(host, port) as tn:
             # send ^T to toggle off auto restart.
             tn.write(b"\x14")
-            # wait for toggled message
-            if statd["autorestartmode"]:
-                tn.read_until(MSG_AUTORESTART_MODE_CHANGE, 1)
-            else:
-                tn.read_until(MSG_AUTORESTART_CHANGE, 1)
-            time.sleep(0.25)
-            tn.close()
-        except Exception:
-            logger.debug(
-                "checkTelnetMode() failed to turn off autorestart", exc_info=True
-            )
-            print(
-                "ERROR: checkTelnetMode() failed to turn off autorestart on %s port %s"
-                % (host, port)
-            )
-            tn.close()
-            return False
+            tn.read_until(MSG_AUTORESTART_MODE_CHANGE)
+
+        status = check_status(host=host, port=port, name="")
+        att_remaining -= 1
+
+    return status.autorestart_mode
 
 
-def killProc(host: str, port: int, verbose: bool = False) -> None:
+def kill_proc(host: str, port: int) -> None:
     """
     Kills a procServ process entirely, including the subshell it controls.
 
     This is implemented kindly, e.g. without actually running a kill command,
     The procServ's return code should be 0.
 
-    Internally this sends a ctrl+X if the subprocess is alive (to end it),
-    then a ctrl+Q to ask the procServ process to terminate.
+    Internally this changes autorestart to OFF, sends a ctrl+X if the subprocess
+    is alive (to end it), then a ctrl+Q to ask the procServ process to terminate.
+
+    This may raise if there is some sort of connection issue.
 
     Parameters
     ----------
@@ -364,53 +347,29 @@ def killProc(host: str, port: int, verbose: bool = False) -> None:
         The hostname to connect to.
     port : int
         The port on the hostname to connect to.
-    verbose : bool
-        Set to True for more detailed debug prints
     """
-    print("Killing IOC on host %s, port %s..." % (host, port))
-    if not checkTelnetMode(
-        host, port, onOK=False, offOK=True, oneshotOK=False, verbose=verbose
-    ):
-        return
+    logger.info("Killing IOC on host %s, port %s...", host, port)
+
+    # Make sure it doesn't restart while we're doing this
+    mode = set_telnet_mode(host=host, port=port, mode=AutoRestartMode.OFF)
+    if mode != AutoRestartMode.OFF:
+        raise RuntimeError("Unable to change autorestart mode to OFF in kill_proc")
+
     # Now, reconnect to actually kill it!
-    tn = openTelnet(host, port)
-    if tn:
-        statd = readLogPortBanner(tn)
-        if statd["status"] == STATUS_RUNNING:
-            try:
-                if verbose:
-                    print("killProc: Sending Ctrl-X to %s port %s" % (host, port))
-                # send ^X to kill child process
-                tn.write(b"\x18")
-                # wait for killed message
-                tn.read_until(MSG_KILLED, 1)
-                time.sleep(0.25)
-            except Exception:
-                logger.debug("killProc() failed to kill process", exc_info=True)
-                print(
-                    "ERROR: killProc() failed to kill process on %s port %s"
-                    % (host, port)
-                )
-                tn.close()
-                return
-        try:
-            if verbose:
-                print("killProc: Sending Ctrl-Q to %s port %s" % (host, port))
-            # send ^Q to kill procServ
-            tn.write(b"\x11")
-        except Exception:
-            logger.debug("killProc() failed to kill procServ", exc_info=True)
-            print(
-                "ERROR: killProc() failed to kill procServ on %s port %s" % (host, port)
-            )
-            tn.close()
-            return
-        tn.close()
-    else:
-        print("ERROR: killProc() telnet to %s port %s failed" % (host, port))
+    with open_telnet(host, port) as tn:
+        status = read_port_banner(tn)
+        if status.status == ProcServStatus.RUNNING:
+            logger.debug("kill_proc: Sending Ctrl-X to %s port %s", host, port)
+            # send ^X to kill child process
+            tn.write(b"\x18")
+            # wait for killed message
+            tn.read_until(MSG_KILLED, 1)
+        logger.debug("kill_proc: Sending Ctrl-Q to %s port %s", host, port)
+        # send ^Q to ask procServ to quit
+        tn.write(b"\x11")
 
 
-def restartProc(host: str, port: int) -> bool:
+def restart_proc(host: str, port: int) -> None:
     """
     Restarts a procServ's contained process.
 
@@ -418,7 +377,7 @@ def restartProc(host: str, port: int) -> bool:
     commands to the procServ port via telnet.
 
     We first force the procServ into "no restart" mode using
-    as many ctrl+T presses as possible, then we ctrl+X to
+    as many ctrl+T presses as needed, then we ctrl+X to
     stop the process if necessary, finally we ctrl+X one final
     time. Afterwards we ctrl+T back to the initial mode.
 
@@ -433,60 +392,49 @@ def restartProc(host: str, port: int) -> bool:
     expecting which will cause our "start" command to turn the IOC
     back off.
 
+    Raises on failure.
+
     Parameters
     ----------
     host : str
         The hostname to connect to.
     port : int
         The port on the hostname to connect to.
-
-    Returns
-    -------
-    success : bool
-        True if we managed to restart the process successfully.
     """
-    print("Restarting IOC on host %s, port %s..." % (host, port))
-    tn = openTelnet(host, port)
-    if tn is None:
-        print("ERROR: restartProc() telnet to %s port %s failed" % (host, port))
-        return False
-    started = False
-    with tn:
-        # Check initial status
-        statd = readLogPortBanner(tn)
-        # Force into no restart mode
-        if not checkTelnetMode(host, port, onOK=False, offOK=True, oneshotOK=False):
-            return False
-        # Manual kill if necessary
-        if statd["status"] == STATUS_RUNNING:
-            # send ^X to kill child process
+    logger.info("Restarting IOC on host %s, port %s..." % (host, port))
+    # We don't want it to restart on it's own schedule, we want to pick the timing
+    original_status = check_status(host=host, port=port, name="")
+    try:
+        set_telnet_mode(host=host, port=port, mode=AutoRestartMode.OFF)
+
+        with open_telnet(host, port) as tn:
+            # Check initial status
+            status = read_port_banner(tn)
+            # Double-check autorestart is OFF while we're here
+            if status.autorestart_mode != AutoRestartMode.OFF:
+                raise RuntimeError(
+                    "Unable to change autorestart mode to OFF in restart_proc"
+                )
+            # Manual kill if necessary
+            if status.status == ProcServStatus.RUNNING:
+                # send ^X to kill child process
+                tn.write(b"\x18")
+                # wait for killed message
+                tn.read_until(MSG_KILLED, 1)
+
+            # send ^X to start child process
             tn.write(b"\x18")
 
-            # wait for killed message
-            tn.read_until(MSG_KILLED, 1)
-            time.sleep(0.25)
-
-        # send ^X to start child process
-        tn.write(b"\x18")
-
-        # wait for restart message
-        rsp = tn.read_until(MSG_RESTART, 1)
-        if MSG_RESTART in rsp:
-            started = True
-        else:
-            print("ERROR: no restart message... ")
-
-    # Finally, force back to original mode
-    if statd["autorestart"]:
-        checkTelnetMode(host, port, onOK=True, offOK=False, oneshotOK=False)
-    elif statd["autooneshot"]:
-        checkTelnetMode(host, port, onOK=False, offOK=False, oneshotOK=True)
-    else:
-        checkTelnetMode(host, port, onOK=False, offOK=True, oneshotOK=False)
-    return started
+            # wait for restart message
+            rsp = tn.read_until(MSG_RESTART, 1)
+            if MSG_RESTART not in rsp:
+                raise RuntimeError("ERROR: no restart message received in restart_proc")
+    finally:
+        # Force back to original mode
+        set_telnet_mode(host=host, port=port, mode=original_status.autorestart_mode)
 
 
-def startProc(cfg: str, entry: dict[str, str | int], local=False) -> None:
+def start_proc(cfg: str, ioc_proc: IOCProc, local: bool = False) -> None:
     """
     Starts a new procServ process from our config entry information.
 
@@ -494,65 +442,57 @@ def startProc(cfg: str, entry: dict[str, str | int], local=False) -> None:
     ----------
     cfg : str
         The name of the area, such as xpp or tmo.
-    entry : dict
-        Config dict with the following required keys:
-        - "host": str server hostname
-        - "port": int procServ port
-        - "id": str ioc name
-        And the following optional keys:
-        - "cmd": str command to run if not st.cmd
-        - "flags": deprecated
+    entry : IOCProc
+        The configuration information for our IOC process.
+        The important values we'll need are "name", "host", and "port".
+        "cmd" is respected as an optional value.
+    localhost : bool, optional
+        If True, run on localhost instead of the host defined in ioc_proc.
     """
     # Hopefully, we can dispose of this soon!
-    platform = "1"
     if cfg == "xrt":
         platform = "2"
-    if cfg == "las":
+    elif cfg == "las":
         platform = "3"
+    else:
+        platform = "1"
 
     if local:
         host = "localhost"
     else:
-        host = entry["host"]
-    port = entry["port"]
-    name = entry["id"]
-    try:
-        cmd = entry["cmd"]
-    except Exception:
-        cmd = "./st.cmd"
-    try:
-        if "u" in entry["flags"]:
-            # The Old Regime: add u to flags to append the ID to the command.
-            cmd += " -u " + name
-    except Exception:
-        pass
+        host = ioc_proc.host
 
-    sr = os.getenv("SCRIPTROOT")
-    if sr is None:
-        sr = env_paths.STARTUP_DIR % cfg
-    elif sr[-1] != "/":
+    name = ioc_proc.name
+    port = ioc_proc.port
+    cmd = ioc_proc.cmd or "./st.cmd"
+
+    sr = os.getenv("SCRIPTROOT") or env_paths.STARTUP_DIR % cfg
+    if sr[-1] != "/":
         sr += "/"
-    cmd = "%sstartProc %s %d %s %s" % (sr, name, port, cfg, cmd)
+    cmd = f"{sr}startProc {name} {port} {cfg} {cmd}"
     log = env_paths.LOGBASE % name
     ctrlport = BASEPORT + 2 * (int(platform) - 1)
-    print(
-        "Starting %s on port %s of host %s, platform %s..."
-        % (name, port, host, platform)
-    )
-    cmd = "%s --logfile %s --name %s --allow --coresize 0 --savelog %d %s" % (
-        env_paths.PROCSERV_EXE,
-        log,
+    logger.info(
+        "Starting %s on port %s of host %s, platform %s...",
         name,
         port,
-        cmd,
+        host,
+        platform,
+    )
+    cmd = (
+        f"{env_paths.PROCSERV_EXE} "
+        f"--logfile {log} "
+        f"--name {name} "
+        "--allow --coresize 0 --savelog "
+        f"{port} {cmd}"
     )
     try:
-        tn = telnetlib.Telnet(host, ctrlport, 1)
-    except Exception:
-        logger.debug("telnet to procmgr failed", exc_info=True)
-        print("ERROR: telnet to procmgr (%s port %d) failed" % (host, ctrlport))
-        print(">>> Please start the procServ process on host %s!" % host)
-        return
+        tn = open_telnet(host, ctrlport)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Telnet to procmgr ({host}:{ctrlport}) failed. "
+            f"Please start the procServ process on host {host}."
+        ) from exc
     # telnet succeeded
     with tn:
         # send ^U followed by carriage return to safely reach the prompt
@@ -560,19 +500,27 @@ def startProc(cfg: str, entry: dict[str, str | int], local=False) -> None:
 
         # wait for prompt (procServ)
         statd = tn.read_until(MSG_PROMPT, 2)
-        if not bytes.count(statd, MSG_PROMPT):
-            print("ERROR: no prompt at %s port %s" % (host, ctrlport))
+        if MSG_PROMPT not in statd:
+            logger.error(f"ERROR: no prompt at {host}:{ctrlport}")
 
         # send command
         tn.write(b"%s\n" % bytes(cmd, "utf-8"))
 
         # wait for prompt
         statd = tn.read_until(MSG_PROMPT, 2)
-        if not bytes.count(statd, MSG_PROMPT):
-            print("ERR: no prompt at %s port %s" % (host, ctrlport))
+        if MSG_PROMPT not in statd:
+            logger.error(f"ERROR: no prompt at {host}:{ctrlport}")
+
+    # One last check, did we start?
+    status = check_status(host=ioc_proc.host, port=ioc_proc.port, name=ioc_proc.name)
+    if status.status in (ProcServStatus.DOWN or ProcServStatus.NOCONNECT):
+        raise RuntimeError(
+            f"Failed to start ioc process {ioc_proc.name} "
+            f"on {ioc_proc.host}:{ioc_proc.port}"
+        )
 
 
-def applyConfig(
+def apply_config(
     cfg: str,
     verify: typing.Callable[
         [dict, dict, list[str], list[str], list[str]],
@@ -580,18 +528,20 @@ def applyConfig(
     ]
     | None = None,
     ioc: str | None = None,
-) -> int:
+) -> None:
     """
     Starts, restarts, and kills IOCs to match the saved configuration.
 
     If a verify function is provided, it will be called first to let the
     user confirm that they want to take all of these actions.
 
+    Raises on failure.
+
     Note:
     - This relies on the status directory being populated
-      correctly, which is handled by startProc.
+      correctly, which is handled by start_proc.
     - This may implicitly modify/clean up the status directory via
-      calling readStatusDir
+      calling read_status_dir
 
     Parameters
     ----------
@@ -609,17 +559,8 @@ def applyConfig(
     ioc : str, optional
         The name of a single IOC to apply to, if provided.
         If not provided, we'll apply the entire configuration.
-
-    Returns
-    -------
-    return_code : int
-        Zero if completed successfully.
     """
-    try:
-        config = read_config(cfg)
-    except Exception:
-        print("Cannot read configuration for %s!" % cfg)
-        return -1
+    config = read_config(cfg)
 
     desired_iocs: dict[str, IOCProc] = {}
     for iocproc in config.procs:
@@ -729,9 +670,9 @@ def applyConfig(
 
     for line in kill_list:
         try:
-            killProc(current[line].host, int(current[line].port))
+            kill_proc(current[line].host, int(current[line].port))
         except Exception:
-            killProc(desired_iocs[line].host, int(desired_iocs[line].port))
+            kill_proc(desired_iocs[line].host, int(desired_iocs[line].port))
         try:
             # This is dead, so get rid of the status file!
             os.unlink((env_paths.STATUS_DIR % cfg) + "/" + line)
@@ -744,10 +685,10 @@ def applyConfig(
             )
 
     for line in start_list:
-        startProc(cfg, desired_iocs[line])
+        start_proc(cfg, desired_iocs[line])
 
     for line in restart_list:
-        restartProc(current[line].host, int(current[line].port))
+        restart_proc(current[line].host, int(current[line].port))
 
     # TODO figure out why this sleep was here and decide what to do about it
     # Remove it for now to make test suite faster

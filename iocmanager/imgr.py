@@ -28,7 +28,7 @@ from .config import (
 )
 from .epics_paths import has_stcmd
 from .ioc_info import get_base_name
-from .procserv_tools import applyConfig, check_status, restartProc
+from .procserv_tools import apply_config, check_status, restart_proc
 
 
 def match_hutch(h, hlist):
@@ -141,7 +141,7 @@ def hard_reboot(hutch, ioc):
     config = read_config(hutch)
     for iocproc in config.procs:
         if iocproc.name == ioc:
-            restartProc(iocproc.host, iocproc.port)
+            restart_proc(iocproc.host, iocproc.port)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
@@ -173,7 +173,7 @@ def set_state(hutch, ioc, enable):
         if iocproc.name == ioc:
             iocproc.disable = not enable
             write_config(hutch, config)
-            applyConfig(hutch, None, ioc)
+            apply_config(hutch, None, ioc)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
@@ -218,7 +218,7 @@ def add(hutch, ioc, version, hostport, disable):
     if host not in config.hosts:
         config.hosts.append(host)
     write_config(hutch, config)
-    applyConfig(hutch, None, ioc)
+    apply_config(hutch, None, ioc)
     sys.exit(0)
 
 
@@ -244,7 +244,7 @@ def upgrade(hutch, ioc, version):
         if iocproc.name == ioc:
             iocproc.path = version
             write_config(hutch, config)
-            applyConfig(hutch, None, ioc)
+            apply_config(hutch, None, ioc)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)
@@ -271,7 +271,7 @@ def move(hutch, ioc, hostport):
                 )
                 sys.exit(1)
             write_config(hutch, config)
-            applyConfig(hutch, None, ioc)
+            apply_config(hutch, None, ioc)
             sys.exit(0)
     print("IOC %s not found in hutch %s!" % (ioc, hutch))
     sys.exit(1)

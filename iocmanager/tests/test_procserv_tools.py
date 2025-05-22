@@ -13,15 +13,15 @@ import pytest
 from .. import procserv_tools as pt
 from ..config import Config, IOCProc, IOCStatusFile
 from ..procserv_tools import (
-    applyConfig,
+    apply_config,
     check_status,
-    checkTelnetMode,
-    fixTelnetShell,
-    killProc,
-    openTelnet,
-    readLogPortBanner,
-    restartProc,
-    startProc,
+    fix_telnet_shell,
+    kill_proc,
+    open_telnet,
+    read_port_banner,
+    restart_proc,
+    set_telnet_mode,
+    start_proc,
 )
 from . import TESTS_FOLDER
 from .conftest import ProcServHelper
@@ -32,7 +32,7 @@ bopts = (True, False)
 def test_readLogPortBanner(procserv: ProcServHelper):
     def get_info() -> dict[str, str | bool]:
         with Telnet("localhost", procserv.port, 1) as tn:
-            return readLogPortBanner(tn)
+            return read_port_banner(tn)
 
     # readLogPortBanner truncates the running dir
     startup_dir = str(Path(procserv.startup_dir).relative_to(TESTS_FOLDER))
@@ -102,7 +102,7 @@ def test_readLogPortBanner(procserv: ProcServHelper):
 
     # Get a new info dict to check the no connect case
     with Telnet() as tn:
-        bad_info = readLogPortBanner(tn)
+        bad_info = read_port_banner(tn)
 
     assert bad_info["status"] == pt.STATUS_ERROR
 
@@ -157,7 +157,7 @@ def test_check_status_no_host():
 
 
 def test_open_telnet_good(procserv: ProcServHelper):
-    tn = openTelnet("localhost", procserv.port)
+    tn = open_telnet("localhost", procserv.port)
     try:
         tn.close()
     except Exception:
@@ -166,7 +166,7 @@ def test_open_telnet_good(procserv: ProcServHelper):
 
 
 def test_open_telnet_bad():
-    tn = openTelnet("localhost", 31111)
+    tn = open_telnet("localhost", 31111)
     try:
         tn.close()
     except Exception:
@@ -177,7 +177,7 @@ def test_open_telnet_bad():
 def test_fix_telnet_shell(procmgrd: ProcServHelper):
     procmgrd.toggle_running()
     procmgrd.tn.read_until(pt.MSG_RESTART)
-    fixTelnetShell("localhost", procmgrd.port)
+    fix_telnet_shell("localhost", procmgrd.port)
     with Telnet("localhost", procmgrd.port, 1) as tn:
         tn.write(b"\n")
         bts = tn.read_until(b"> ", 1)
@@ -210,7 +210,7 @@ def test_check_telnet_mode_good(
             os_ok = True
         else:
             raise ValueError(f"Invalid parameterized test input state={state}")
-        assert checkTelnetMode(
+        assert set_telnet_mode(
             "localhost",
             procserv.port,
             onOK=on_ok,
@@ -219,7 +219,7 @@ def test_check_telnet_mode_good(
             verbose=verbose,
         )
         with Telnet("localhost", procserv.port, 1) as tn:
-            info = readLogPortBanner(tn)
+            info = read_port_banner(tn)
         assert info["autorestart"] == on_ok
         assert info["autooneshot"] == os_ok
 
@@ -229,7 +229,7 @@ def test_check_telnet_mode_good(
 
 def test_check_telnet_mode_bad():
     # Expected to fail via returning False and then not raising
-    assert not checkTelnetMode("localhost", 31111)
+    assert not set_telnet_mode("localhost", 31111)
 
 
 # For killing procServ, let's try to cover all combinations of:
@@ -263,7 +263,7 @@ def test_kill_proc_good(
     # TODO make helpers for robust waiting in ProcServHelper
     time.sleep(1)
     with Telnet("localhost", procserv.port, 1) as tn:
-        info = readLogPortBanner(tn)
+        info = read_port_banner(tn)
     # Subprocess should exist and have a pid
     if running:
         assert info["status"] == pt.STATUS_RUNNING
@@ -273,7 +273,7 @@ def test_kill_proc_good(
         assert not subprocess.run(["ps", "--pid", str(subproc_pid)]).returncode
     else:
         assert info["status"] == pt.STATUS_SHUTDOWN
-    killProc("localhost", procserv.port, verbose=verbose)
+    kill_proc("localhost", procserv.port, verbose=verbose)
     # We need to wait again, gross
     time.sleep(1)
     if running:
@@ -294,7 +294,7 @@ def test_kill_proc_bad(verbose: bool):
     # For example, under what circumstances would the subprocess survive a kill?
     # We will test at least the case where the telnet can't connect
     # The expected behavior is unfortunately "just do nothing"
-    killProc("localhost", 31111, verbose=verbose)
+    kill_proc("localhost", 31111, verbose=verbose)
 
 
 @pytest.mark.parametrize(
@@ -320,14 +320,14 @@ def test_restart_proc_good(procserv: ProcServHelper, running: bool, autorestart:
     time.sleep(1)
     # We need to observe either SHUTDOWN -> RUNNING or RUNNING -> SHUTDOWN -> RUNNING
     with Telnet("localhost", procserv.port, 1) as tn:
-        info = readLogPortBanner(tn)
+        info = read_port_banner(tn)
         # Starting state
         if running:
             assert info["status"] == pt.STATUS_RUNNING
         else:
             assert info["status"] == pt.STATUS_SHUTDOWN
         time.sleep(1)
-        assert restartProc("localhost", procserv.port)
+        assert restart_proc("localhost", procserv.port)
         # Now we can read the log of our open telnet
         if running:
             assert pt.MSG_ISSHUTTING in tn.read_until(pt.MSG_ISSHUTTING)
@@ -336,7 +336,7 @@ def test_restart_proc_good(procserv: ProcServHelper, running: bool, autorestart:
         assert pt.MSG_RESTART in tn.read_until(pt.MSG_RESTART)
     # At the very end we should have come back to our original autorestart setting
     with Telnet("localhost", procserv.port, 1) as tn:
-        info = readLogPortBanner(tn)
+        info = read_port_banner(tn)
     if autorestart == "on":
         assert info["autorestart"]
         assert not info["autooneshot"]
@@ -349,18 +349,18 @@ def test_restart_proc_good(procserv: ProcServHelper, running: bool, autorestart:
 
 
 def test_restart_proc_bad():
-    assert not restartProc("localhost", 31111)
+    assert not restart_proc("localhost", 31111)
 
 
 def test_start_proc(procmgrd: ProcServHelper):
     procmgrd.toggle_running()
     time.sleep(1)
-    fixTelnetShell("localhost", procmgrd.port)
+    fix_telnet_shell("localhost", procmgrd.port)
     time.sleep(1)
     name = "counter"
     port = 36420
     try:
-        startProc(
+        start_proc(
             cfg="tst",
             entry={
                 "host": "localhost",
@@ -371,7 +371,7 @@ def test_start_proc(procmgrd: ProcServHelper):
         time.sleep(1)
         # The process should be running and accessible via telnet like any other
         with Telnet("localhost", port, 1) as tn:
-            info = readLogPortBanner(tn)
+            info = read_port_banner(tn)
         assert info["status"] == pt.STATUS_RUNNING
         assert int(info["pid"]) > 0
         assert info["rid"] == name
@@ -380,7 +380,7 @@ def test_start_proc(procmgrd: ProcServHelper):
         assert info["autorestartmode"]
     finally:
         # Try to clean up
-        killProc("localhost", port)
+        kill_proc("localhost", port)
 
 
 vopts = ("allow", "deny", "skip", "one_ioc")
@@ -680,7 +680,7 @@ def test_apply_config(
         restart_args = new_restart_args
 
     # The situation is set up. Let's run the function.
-    assert applyConfig(CFG, verify=verify, ioc=ioc) == 0
+    assert apply_config(CFG, verify=verify, ioc=ioc) == 0
 
     # Verify which things were killed vs not killed
     for args in kill_args:
@@ -723,4 +723,4 @@ def test_apply_config_early_fail(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(pt, "read_config", fake_read_config)
 
-    assert applyConfig("pytest", ioc="notarealiocpleasedontpbreakproc") != 0
+    assert apply_config("pytest", ioc="notarealiocpleasedontpbreakproc") != 0

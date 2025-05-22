@@ -41,7 +41,7 @@ from .config import get_host_os, read_config, read_status_dir, write_config
 from .epics_paths import get_parent, normalize_path
 from .hioc_tools import get_hard_ioc_dir_for_display, reboot_hioc, restart_hioc
 from .ioc_info import find_pv, get_base_name
-from .procserv_tools import applyConfig, check_status, restartProc
+from .procserv_tools import apply_config, check_status, restart_proc
 from .server_tools import netconfig, rebootServer
 
 logger = logging.getLogger(__name__)
@@ -760,7 +760,7 @@ class TableModel(QAbstractTableModel):
             )
             return
         if self.doSave():
-            applyConfig(self.hutch, self.applyVerify, id)
+            apply_config(self.hutch, self.applyVerify, id)
 
     def doApply(self):
         if not self.validateConfig():
@@ -773,7 +773,7 @@ class TableModel(QAbstractTableModel):
             )
             return
         if self.doSave():
-            applyConfig(self.hutch, self.applyVerify)
+            apply_config(self.hutch, self.applyVerify)
 
     def doSave(self):
         if not self.validateConfig():
@@ -1219,7 +1219,7 @@ class TableModel(QAbstractTableModel):
                     QMessageBox.Ok,
                 )
         else:
-            if not restartProc(entry["host"], entry["port"]):
+            if not restart_proc(entry["host"], entry["port"]):
                 QMessageBox.critical(
                     None,
                     "Error",

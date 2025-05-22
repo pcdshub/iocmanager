@@ -43,6 +43,8 @@ class ConfigStat(IntEnum):
 
 @dataclass(eq=True)
 class IOCProc:
+    """Information about a single IOC process in the config file."""
+
     name: str
     port: int
     host: str
@@ -69,6 +71,8 @@ class IOCProc:
 
 @dataclass(eq=True)
 class Config:
+    """The entire contents of the config file."""
+
     path: str
     commithost: str = DEFAULT_COMMITHOST
     allow_console: bool = True
@@ -478,6 +482,8 @@ def validate_config(iocproc: list[IOCProc]) -> bool:
 
 @dataclass(eq=True)
 class IOCStatusFile:
+    """Information about the IOC based on the IOC status file."""
+
     name: str
     port: int
     host: str
