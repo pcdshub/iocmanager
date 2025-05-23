@@ -52,7 +52,8 @@ def procserv() -> Iterator[ProcServHelper]:
     """
     Start procServ with a "counter" IOC.
 
-    Yields the port to connect to on localhost to access the procServ.
+    Yields a ProcServHelper object, which contains helper functions and the port
+    needed to connect to the spawned procServ instance.
 
     Closes the procServ afterwards.
     """
@@ -72,7 +73,8 @@ def procmgrd() -> Iterator[ProcServHelper]:
     """
     Start a procmgrd procServ instance.
 
-    Yields the port to connect to on localhost to access the procServ.
+    Yields a ProcServHelper object, which contains helper functions and the port
+    needed to connect to the spawned procServ instance.
 
     Closes the procServ afterwards.
     """
