@@ -168,8 +168,8 @@ def get_host_os(hosts_list: list[str]) -> dict[str, str]:
     """
     Returns the OS of each host.
 
-    Results are available in the global hosttype variable.
-    This is used to display which OS each host is running.
+    This is used to display which OS each host is running
+    in the GUI.
 
     Parameters
     ----------

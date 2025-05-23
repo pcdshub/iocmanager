@@ -84,6 +84,10 @@ def read_port_banner(tn: telnetlib.Telnet) -> IOCStatusLive:
     """
     Read and parse the connection information from a new telnet connection.
 
+    This works by reading bytes from the banner.
+    The banner is the first part of the telnet output from procServ
+    itself rather than the stdout/stderr of the IOC.
+
     This is the part of check_status that collects information from a
     telnet session. Usually you'd call check_status directly which includes
     other checks too.
@@ -302,13 +306,15 @@ def set_telnet_mode(
         In the current implemenation, this will always match the input
         because we'll raise when this fails.
     """
-    att_remaining = 5
-    start_att_remaining = att_remaining
     status = check_status(host=host, port=port, name="")
     if status.status == ProcServStatus.DOWN:
         raise RuntimeError(f"host {host} is down, cannot set_telnet_mode")
     if status.status == ProcServStatus.NOCONNECT:
         raise RuntimeError(f"IOC at {host}:{port} is down, cannot set_telnet_mode")
+
+    att_remaining = 5
+    start_att_remaining = att_remaining
+
     while status.autorestart_mode != mode:
         if att_remaining <= 0:
             raise RuntimeError(
@@ -337,7 +343,7 @@ def kill_proc(host: str, port: int) -> None:
     """
     Kills a procServ process entirely, including the subshell it controls.
 
-    This is implemented kindly, e.g. without actually running a kill command,
+    This is implemented kindly, e.g. without actually running a kill command.
     The procServ's return code should be 0.
 
     Internally this changes autorestart to OFF, sends a ctrl+X if the subprocess
@@ -558,10 +564,11 @@ class VerifyResult:
     The payload expected from an external "verify" function in apply_config.
 
     This should contain all of or a subset of the list contents
-    received as an ApplyConfigPlan object.
+    received in the ApplyConfigPlan object.
 
     The lists here are the final authority for which changes
-    are allowed to be made.
+    are allowed to be made. For example, you can return empty lists
+    to veto applying any changes.
 
     See ApplyConfigPlan for more details.
     """
@@ -580,7 +587,8 @@ def apply_config(
     Starts, restarts, and kills IOCs to match the saved configuration.
 
     If a verify function is provided, it will be called first to let the
-    user confirm that they want to take all of these actions.
+    user confirm that they want to take all of these actions, or if they
+    only would like to take a subset of them.
 
     Raises on failure.
 
