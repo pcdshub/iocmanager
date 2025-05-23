@@ -8,7 +8,7 @@ description = "IOC Process Manager via ProcServ"
 dynamic = [ "version", "readme", "dependencies", "optional-dependencies",]
 keywords = []
 name = "iocmanager"
-requires-python = ">=3.12"
+requires-python = ">= 3.12"
 
 [options]
 zip_safe = false

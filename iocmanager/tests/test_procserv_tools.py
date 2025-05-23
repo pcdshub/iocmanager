@@ -13,6 +13,11 @@ import pytest
 from .. import procserv_tools as pt
 from ..config import Config, IOCProc, IOCStatusFile
 from ..procserv_tools import (
+    ApplyConfigPlan,
+    AutoRestartMode,
+    IOCStatusLive,
+    ProcServStatus,
+    VerifyResult,
     apply_config,
     check_status,
     fix_telnet_shell,
@@ -29,82 +34,78 @@ from .conftest import ProcServHelper
 bopts = (True, False)
 
 
-def test_readLogPortBanner(procserv: ProcServHelper):
-    def get_info() -> dict[str, str | bool]:
+def test_read_port_banner(procserv: ProcServHelper):
+    def get_info() -> IOCStatusLive:
         with Telnet("localhost", procserv.port, 1) as tn:
             return read_port_banner(tn)
 
-    # readLogPortBanner truncates the running dir
+    # read_port_banner truncates the running dir
     startup_dir = str(Path(procserv.startup_dir).relative_to(TESTS_FOLDER))
 
     # Always starts with restart = off and process stopped
-    assert get_info() == {
-        "status": pt.STATUS_SHUTDOWN,
-        "pid": "-",
-        "rid": procserv.proc_name,
-        "autorestart": False,
-        "autooneshot": False,
-        "autorestartmode": True,
-        "rdir": startup_dir,
-    }
+    assert get_info() == IOCStatusLive(
+        name=procserv.proc_name,
+        port=0,
+        host="",
+        path=startup_dir,
+        pid=None,
+        status=ProcServStatus.SHUTDOWN,
+        autorestart_mode=AutoRestartMode.OFF,
+    )
 
     # Start the process
     procserv.toggle_running()
 
-    def wait_status(status: str, errmsg: str) -> dict[str, str | bool]:
+    def wait_status(status: ProcServStatus, errmsg: str) -> IOCStatusLive:
+        """Helper to wait for procServ to reach a specific status and assert."""
         timeout = 10
         # 1s seems big, but if you connect too often the process never starts!
         # Probably a procServ performance issue
         sleep_time = 1
         start_time = time.monotonic()
         wait_info = get_info()
-        while wait_info["status"] != status and time.monotonic() - start_time < timeout:
+        while wait_info.status != status and time.monotonic() - start_time < timeout:
             time.sleep(sleep_time)
             # Connect even less often after each failure as a performance workaround
             sleep_time *= 2
             wait_info = get_info()
 
-        assert wait_info["status"] == status, errmsg
+        assert wait_info.status == status, errmsg
         return wait_info
 
     def basic_checks():
-        assert info["status"] == pt.STATUS_RUNNING
-        assert int(info["pid"]) > 0
-        assert info["rid"] == procserv.proc_name
-        # True if procServ's version is high enough
-        assert info["autorestartmode"]
-        assert info["rdir"] == startup_dir
+        assert info.status == ProcServStatus.RUNNING
+        assert info.pid > 0
+        assert info.name == procserv.proc_name
+        assert info.path == startup_dir
 
-    info = wait_status(pt.STATUS_RUNNING, "Subprocess did not start")
+    info = wait_status(ProcServStatus.RUNNING, "Subprocess did not start")
     basic_checks()
-    assert not info["autooneshot"]
-    assert not info["autorestart"]
+    assert info.autorestart_mode == AutoRestartMode.OFF
 
     # Toggle to one shot
     procserv.toggle_autorestart()
     info = get_info()
     basic_checks()
-    assert info["autooneshot"]
-    assert not info["autorestart"]
+    assert info.autorestart_mode == AutoRestartMode.ONESHOT
 
     # Toggle to restart on
     procserv.toggle_autorestart()
     info = get_info()
     basic_checks()
-    assert not info["autooneshot"]
-    assert info["autorestart"]
+    assert info.autorestart_mode == AutoRestartMode.ON
 
     # Back to no autorestart
     procserv.toggle_autorestart()
     # Turn off the process and check for shutdown
     procserv.toggle_running()
-    wait_status(pt.STATUS_SHUTDOWN, "Unable to shutdown")
+    wait_status(ProcServStatus.SHUTDOWN, "Unable to shutdown")
 
     # Get a new info dict to check the no connect case
     with Telnet() as tn:
         bad_info = read_port_banner(tn)
 
-    assert bad_info["status"] == pt.STATUS_ERROR
+    assert bad_info.status == ProcServStatus.ERROR
 
 
 def test_check_status_good(procserv: ProcServHelper):
@@ -112,15 +113,15 @@ def test_check_status_good(procserv: ProcServHelper):
     server = "localhost"
     # check_status truncates the running dir
     startup_dir = str(Path(procserv.startup_dir).relative_to(TESTS_FOLDER))
-    assert check_status(server, procserv.port, procserv.proc_name) == {
-        "status": pt.STATUS_SHUTDOWN,
-        "pid": "-",
-        "rid": procserv.proc_name,
-        "autorestart": False,
-        "autooneshot": False,
-        "autorestartmode": True,
-        "rdir": startup_dir,
-    }
+    assert check_status(server, procserv.port, procserv.proc_name) == IOCStatusLive(
+        name=procserv.proc_name,
+        port=procserv.port,
+        host="localhost",
+        path=startup_dir,
+        pid=None,
+        status=ProcServStatus.SHUTDOWN,
+        autorestart_mode=AutoRestartMode.OFF,
+    )
     # ping's exit code
     assert pt.pdict[server][1] == 0
 
@@ -129,14 +130,15 @@ def test_check_status_no_procserv():
     # Ping succeeds but telnet fails
     server = "localhost"
     ioc = "blarg"
-    assert check_status(server, 31111, ioc) == {
-        "status": pt.STATUS_NOCONNECT,
-        "pid": "-",
-        "rid": ioc,
-        "autorestart": False,
-        "autorestartmode": False,
-        "rdir": "/tmp",
-    }
+    assert check_status(server, 31111, ioc) == IOCStatusLive(
+        name=ioc,
+        port=31111,
+        host=server,
+        path="",
+        pid=None,
+        status=ProcServStatus.NOCONNECT,
+        autorestart_mode=AutoRestartMode.OFF,
+    )
     # ping's exit code
     assert pt.pdict[server][1] == 0
 
@@ -145,33 +147,32 @@ def test_check_status_no_host():
     # Ping fails
     server = "please-never-name-a-server-this"
     ioc = "blarg2"
-    assert check_status(server, 31111, ioc) == {
-        "status": pt.STATUS_DOWN,
-        "pid": "-",
-        "rid": ioc,
-        "autorestart": False,
-        "rdir": "/tmp",
-    }
+    assert check_status(server, 31111, ioc) == IOCStatusLive(
+        name=ioc,
+        port=31111,
+        host=server,
+        path="",
+        pid=None,
+        status=ProcServStatus.DOWN,
+        autorestart_mode=AutoRestartMode.OFF,
+    )
     # ping's exit code
     assert pt.pdict[server][1] > 0
 
 
 def test_open_telnet_good(procserv: ProcServHelper):
-    tn = open_telnet("localhost", procserv.port)
-    try:
-        tn.close()
-    except Exception:
-        ...
+    with open_telnet("localhost", procserv.port) as tn:
+        try:
+            tn.close()
+        except Exception:
+            ...
     assert isinstance(tn, Telnet)
 
 
 def test_open_telnet_bad():
-    tn = open_telnet("localhost", 31111)
-    try:
-        tn.close()
-    except Exception:
-        ...
-    assert tn is None
+    with pytest.raises(RuntimeError):
+        with open_telnet("localhost", 31111) as _:
+            ...
 
 
 def test_fix_telnet_shell(procmgrd: ProcServHelper):
@@ -184,96 +185,66 @@ def test_fix_telnet_shell(procmgrd: ProcServHelper):
     assert b"> " in bts
 
 
-autorestart_states = ("on", "off", "oneshot")
-check_telnet_params = list(
-    itertools.product(autorestart_states, autorestart_states, bopts)
-)
+autorestart_states = list(AutoRestartMode)
+check_telnet_params = list(itertools.product(autorestart_states, autorestart_states))
 
 
 @pytest.mark.parametrize(
-    "start_state,end_state,verbose",
+    "start_state,end_state",
     check_telnet_params,
 )
 def test_check_telnet_mode_good(
-    procserv: ProcServHelper, start_state: str, end_state: str, verbose: bool
+    procserv: ProcServHelper, start_state: AutoRestartMode, end_state: AutoRestartMode
 ):
     # We should be able to change from any starting mode to any other mode.
-    def set_state_and_assert(state: str):
-        on_ok = False
-        off_ok = False
-        os_ok = False
-        if state == "on":
-            on_ok = True
-        elif state == "off":
-            off_ok = True
-        elif state == "oneshot":
-            os_ok = True
-        else:
-            raise ValueError(f"Invalid parameterized test input state={state}")
-        assert set_telnet_mode(
+    def set_mode_and_assert(mode: AutoRestartMode):
+        new_mode = set_telnet_mode(
             "localhost",
             procserv.port,
-            onOK=on_ok,
-            offOK=off_ok,
-            oneshotOK=os_ok,
-            verbose=verbose,
+            mode=mode,
         )
+        assert new_mode == mode
         with Telnet("localhost", procserv.port, 1) as tn:
             info = read_port_banner(tn)
-        assert info["autorestart"] == on_ok
-        assert info["autooneshot"] == os_ok
+        assert info.autorestart_mode == mode
 
-    set_state_and_assert(start_state)
-    set_state_and_assert(end_state)
+    set_mode_and_assert(start_state)
+    set_mode_and_assert(end_state)
 
 
 def test_check_telnet_mode_bad():
-    # Expected to fail via returning False and then not raising
-    assert not set_telnet_mode("localhost", 31111)
+    # Expected to fail via inspecting check_status result
+    with pytest.raises(RuntimeError):
+        set_telnet_mode("localhost", 31111, AutoRestartMode.OFF)
 
 
 # For killing procServ, let's try to cover all combinations of:
 #   - Already running vs not running
 #   - The three autorestart options
-#   - verbose vs not verbose
 
 
 @pytest.mark.parametrize(
-    "running,autorestart,verbose",
-    list(itertools.product(bopts, autorestart_states, bopts)),
+    "running,autorestart",
+    list(itertools.product(bopts, autorestart_states)),
 )
 def test_kill_proc_good(
-    procserv: ProcServHelper, running: bool, autorestart: str, verbose: bool
+    procserv: ProcServHelper, running: bool, autorestart: AutoRestartMode
 ):
     # Start by setting us to the correct state
-    # fixture begins as not running, autorestart off
-    if running:
-        # Not running -> running
-        procserv.toggle_running()
-    if autorestart == "oneshot":
-        # Off -> Oneshot
-        procserv.toggle_autorestart()
-    elif autorestart == "on":
-        # Off -> Oneshot -> On
-        procserv.toggle_autorestart()
-        procserv.toggle_autorestart()
-    elif autorestart != "off":
-        raise ValueError(f"Invalid value autorestart={autorestart} in test parameters")
-    # Wait 1s for status to stabilize
-    # TODO make helpers for robust waiting in ProcServHelper
-    time.sleep(1)
-    with Telnet("localhost", procserv.port, 1) as tn:
-        info = read_port_banner(tn)
+    procserv.set_state_from_start(running=running, mode=autorestart)
+
+    status = check_status("localhost", procserv.port, "")
+
     # Subprocess should exist and have a pid
     if running:
-        assert info["status"] == pt.STATUS_RUNNING
-        subproc_pid = info["pid"]
-        assert int(subproc_pid) > 0
+        assert status.status == ProcServStatus.RUNNING
+        subproc_pid = status.pid
+        assert subproc_pid > 0
         # Check that the pid is alive
         assert not subprocess.run(["ps", "--pid", str(subproc_pid)]).returncode
     else:
-        assert info["status"] == pt.STATUS_SHUTDOWN
-    kill_proc("localhost", procserv.port, verbose=verbose)
+        assert status.status == ProcServStatus.SHUTDOWN
+    kill_proc("localhost", procserv.port)
     # We need to wait again, gross
     time.sleep(1)
     if running:
@@ -288,68 +259,50 @@ def test_kill_proc_good(
             ...
 
 
-@pytest.mark.parametrize("verbose", bopts)
-def test_kill_proc_bad(verbose: bool):
+def test_kill_proc_bad():
     # Note: I don't know how to reach some of the failure modes
     # For example, under what circumstances would the subprocess survive a kill?
     # We will test at least the case where the telnet can't connect
-    # The expected behavior is unfortunately "just do nothing"
-    kill_proc("localhost", 31111, verbose=verbose)
+    # The expected behavior is to raise an RuntimeError
+    with pytest.raises(RuntimeError):
+        kill_proc("localhost", 31111)
 
 
 @pytest.mark.parametrize(
     "running,autorestart",
     list(itertools.product(bopts, autorestart_states)),
 )
-def test_restart_proc_good(procserv: ProcServHelper, running: bool, autorestart: str):
+def test_restart_proc_good(
+    procserv: ProcServHelper, running: bool, autorestart: AutoRestartMode
+):
     # Start by setting us to the correct state
-    # fixture begins as not running, autorestart off
-    # TODO refactor this block into a function/helper instead of copy/paste
-    if running:
-        # Not running -> running
-        procserv.toggle_running()
-    if autorestart == "oneshot":
-        # Off -> Oneshot
-        procserv.toggle_autorestart()
-    elif autorestart == "on":
-        # Off -> Oneshot -> On
-        procserv.toggle_autorestart()
-        procserv.toggle_autorestart()
-    elif autorestart != "off":
-        raise ValueError(f"Invalid value autorestart={autorestart} in test parameters")
-    time.sleep(1)
+    procserv.set_state_from_start(running=running, mode=autorestart)
+
     # We need to observe either SHUTDOWN -> RUNNING or RUNNING -> SHUTDOWN -> RUNNING
     with Telnet("localhost", procserv.port, 1) as tn:
         info = read_port_banner(tn)
         # Starting state
         if running:
-            assert info["status"] == pt.STATUS_RUNNING
+            assert info.status == ProcServStatus.RUNNING
         else:
-            assert info["status"] == pt.STATUS_SHUTDOWN
-        time.sleep(1)
-        assert restart_proc("localhost", procserv.port)
+            assert info.status == ProcServStatus.SHUTDOWN
+        assert info.autorestart_mode == autorestart
+        restart_proc("localhost", procserv.port)
         # Now we can read the log of our open telnet
         if running:
             assert pt.MSG_ISSHUTTING in tn.read_until(pt.MSG_ISSHUTTING)
             assert pt.MSG_KILLED in tn.read_until(pt.MSG_KILLED)
         # Whether we started running or shutdown, now we should see it come online
         assert pt.MSG_RESTART in tn.read_until(pt.MSG_RESTART)
+
     # At the very end we should have come back to our original autorestart setting
-    with Telnet("localhost", procserv.port, 1) as tn:
-        info = read_port_banner(tn)
-    if autorestart == "on":
-        assert info["autorestart"]
-        assert not info["autooneshot"]
-    elif autorestart == "off":
-        assert not info["autorestart"]
-        assert not info["autooneshot"]
-    elif autorestart == "oneshot":
-        assert not info["autorestart"]
-        assert info["autooneshot"]
+    status = check_status("localhost", procserv.port, "")
+    assert status.autorestart_mode == autorestart
 
 
 def test_restart_proc_bad():
-    assert not restart_proc("localhost", 31111)
+    with pytest.raises(RuntimeError):
+        restart_proc("localhost", 31111)
 
 
 def test_start_proc(procmgrd: ProcServHelper):
@@ -362,22 +315,20 @@ def test_start_proc(procmgrd: ProcServHelper):
     try:
         start_proc(
             cfg="tst",
-            entry={
-                "host": "localhost",
-                "port": port,
-                "id": name,
-            },
+            ioc_proc=IOCProc(
+                name=name,
+                port=port,
+                host="localhost",
+                path="",
+            ),
         )
         time.sleep(1)
         # The process should be running and accessible via telnet like any other
-        with Telnet("localhost", port, 1) as tn:
-            info = read_port_banner(tn)
-        assert info["status"] == pt.STATUS_RUNNING
-        assert int(info["pid"]) > 0
-        assert info["rid"] == name
-        assert info["autorestart"]
-        assert not info["autooneshot"]
-        assert info["autorestartmode"]
+        status = check_status("localhost", port, "")
+        assert status.status == ProcServStatus.RUNNING
+        assert status.pid > 0
+        assert status.name == name
+        assert status.autorestart_mode == AutoRestartMode.ON
     finally:
         # Try to clean up
         kill_proc("localhost", port)
@@ -404,36 +355,37 @@ def test_apply_config(
     CFG = "pytest"
 
     mock = Mock()
-    monkeypatch.setattr(pt, "killProc", mock.killProc)
-    monkeypatch.setattr(pt, "startProc", mock.startProc)
-    monkeypatch.setattr(pt, "restartProc", mock.restartProc)
+    monkeypatch.setattr(pt, "kill_proc", mock.kill_proc)
+    monkeypatch.setattr(pt, "start_proc", mock.start_proc)
+    monkeypatch.setattr(pt, "restart_proc", mock.restart_proc)
 
-    # We'll monkeypatch read_config, readStatusDir, check_status too
+    # We'll monkeypatch read_config, read_status_dir, check_status too
     # We don't want to mess around with real processes in this test
     read_config_result = Config(path="")
     read_status_dir_result: list[IOCStatusFile] = []
 
-    def fake_read_config(*args, **kwargs):
+    def fake_read_config(*args, **kwargs) -> Config:
         return read_config_result
 
-    def fake_read_status_dir(*args, **kwargs):
+    def fake_read_status_dir(*args, **kwargs) -> list[IOCStatusFile]:
         return read_status_dir_result
 
-    def fake_check_status(host: str, port: int, id: str):
+    def fake_check_status(host: str, port: int, name: str) -> IOCStatusLive:
         # Simplify: presume status dir is correct, all hosts up
-        status = pt.STATUS_SHUTDOWN
+        status = ProcServStatus.SHUTDOWN
         for res in read_status_dir_result:
             if (res.host, res.port) == (host, port):
-                status = pt.STATUS_RUNNING
+                status = ProcServStatus.RUNNING
                 break
-        return {
-            "status": status,
-            "rid": id,
-            "pid": "-",
-            "autorestart": True,
-            "autorestartmode": False,
-            "rdir": "/tmp",
-        }
+        return IOCStatusLive(
+            name=name,
+            port=port,
+            host=host,
+            path="",
+            pid=10000,
+            status=status,
+            autorestart_mode=AutoRestartMode.OFF,
+        )
 
     monkeypatch.setattr(pt, "read_config", fake_read_config)
     monkeypatch.setattr(pt, "read_status_dir", fake_read_status_dir)
@@ -442,12 +394,20 @@ def test_apply_config(
     # Change our verify approach based on the input arg
     if do_verify == "allow":
 
-        def verify(current, config, kill_list, start_list, restart_list):
-            return (kill_list, start_list, restart_list)
+        def verify(apply_config_plan: ApplyConfigPlan) -> VerifyResult:
+            return VerifyResult(
+                kill_list=apply_config_plan.kill_list,
+                start_list=apply_config_plan.start_list,
+                restart_list=apply_config_plan.restart_list,
+            )
     elif do_verify == "deny":
 
-        def verify(current, config, kill_list, start_list, restart_list):
-            return ([], [], [])
+        def verify(_: ApplyConfigPlan) -> VerifyResult:
+            return VerifyResult(
+                kill_list=[],
+                start_list=[],
+                restart_list=[],
+            )
     else:
         verify = None
 
@@ -495,7 +455,7 @@ def test_apply_config(
     kill_1_args = ("ctl-pytest-kill_1", 20000)
     if do_kill:
         # Disabled, do kill
-        read_config_result.procs.append(
+        read_config_result.add_proc(
             basic_fake_config(
                 name="kill_1",
                 disable=True,
@@ -509,7 +469,7 @@ def test_apply_config(
         kill_args.append(kill_1_args)
     else:
         # Enabled, don't kill
-        read_config_result.procs.append(
+        read_config_result.add_proc(
             basic_fake_config(
                 name="kill_1",
             )
@@ -528,7 +488,7 @@ def test_apply_config(
     start_3_args = ("ctl-pytest-kill_3", 10000)
     if do_kill and do_start:
         # New host, kill and start
-        read_config_result.procs.append(
+        read_config_result.add_proc(
             basic_fake_config(
                 name="kill_2",
                 host="kill_2_new_server",
@@ -543,7 +503,7 @@ def test_apply_config(
         kill_args.append(kill_2_args)
         start_args.append(start_2_args)
         # New port, kill and start
-        read_config_result.procs.append(
+        read_config_result.add_proc(
             basic_fake_config(
                 name="kill_3",
                 port=10000,
@@ -559,7 +519,7 @@ def test_apply_config(
         start_args.append(start_3_args)
     else:
         # Same host, same port, don't kill
-        read_config_result.procs.append(
+        read_config_result.add_proc(
             basic_fake_config(
                 name="kill_2",
             )
@@ -571,7 +531,7 @@ def test_apply_config(
         )
         not_kill_args.append(kill_2_args)
         not_start_args.append(start_2_args)
-        read_config_result.procs.append(
+        read_config_result.add_proc(
             basic_fake_config(
                 name="kill_3",
             )
@@ -588,7 +548,7 @@ def test_apply_config(
     start_1_args = ("ctl-pytest-start_1", 20000)
     if do_start:
         # New or newly enabled IOC
-        read_config_result.procs.append(
+        read_config_result.add_proc(
             basic_fake_config(
                 name="start_1",
             )
@@ -601,7 +561,7 @@ def test_apply_config(
     restart_1_args = ("ctl-pytest-restart_1", 20000)
     if do_restart:
         # New version, do restart
-        read_config_result.procs.append(
+        read_config_result.add_proc(
             basic_fake_config(name="restart_1", directory="ioc/new/version")
         )
         read_status_dir_result.append(
@@ -613,7 +573,7 @@ def test_apply_config(
         restart_args.append(restart_1_args)
     else:
         # Same version, no need to restart
-        read_config_result.procs.append(
+        read_config_result.add_proc(
             basic_fake_config(
                 name="restart_1",
             )
@@ -627,7 +587,7 @@ def test_apply_config(
 
     # Always include a hard ioc, it should be ignored
     hioc_cfg = basic_fake_config(name="hioc-pytest", host="hioc-pytest")
-    read_config_result.procs.append(hioc_cfg)
+    read_config_result.add_proc(hioc_cfg)
     not_start_args.append((hioc_cfg.host, hioc_cfg.port))
     not_kill_args.append((hioc_cfg.host, hioc_cfg.port))
     not_restart_args.append((hioc_cfg.host, hioc_cfg.port))
@@ -679,48 +639,49 @@ def test_apply_config(
                 not_restart_args.append(args)
         restart_args = new_restart_args
 
+    # Last bit of prep, apply_config expects to be able to remove
+    # the ioc status files associated with the IOCs it kills.
+    # Let's place a fake status file for every running IOC here.
+    # TODO since I had to do this anyway, I can tear down the fake status dir stuff.
+    # We can just use this "real" mocked status dir.
+    # TODO add assert statement to verify these files existed and were removed
+    for isf in read_status_dir_result:
+        with open(isf.get_file_location(hutch=CFG), "w") as fd:
+            fd.write(f"{isf.pid} {isf.host} {isf.port} {isf.path}")
+
     # The situation is set up. Let's run the function.
-    assert apply_config(CFG, verify=verify, ioc=ioc) == 0
+    apply_config(CFG, verify=verify, ioc=ioc)
 
     # Verify which things were killed vs not killed
     for args in kill_args:
-        mock.killProc.assert_any_call(*args)
+        mock.kill_proc.assert_any_call(*args)
     for args in not_kill_args:
-        for this_arg_call in mock.killProc.call_args_list:
+        for this_arg_call in mock.kill_proc.call_args_list:
             assert args != this_arg_call
-    assert mock.killProc.call_count == len(kill_args)
+    assert mock.kill_proc.call_count == len(kill_args)
 
     for args in restart_args:
-        mock.restartProc.assert_any_call(*args)
+        mock.restart_proc.assert_any_call(*args)
     for args in not_restart_args:
-        for this_arg_call in mock.restartProc.call_args_list:
+        for this_arg_call in mock.restart_proc.call_args_list:
             assert args != this_arg_call
-    assert mock.restartProc.call_count == len(restart_args)
+    assert mock.restart_proc.call_count == len(restart_args)
 
-    # Slightly different for startProc, it's expecting a dict
+    # Slightly different for start_proc, it's expecting an IOCProc
     # Our args are (host, port)
-    # Real args are (cfg, {"host": host, "port": port, **kw})
+    # Real args are (cfg, IOCProc)
     for args in start_args:
         found_match = False
-        for sp_call in mock.startProc.call_args_list:
+        for sp_call in mock.start_proc.call_args_list:
             if args[0] == sp_call.args[1].host and args[1] == sp_call.args[1].port:
                 found_match = True
                 break
         assert found_match
     for args in not_start_args:
         found_match = False
-        for sp_call in mock.startProc.call_args_list:
+        for sp_call in mock.start_proc.call_args_list:
             if args[0] == sp_call.args[1].host and args[1] == sp_call.args[1].port:
                 found_match = True
                 break
         assert not found_match
-    assert mock.startProc.call_count == len(start_args)
-
-
-def test_apply_config_early_fail(monkeypatch: pytest.MonkeyPatch):
-    def fake_read_config(*args, **kwargs):
-        raise RuntimeError()
-
-    monkeypatch.setattr(pt, "read_config", fake_read_config)
-
-    assert apply_config("pytest", ioc="notarealiocpleasedontpbreakproc") != 0
+    assert mock.start_proc.call_count == len(start_args)

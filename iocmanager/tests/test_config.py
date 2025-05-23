@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from ..config import (
-    ConfigStat,
+    Config,
     IOCProc,
     IOCStatusFile,
     check_auth,
@@ -37,34 +37,32 @@ def test_read_config(cfg: str):
 
     assert config.mtime == os.stat(filename).st_mtime
 
-    assert config.procs == [
-        IOCProc(
+    assert config.procs == {
+        "ioc-counter": IOCProc(
             name="ioc-counter",
             host="test-server2",
             port=30002,
             path="iocs/counter",
             alias="",
-            status=ConfigStat.NORMAL,
             disable=False,
             cmd="",
             history=["iocs/old"],
             parent="",
             hard=False,
         ),
-        IOCProc(
+        "ioc-shouter": IOCProc(
             name="ioc-shouter",
             host="test-server1",
             port=30001,
             path="iocs/shouter",
             alias="SHOUTER",
-            status=ConfigStat.NORMAL,
             disable=False,
             cmd="",
             history=[],
             parent="",
             hard=False,
         ),
-    ]
+    }
 
     assert config.hosts == [
         "test-server1",
@@ -132,16 +130,15 @@ def test_get_hutch_list():
 
 def test_validate_config():
     # Only checks for port conflicts at time of writing
-    good_config = [
-        IOCProc(name="", host="host1", port=10000, path=""),
-        IOCProc(name="", host="host1", port=20000, path=""),
-        IOCProc(name="", host="host2", port=20000, path=""),
-    ]
-    bad_config = [
-        IOCProc(name="", host="host1", port=10000, path=""),
-        IOCProc(name="", host="host1", port=10000, path=""),
-        IOCProc(name="", host="host2", port=20000, path=""),
-    ]
+    good_config = Config(path="")
+    good_config.add_proc(IOCProc(name="one", host="host1", port=10000, path=""))
+    good_config.add_proc(IOCProc(name="two", host="host1", port=20000, path=""))
+    good_config.add_proc(IOCProc(name="thr", host="host2", port=20000, path=""))
+
+    bad_config = Config(path="")
+    bad_config.add_proc(IOCProc(name="one", host="host1", port=10000, path=""))
+    bad_config.add_proc(IOCProc(name="two", host="host1", port=10000, path=""))
+    bad_config.add_proc(IOCProc(name="thr", host="host2", port=20000, path=""))
     assert validate_config(good_config)
     assert not validate_config(bad_config)
 

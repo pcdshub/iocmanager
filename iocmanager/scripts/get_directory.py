@@ -11,9 +11,11 @@ if __name__ == "__main__":
     except Exception:
         print("NO DIRECTORY")
         sys.exit(-1)
-    for iocproc in config.procs:
-        if iocproc.name == ioc:
-            print(iocproc.path)
-            sys.exit(0)
-    print("NO_DIRECTORY")
-    sys.exit(-1)
+    try:
+        iocproc = config.procs[ioc]
+    except KeyError:
+        print("NO_DIRECTORY")
+        sys.exit(-1)
+
+    print(iocproc.path)
+    sys.exit(0)

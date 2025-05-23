@@ -50,7 +50,7 @@ class AutoRestartMode(Enum):
     OFF = 2
 
 
-@dataclass
+@dataclass(eq=True)
 class IOCStatusLive:
     """Information about an IOC from inspecting the live process."""
 
@@ -305,6 +305,10 @@ def set_telnet_mode(
     att_remaining = 5
     start_att_remaining = att_remaining
     status = check_status(host=host, port=port, name="")
+    if status.status == ProcServStatus.DOWN:
+        raise RuntimeError(f"host {host} is down, cannot set_telnet_mode")
+    if status.status == ProcServStatus.NOCONNECT:
+        raise RuntimeError(f"IOC at {host}:{port} is down, cannot set_telnet_mode")
     while status.autorestart_mode != mode:
         if att_remaining <= 0:
             raise RuntimeError(
@@ -520,13 +524,56 @@ def start_proc(cfg: str, ioc_proc: IOCProc, local: bool = False) -> None:
         )
 
 
+@dataclass
+class ApplyConfigPlan:
+    """
+    The payload sent to an apply_config "verify" function.
+
+    Attributes
+    ----------
+    status_files : dict[str, IOCStatusFile]
+        Information about the running IOCs prior to apply_config.
+        Keys are the IOC name.
+    proc_config : dict[str, IOCProc]
+        Information about the desired new state to apply.
+        Keys are the IOC name.
+    kill_list : list[str]
+        A list of IOC names to kill.
+    start_list : list[str]
+        A list of IOC names to start.
+    restart_list : list[str]
+        A list of IOC names to restart.
+    """
+
+    status_files: dict[str, IOCStatusFile]
+    proc_config: dict[str, IOCProc]
+    kill_list: list[str]
+    start_list: list[str]
+    restart_list: list[str]
+
+
+@dataclass
+class VerifyResult:
+    """
+    The payload expected from an external "verify" function in apply_config.
+
+    This should contain all of or a subset of the list contents
+    received as an ApplyConfigPlan object.
+
+    The lists here are the final authority for which changes
+    are allowed to be made.
+
+    See ApplyConfigPlan for more details.
+    """
+
+    kill_list: list[str]
+    start_list: list[str]
+    restart_list: list[str]
+
+
 def apply_config(
     cfg: str,
-    verify: typing.Callable[
-        [dict, dict, list[str], list[str], list[str]],
-        tuple[list[str], list[str], list[str]],
-    ]
-    | None = None,
+    verify: typing.Callable[[ApplyConfigPlan], VerifyResult] | None = None,
     ioc: str | None = None,
 ) -> None:
     """
@@ -548,24 +595,23 @@ def apply_config(
     cfg : str
         The name of the hutch, or a full filepath to the config file.
     verify : callable, optional
-        An optionally provided function that expects to recieve the following.
-        - current: dict of current state (pre-apply)
-        - config: dict of desired state (post-apply)
-        - kill_list: list[str] of ioc names that should be killed
-        - start_list: list[str] of ioc names that should be started
-        - restart_list: list[str] of ioc names that should be restarted
-        The function must return a tuple of its own kill_list, start_list, and
-        restart_list, which should be subset of or equal to the input lists.
+        An optionally provided function that is expected to take an
+        ApplyConfigPlan and return a VerifyResult.
     ioc : str, optional
         The name of a single IOC to apply to, if provided.
         If not provided, we'll apply the entire configuration.
     """
     config = read_config(cfg)
 
-    desired_iocs: dict[str, IOCProc] = {}
-    for iocproc in config.procs:
-        if ioc is None or ioc == iocproc.name:
-            desired_iocs[iocproc.name] = iocproc
+    if ioc is None:
+        # All IOCs that should be on
+        desired_iocs = config.procs
+    elif ioc in config.procs:
+        # One IOC that should be on
+        desired_iocs = {config.procs[ioc].name: config.procs[ioc]}
+    else:
+        # No IOCs to turn on
+        desired_iocs = {}
 
     runninglist = read_status_dir(cfg)
 
@@ -574,7 +620,7 @@ def apply_config(
     for ioc_status in runninglist:
         if ioc is None or ioc == ioc_status.name:
             result = check_status(ioc_status.host, ioc_status.port, ioc_status.name)
-            if result["status"] == STATUS_RUNNING:
+            if result.status == ProcServStatus.RUNNING:
                 current[ioc_status.name] = ioc_status
             else:
                 notrunning[ioc_status.name] = ioc_status
@@ -600,7 +646,7 @@ def apply_config(
     #
 
     # Camera recorders always seem to be in the wrong directory, so cheat!
-    for iocproc in config.procs:
+    for iocproc in config.procs.values():
         if iocproc.path == env_paths.CAMRECORDER:
             try:
                 current[iocproc.name].name = env_paths.CAMRECORDER
@@ -611,8 +657,7 @@ def apply_config(
     # Now, we need to make three lists: kill, restart, and start.
     #
 
-    # Kill anyone who we don't want, or is running on the wrong host or port, or is
-    # oldstyle and needs an upgrade.
+    # Kill anyone who we don't want, or is running on the wrong host or port
     kill_list = [
         line
         for line in running
@@ -643,7 +688,6 @@ def apply_config(
             pass
 
     # Start anyone who wasn't running, or was running on the wrong host or port,
-    # or is oldstyle and needs an upgrade.
     start_list = [
         line
         for line in wanted
@@ -652,7 +696,7 @@ def apply_config(
         or current[line].port != desired_iocs[line].port
     ]
 
-    # Anyone running the wrong version, newstyle, on the right host and port
+    # Anyone running the wrong version, on the right host and port
     # just needs a restart.
     restart_list = [
         line
@@ -664,33 +708,50 @@ def apply_config(
     ]
 
     if verify is not None:
-        (kill_list, start_list, restart_list) = verify(
-            current, desired_iocs, kill_list, start_list, restart_list
+        verify_result = verify(
+            ApplyConfigPlan(
+                status_files=current,
+                proc_config=desired_iocs,
+                kill_list=kill_list,
+                start_list=start_list,
+                restart_list=restart_list,
+            )
         )
+        kill_list = verify_result.kill_list
+        start_list = verify_result.start_list
+        restart_list = verify_result.restart_list
+
+    errors = []
 
     for line in kill_list:
         try:
             kill_proc(current[line].host, int(current[line].port))
-        except Exception:
-            kill_proc(desired_iocs[line].host, int(desired_iocs[line].port))
+        except Exception as exc1:
+            try:
+                kill_proc(desired_iocs[line].host, int(desired_iocs[line].port))
+            except Exception as exc2:
+                errors.append(exc1)
+                errors.append(exc2)
         try:
             # This is dead, so get rid of the status file!
-            os.unlink((env_paths.STATUS_DIR % cfg) + "/" + line)
-        except Exception:
-            print(
-                "Error while trying to delete file %s" % (env_paths.STATUS_DIR % cfg)
-                + "/"
-                + line
-                + "!"
-            )
+            # TODO this fails if cfg given as full path, needs fix
+            os.remove(current[line].get_file_location(hutch=cfg))
+        except Exception as exc:
+            errors.append(exc)
 
     for line in start_list:
-        start_proc(cfg, desired_iocs[line])
+        try:
+            start_proc(cfg, desired_iocs[line])
+        except Exception as exc:
+            errors.append(exc)
 
     for line in restart_list:
-        restart_proc(current[line].host, int(current[line].port))
+        try:
+            restart_proc(current[line].host, int(current[line].port))
+        except Exception as exc:
+            errors.append(exc)
 
-    # TODO figure out why this sleep was here and decide what to do about it
-    # Remove it for now to make test suite faster
-    # time.sleep(1)
-    return 0
+    if errors:
+        raise errors[0]
+    elif len(errors) > 1:
+        raise ExceptionGroup(f"{len(errors)} errors in apply_config", errors)

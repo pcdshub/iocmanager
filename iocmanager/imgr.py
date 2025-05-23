@@ -17,7 +17,6 @@ from psp.caput import caput
 from . import procserv_tools as pt
 from . import utils
 from .config import (
-    ConfigStat,
     IOCProc,
     check_auth,
     check_special,
@@ -85,7 +84,7 @@ def port_to_int(port, host, procs):
     if port != "closed" and port != "open":
         return int(port)
     plist = []
-    for iocproc in procs:
+    for iocproc in procs.values():
         if iocproc.host == host:
             plist.append(int(iocproc.port))
     if port == "closed":
@@ -101,34 +100,37 @@ def port_to_int(port, host, procs):
 
 def info(hutch, ioc, verbose):
     config = read_config(hutch)
-    for iocproc in config.procs:
-        if iocproc.name == ioc:
-            d = check_status(iocproc.host, iocproc.port, ioc)
-            if verbose:
-                try:
-                    if iocproc.disable:
-                        if d["status"] == pt.STATUS_NOCONNECT:
-                            d["status"] = "DISABLED"
-                        elif d["status"] == pt.STATUS_RUNNING:
-                            d["status"] = "DISABLED, BUT RUNNING?!?"
-                except Exception:
-                    pass
-                try:
-                    if iocproc.alias != "":
-                        print("%s (%s):" % (ioc, iocproc.alias))
-                    else:
-                        print("%s:" % (ioc))
-                except Exception:
-                    print("%s:" % (ioc))
-                print("    host  : %s" % iocproc.host)
-                print("    port  : %s" % iocproc.port)
-                print("    dir   : %s" % iocproc.path)
-                print("    status: %s" % d["status"])
+    try:
+        iocproc = config.procs[ioc]
+    except KeyError:
+        print("IOC %s not found in hutch %s!" % (ioc, hutch))
+        sys.exit(1)
+
+    status = check_status(iocproc.host, iocproc.port, ioc)
+    status_text = status.status.name
+    if verbose:
+        try:
+            if iocproc.disable:
+                if status.status == pt.ProcServStatus.NOCONNECT:
+                    status_text = "DISABLED"
+                elif status.status == pt.ProcServStatus.RUNNING:
+                    status_text = "DISABLED, BUT RUNNING?!?"
+        except Exception:
+            pass
+        try:
+            if iocproc.alias != "":
+                print("%s (%s):" % (ioc, iocproc.alias))
             else:
-                print(d["status"])
-            sys.exit(0)
-    print("IOC %s not found in hutch %s!" % (ioc, hutch))
-    sys.exit(1)
+                print("%s:" % (ioc))
+        except Exception:
+            print("%s:" % (ioc))
+        print("    host  : %s" % iocproc.host)
+        print("    port  : %s" % iocproc.port)
+        print("    dir   : %s" % iocproc.path)
+        print("    status: %s" % status_text)
+    else:
+        print(status_text)
+    sys.exit(0)
 
 
 def soft_reboot(hutch, ioc):
@@ -139,22 +141,26 @@ def soft_reboot(hutch, ioc):
 
 def hard_reboot(hutch, ioc):
     config = read_config(hutch)
-    for iocproc in config.procs:
-        if iocproc.name == ioc:
-            restart_proc(iocproc.host, iocproc.port)
-            sys.exit(0)
-    print("IOC %s not found in hutch %s!" % (ioc, hutch))
-    sys.exit(1)
+    try:
+        iocproc = config.procs[ioc]
+    except KeyError:
+        print("IOC %s not found in hutch %s!" % (ioc, hutch))
+        sys.exit(1)
+
+    restart_proc(iocproc.host, iocproc.port)
+    sys.exit(0)
 
 
 def do_connect(hutch, ioc):
     config = read_config(hutch)
-    for iocproc in config.procs:
-        if iocproc.name == ioc:
-            os.execvp("telnet", ["telnet", iocproc.host, str(iocproc.port)])
-            print("Exec failed?!?")
-            sys.exit(1)
-    print("IOC %s not found in hutch %s!" % (ioc, hutch))
+    try:
+        iocproc = config.procs[ioc]
+    except KeyError:
+        print("IOC %s not found in hutch %s!" % (ioc, hutch))
+        sys.exit(1)
+
+    os.execvp("telnet", ["telnet", iocproc.host, str(iocproc.port)])
+    print("Exec failed?!?")
     sys.exit(1)
 
 
@@ -169,14 +175,16 @@ def set_state(hutch, ioc, enable):
         utils.COMMITHOST = config.commithost
     except Exception:
         pass
-    for iocproc in config.procs:
-        if iocproc.name == ioc:
-            iocproc.disable = not enable
-            write_config(hutch, config)
-            apply_config(hutch, None, ioc)
-            sys.exit(0)
-    print("IOC %s not found in hutch %s!" % (ioc, hutch))
-    sys.exit(1)
+    try:
+        iocproc = config.procs[ioc]
+    except KeyError:
+        print("IOC %s not found in hutch %s!" % (ioc, hutch))
+        sys.exit(1)
+
+    iocproc.disable = not enable
+    write_config(hutch, config)
+    apply_config(hutch, None, ioc)
+    sys.exit(0)
 
 
 def add(hutch, ioc, version, hostport, disable):
@@ -197,19 +205,17 @@ def add(hutch, ioc, version, hostport, disable):
     if len(hp) != 2:
         print("Must specify host and port!")
         sys.exit(1)
-    for iocproc in config.procs:
-        if iocproc["id"] == ioc:
-            print("IOC %s already exists in hutch %s!" % (ioc, hutch))
-            sys.exit(1)
+    if config.procs.get(ioc) is not None:
+        print("IOC %s already exists in hutch %s!" % (ioc, hutch))
+        sys.exit(1)
     port = port_to_int(port, host, config.procs)
-    config.procs.append(
+    config.add_proc(
         IOCProc(
             name=ioc,
             port=port,
             host=host,
             path=version,
             alias="",
-            status=ConfigStat.ADDED,
             disable=disable,
             cmd="",
             history=[],
@@ -240,14 +246,16 @@ def upgrade(hutch, ioc, version):
         utils.COMMITHOST = config.commithost
     except Exception:
         pass
-    for iocproc in config.procs:
-        if iocproc.name == ioc:
-            iocproc.path = version
-            write_config(hutch, config)
-            apply_config(hutch, None, ioc)
-            sys.exit(0)
-    print("IOC %s not found in hutch %s!" % (ioc, hutch))
-    sys.exit(1)
+    try:
+        iocproc = config.procs[ioc]
+    except KeyError:
+        print("IOC %s not found in hutch %s!" % (ioc, hutch))
+        sys.exit(1)
+
+    iocproc.path = version
+    write_config(hutch, config)
+    apply_config(hutch, None, ioc)
+    sys.exit(0)
 
 
 def move(hutch, ioc, hostport):
@@ -259,22 +267,22 @@ def move(hutch, ioc, hostport):
         utils.COMMITHOST = config.commithost
     except Exception:
         pass
-    for iocproc in config.procs:
-        if iocproc.name == ioc:
-            hp = hostport.split(":")
-            iocproc.host = hp[0]
-            if len(hp) > 1:
-                iocproc["newport"] = port_to_int(hp[1], hp[0], config.procs)
-            if not validate_config(config.procs):
-                print(
-                    "Port conflict when moving %s to %s, not moved!" % (ioc, hostport)
-                )
-                sys.exit(1)
-            write_config(hutch, config)
-            apply_config(hutch, None, ioc)
-            sys.exit(0)
-    print("IOC %s not found in hutch %s!" % (ioc, hutch))
-    sys.exit(1)
+    try:
+        iocproc = config.procs[ioc]
+    except KeyError:
+        print("IOC %s not found in hutch %s!" % (ioc, hutch))
+        sys.exit(1)
+
+    hp = hostport.split(":")
+    iocproc.host = hp[0]
+    if len(hp) > 1:
+        iocproc["newport"] = port_to_int(hp[1], hp[0], config.procs)
+    if not validate_config(config):
+        print("Port conflict when moving %s to %s, not moved!" % (ioc, hostport))
+        sys.exit(1)
+    write_config(hutch, config)
+    apply_config(hutch, None, ioc)
+    sys.exit(0)
 
 
 def do_list(hutch, ns):
@@ -282,7 +290,7 @@ def do_list(hutch, ns):
     h = ns.host
     show_disabled = not ns.enabled_only
     show_enabled = not ns.disabled_only
-    for iocproc in config.procs:
+    for iocproc in config.procs.values():
         if h is not None and iocproc.host != h:
             continue
         if not (show_disabled if iocproc.disable else show_enabled):

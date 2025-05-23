@@ -11,7 +11,7 @@ from typing import Iterator
 import pytest
 
 from iocmanager.env_paths import set_env_var_globals
-from iocmanager.procserv_tools import BASEPORT
+from iocmanager.procserv_tools import BASEPORT, AutoRestartMode
 
 EPICS_HOST_ARCH = os.getenv("EPICS_HOST_ARCH")
 TESTS_PATH = Path(__file__).parent.resolve()
@@ -244,6 +244,24 @@ class ProcServHelper:
         This is the equivalent of pressing ctrl+X
         """
         self._ctrl_char("x")
+
+    def set_state_from_start(self, running: bool, mode: AutoRestartMode):
+        """
+        From a not running, no autorestart start, toggle to the desired state.
+        """
+        if running:
+            # Not running -> running
+            self.toggle_running()
+        if mode == AutoRestartMode.ONESHOT:
+            # Off -> Oneshot
+            self.toggle_autorestart()
+        elif mode == AutoRestartMode.ON:
+            # Off -> Oneshot -> On
+            self.toggle_autorestart()
+            self.toggle_autorestart()
+        # Wait 1s for status to stabilize
+        # TODO make helpers for robust waiting
+        time.sleep(1)
 
     def telnet_when_procserv_started(self, timeout: float = 1.0) -> Telnet:
         """

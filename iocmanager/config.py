@@ -23,7 +23,6 @@ import os
 import stat
 from copy import deepcopy
 from dataclasses import dataclass, field
-from enum import IntEnum
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -35,12 +34,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_COMMITHOST = "psbuild-rhel7"
 
 
-class ConfigStat(IntEnum):
-    NORMAL = 0
-    ADDED = 1
-    DELETED = 2
-
-
 @dataclass(eq=True)
 class IOCProc:
     """Information about a single IOC process in the config file."""
@@ -50,7 +43,6 @@ class IOCProc:
     host: str
     path: str
     alias: str = ""
-    status: ConfigStat = ConfigStat.NORMAL
     disable: bool = False
     cmd: str = ""
     history: list[str] = field(default_factory=list)
@@ -75,8 +67,11 @@ class Config:
     commithost: str = DEFAULT_COMMITHOST
     allow_console: bool = True
     hosts: list[str] = field(default_factory=list)
-    procs: list[IOCProc] = field(default_factory=list)
+    procs: dict[str, IOCProc] = field(default_factory=dict)
     mtime: float = 0.0
+
+    def add_proc(self, proc: IOCProc) -> None:
+        self.procs[proc.name] = proc
 
 
 config_cache: dict[str, Config] = {}
@@ -88,6 +83,9 @@ def read_config(cfgname: str) -> Config:
 
     Skips the reading and returns a cached config if the file
     has not been modified since the last call to readConfig.
+
+    In all cases, the config we receive is a deepcopy and
+    modifying it will not affect the cache.
 
     May raise in case of failure.
 
@@ -139,31 +137,28 @@ def read_config(cfgname: str) -> Config:
         "hard": "hard",
     }
     exec(compile(cfgbytes, cfgfn, "exec"), {}, cfg_env)
-    procs = []
+    config = Config(
+        path=cfgfn,
+        commithost=cfg_env.get("COMMITHOST", DEFAULT_COMMITHOST),
+        allow_console=cfg_env.get("allow_console", True),
+        hosts=cfg_env["hosts"],
+        mtime=mtime,
+    )
     for procmgr_cfg in cfg_env["procmgr_config"]:
         procmgr_cfg: dict
-        procs.append(
+        config.add_proc(
             IOCProc(
                 name=procmgr_cfg["id"],
                 port=procmgr_cfg["port"],
                 host=procmgr_cfg["host"],
                 path=procmgr_cfg["dir"],
                 alias=procmgr_cfg.get("alias", ""),
-                status=ConfigStat.NORMAL,
                 disable=procmgr_cfg.get("disable", False),
                 hard=procmgr_cfg.get("hard", False),
                 cmd=procmgr_cfg.get("cmd", ""),
                 history=procmgr_cfg.get("history", []),
             )
         )
-    config = Config(
-        path=cfgfn,
-        commithost=cfg_env.get("COMMITHOST", DEFAULT_COMMITHOST),
-        allow_console=cfg_env.get("allow_console", True),
-        hosts=cfg_env["hosts"],
-        procs=procs,
-        mtime=mtime,
-    )
 
     config_cache[cfgfn] = config
     return deepcopy(config)
@@ -225,9 +220,7 @@ def _cfg_file_lines(config: Config) -> list[str]:
 
     lines.append("procmgr_config = [")
 
-    for ioc in sorted(config.procs, key=lambda x: x.name):
-        if ioc.status == ConfigStat.DELETED:
-            continue
+    for ioc in sorted(config.procs.values(), key=lambda x: x.name):
         extra = ""
         if ioc.disable:
             extra += ", disable: True"
@@ -433,7 +426,7 @@ def find_iocs(**kwargs) -> list[tuple[str, IOCProc]]:
     configs = []
     for cfg in cfgs:
         config = read_config(cfg)
-        for ioc in config.procs:
+        for ioc in config.procs.values():
             for k in list(kw.items()):
                 if getattr(ioc, k[0]) != k[1]:
                     break
@@ -452,18 +445,19 @@ def get_hutch_list() -> list[str]:
         return []
 
 
-def validate_config(iocproc: list[IOCProc]) -> bool:
+def validate_config(config: Config) -> bool:
     """
-    Returns True if the list of IOC configurations looks valid.
+    Returns True if the configuration looks valid.
 
     Currently, just checks if there is a duplicate host/port combination.
     """
-    for idx in range(len(iocproc)):
-        host1 = iocproc[idx].host
-        port1 = iocproc[idx].port
-        for jdx in range(idx + 1, len(iocproc)):
-            host2 = iocproc[jdx].host
-            port2 = iocproc[jdx].port
+    procs = list(config.procs.values())
+    for idx in range(len(procs)):
+        host1 = procs[idx].host
+        port1 = procs[idx].port
+        for jdx in range(idx + 1, len(procs)):
+            host2 = procs[jdx].host
+            port2 = procs[jdx].port
             if host1 == host2 and port1 == port2:
                 return False
     #
@@ -482,6 +476,17 @@ class IOCStatusFile:
     path: str
     pid: int
     mtime: float = 0.0
+
+    def get_file_location(self, hutch: str) -> str:
+        """
+        Return the filepath to where this status file came from.
+
+        Parameters
+        ----------
+        hutch : str
+            The hutch that owns this IOC.
+        """
+        return env_paths.STATUS_DIR % hutch + "/" + self.name
 
 
 def read_status_dir(cfg: str) -> list[IOCStatusFile]:

@@ -13,7 +13,7 @@ if __name__ == "__main__":
     except Exception:
         print("Cannot read configuration for %s!" % cfg)
         sys.exit(-1)
-    for ioc in config.procs:
+    for ioc in config.procs.values():
         if ioc.host == host and not ioc.disable:
             start_proc(cfg, ioc, True)
             try:
