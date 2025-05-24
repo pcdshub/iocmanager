@@ -63,6 +63,6 @@ def _netconfig(host: str) -> str:
     )
 
 
-def rebootServer(host: str) -> bool:
+def reboot_server(host: str) -> bool:
     """Reboot a server, returning True if successful."""
     return os.system(f"{env_paths.PSIPMI} %s power cycle" % host) == 0

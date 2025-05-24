@@ -1,7 +1,7 @@
 import pytest
 
 from .. import server_tools
-from ..server_tools import _netconfig, netconfig, rebootServer
+from ..server_tools import _netconfig, netconfig, reboot_server
 
 _example_netconfig_text = """
         name: ctl-pytest-cam-01
@@ -37,7 +37,7 @@ def test_netconfig_call():
 def test_reboot_server(capfd: pytest.CaptureFixture):
     # Fake reboot script tools/bin/psipmi just echoes our command
     host = "asdfsdfasdf"
-    assert rebootServer(host)
+    assert reboot_server(host)
     captured = capfd.readouterr()
     assert captured.out.strip() == f"psipmi {host} power cycle"
     assert captured.err == ""

@@ -42,7 +42,7 @@ from .epics_paths import get_parent, normalize_path
 from .hioc_tools import get_hard_ioc_dir_for_display, reboot_hioc, restart_hioc
 from .ioc_info import find_pv, get_base_name
 from .procserv_tools import apply_config, check_status, restart_proc
-from .server_tools import netconfig, rebootServer
+from .server_tools import netconfig, reboot_server
 
 logger = logging.getLogger(__name__)
 
@@ -1297,7 +1297,7 @@ class TableModel(QAbstractTableModel):
         d.buttonBox.accepted.connect(d.accept)
         d.buttonBox.rejected.connect(d.reject)
         if d.exec_() == QDialog.Accepted:
-            if not rebootServer(ihost):
+            if not reboot_server(ihost):
                 QMessageBox.critical(
                     None,
                     "Error",
