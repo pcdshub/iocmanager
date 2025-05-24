@@ -34,7 +34,17 @@ add_spam_level(logger)
 
 
 class ProcServStatus(StrEnum):
-    """procServ Process status options"""
+    """
+    procServ Process status options
+
+    The variants are:
+    - INIT: a placeholder to use when we have not checked status yet.
+    - NOCONNECT: procServ process is not running, but the host is up
+    - RUNNING: the IOC is running inside the procServ
+    - SHUTDOWN: the IOC is not running, but the procServ process is
+    - DOWN: the host is not accessible
+    - ERROR: the status could not be determined
+    """
 
     INIT = "INITIALIZE WAIT"
     NOCONNECT = "NOCONNECT"
@@ -45,6 +55,15 @@ class ProcServStatus(StrEnum):
 
 
 class AutoRestartMode(Enum):
+    """
+    procServ Process autorestart modes
+
+    The variants are:
+    - ON: restart the process when it terminates
+    - ONESHOT: close the procServ instance when the process terminates
+    - OFF: do nothing when the process terminates
+    """
+
     ON = 0
     ONESHOT = 1
     OFF = 2
@@ -52,7 +71,28 @@ class AutoRestartMode(Enum):
 
 @dataclass(eq=True)
 class IOCStatusLive:
-    """Information about an IOC from inspecting the live process."""
+    """
+    Information about an IOC from inspecting the live process.
+
+    Attributes
+    ----------
+    name : str
+        The name of the IOC as reported by procServ.
+    port : int
+        The port that the procServ instance was running on.
+    host : str
+        The name of the server that the procServ instance was running on.
+    path : str
+        The startup path of the IOC as reported by procServ.
+    pid : int | None
+        The process id of the IOC process as reported by procServ,
+        or None if no process is running.
+    status : ProcServStatus
+        The status of the procServ IOC. See enum documentation above.
+    autorestart_mode : AutoRestartMode
+        How the procServ will behave when the IOC crashes or is stopped.
+        See enum documentation above.
+    """
 
     name: str
     port: int

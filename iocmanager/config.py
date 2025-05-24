@@ -36,7 +36,53 @@ DEFAULT_COMMITHOST = "psbuild-rhel7"
 
 @dataclass(eq=True)
 class IOCProc:
-    """Information about a single IOC process in the config file."""
+    """
+    Information about a single IOC process in the config file.
+
+    Attributes
+    ----------
+    name : str
+        The name of the ioc. This is used in many, many places
+        such as filepaths, process names, and more.
+        Note that this may be distinct from the name of the
+        github repository that contains the IOC, which could
+        contain multiple IOCs. Since it is used in these contexts,
+        it should generally be all lowercase and with underscores
+        instead of spaces.
+    port : int
+        The procServ port to use for running this IOC.
+        Each IOC on the same host needs a unique procServ port.
+        This port will be used to debug and manage the IOC later.
+    host : str
+        The hostname of the server to run the IOC on.
+    path : str
+        A path to the IOC's repository or startup file location.
+        If using standard directory structures from the standard template,
+        the root directory of the tagged IOC is enough to find
+        the startup files.
+    alias : str, optional
+        Another name to use to refer to the IOC, perhaps a user-formatted
+        and human-readable variant. If provided this will be displayed in
+        the GUI and CLI (sometimes along with the original name too).
+    disable : bool, optional
+        If True, this IOC should be turned off!
+    cmd : str, optional
+        If provided, an alternate command to run to start the IOC process.
+        This is normally just ./st.cmd.
+    history : list[str], optional
+        Past known good versions of the IOC. This can be used to allow
+        a system owner to quickly revert the IOC to a known, working version.
+    parent : str, automatic
+        The IOC that supplies the executable for this one, if this IOC
+        is a templated IOC.
+        This will be automatically determined at object creation and
+        does not need to be manually included.
+    hard : bool, automatic
+        True if this is a hard ioc on some embedded non-linux system.
+        False if this is a soft ioc running on linux.
+        This will be automatically determined at object creation and
+        does not need to be manually included.
+    """
 
     name: str
     port: int
@@ -61,7 +107,35 @@ class IOCProc:
 
 @dataclass(eq=True)
 class Config:
-    """The entire contents of the config file."""
+    """
+    The entire contents of the config file.
+
+    Attributes
+    ----------
+    path : str
+        The full filepath of the iocmanager.cfg config file,
+        including the filename.
+    commithost : str
+        The host that commits are to be made on.
+        Always doing this on the same host avoids
+        NFS synchronization issues.
+    allow_console : bool
+        If True (the default), all users will be able to open telnet sessions
+        to the IOCs through the GUI.
+        If False, only authenticated users will be able to do this.
+    hosts : list[str]
+        All of the hosts that have previously been included in the config.
+        This is added to automatically during self.add_proc and is used by
+        various utilities internally as a convenience tool, e.g. for a user
+        drop-down of host options in the GUI.
+    procs : dict[str, IOCProc]
+        A mapping of IOC name to the IOCProc instance associated with that IOC.
+        Internally, this dictionary should be added to using the add_proc
+        method.
+    mtime : float
+        The last modification time of the config file at the time of reading
+        as a unix timestamp.
+    """
 
     path: str
     commithost: str = DEFAULT_COMMITHOST
@@ -72,6 +146,9 @@ class Config:
 
     def add_proc(self, proc: IOCProc) -> None:
         self.procs[proc.name] = proc
+        if proc.host not in self.hosts:
+            self.hosts.append(proc.host)
+            self.hosts.sort()
 
 
 config_cache: dict[str, Config] = {}
@@ -468,7 +545,26 @@ def validate_config(config: Config) -> bool:
 
 @dataclass(eq=True)
 class IOCStatusFile:
-    """Information about the IOC based on the IOC status file."""
+    """
+    Information about the IOC based on the IOC status file.
+
+    Attributes
+    ----------
+    name : str
+        The name of the IOC. This is pulled from the filename
+        of the status file.
+    port : int
+        The procServ port this IOC was using when the process started.
+    host : str
+        The host this IOC was running on when the process started.
+    path : str
+        The path to this IOC's repo directory or executable file
+        that is was using when the process started.
+    pid : int
+        The process id of the process as running on the server.
+    mtime : str
+        The last modification time of the ioc status file at time of reading.
+    """
 
     name: str
     port: int
