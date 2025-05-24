@@ -150,6 +150,17 @@ class Config:
             self.hosts.append(proc.host)
             self.hosts.sort()
 
+    def validate(self) -> bool:
+        """
+        Returns True if the configuration looks valid.
+
+        Currently, just checks if there is a duplicate host/port combination.
+        """
+        host_ports = set()
+        for proc in self.procs.values():
+            host_ports.add((proc.host, proc.port))
+        return len(host_ports) == len(self.procs)
+
 
 config_cache: dict[str, Config] = {}
 
@@ -520,27 +531,6 @@ def get_hutch_list() -> list[str]:
         return [pth.parent.name for pth in config_paths]
     except Exception:
         return []
-
-
-def validate_config(config: Config) -> bool:
-    """
-    Returns True if the configuration looks valid.
-
-    Currently, just checks if there is a duplicate host/port combination.
-    """
-    procs = list(config.procs.values())
-    for idx in range(len(procs)):
-        host1 = procs[idx].host
-        port1 = procs[idx].port
-        for jdx in range(idx + 1, len(procs)):
-            host2 = procs[jdx].host
-            port2 = procs[jdx].port
-            if host1 == host2 and port1 == port2:
-                return False
-    #
-    # Anything else we want to check here?!?
-    #
-    return True
 
 
 @dataclass(eq=True)

@@ -18,7 +18,6 @@ from ..config import (
     get_hutch_list,
     read_config,
     read_status_dir,
-    validate_config,
     write_config,
 )
 from . import CFG_FOLDER
@@ -139,8 +138,8 @@ def test_validate_config():
     bad_config.add_proc(IOCProc(name="one", host="host1", port=10000, path=""))
     bad_config.add_proc(IOCProc(name="two", host="host1", port=10000, path=""))
     bad_config.add_proc(IOCProc(name="thr", host="host2", port=20000, path=""))
-    assert validate_config(good_config)
-    assert not validate_config(bad_config)
+    assert good_config.validate()
+    assert not bad_config.validate()
 
 
 def test_read_status_dir():
