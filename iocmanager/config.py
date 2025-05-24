@@ -585,6 +585,10 @@ class IOCStatusFile:
         return env_paths.STATUS_DIR % hutch + "/" + self.name
 
 
+# Used in read_status_dir to uniquely identify a host, port combination
+unique_id = tuple[str, str]
+
+
 def read_status_dir(cfg: str) -> list[IOCStatusFile]:
     """
     Update a status directory for a hutch and return its information.
@@ -622,7 +626,10 @@ def read_status_dir(cfg: str) -> list[IOCStatusFile]:
         A list of structured data containing all information about each
         IOC from the status dir.
     """
-    info: dict[tuple[str, str], IOCStatusFile] = {}
+    # Each host, port combination should be used exactly once
+    # When the keys collide, we know that one of the files is out of date
+    info: dict[unique_id, IOCStatusFile] = {}
+
     for filename in os.listdir(env_paths.STATUS_DIR % cfg):
         full_path = (env_paths.STATUS_DIR % cfg) + "/" + filename
         with open(full_path, "r") as fd:
@@ -637,7 +644,7 @@ def read_status_dir(cfg: str) -> list[IOCStatusFile]:
             # Must be the unpack error, file has corrupt data
             _lazy_delete_file(full_path)
             continue
-        key = (host, port)
+        key: unique_id = (host, port)
         if key in info:
             # Duplicate
             if info[key].mtime < mtime:
