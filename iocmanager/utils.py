@@ -6,7 +6,7 @@ import fcntl
 import os
 import re
 
-from . import env_paths
+from .env_paths import env_paths
 
 # Constants
 COMMITHOST = "psbuild-rhel7"

@@ -7,7 +7,7 @@ pv lists, ioc log files, caput logs, and more.
 
 import re
 
-from . import env_paths
+from .env_paths import env_paths
 
 
 def get_base_name(ioc: str) -> str:

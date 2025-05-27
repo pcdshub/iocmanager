@@ -3,7 +3,8 @@ from itertools import product
 
 import pytest
 
-from .. import env_paths, epics_paths
+from .. import epics_paths
+from ..env_paths import env_paths
 from ..epics_paths import epics_readlines, get_parent, has_stcmd, normalize_path
 from . import IOC_FOLDER, TESTS_FOLDER
 
@@ -121,9 +122,9 @@ def test_get_parent(monkeypatch: pytest.MonkeyPatch):
 
     for trial_parts in lines:
         release_line = "".join(trial_parts)
-        assert (
-            get_parent("/some/dir", "some_ioc") == answer
-        ), f"Issue with {release_line}"
+        assert get_parent("/some/dir", "some_ioc") == answer, (
+            f"Issue with {release_line}"
+        )
 
 
 def test_epics_readlines():

@@ -7,7 +7,7 @@ This is everything under EPICS_SITE_TOP.
 import os
 import re
 
-from . import env_paths
+from .env_paths import env_paths
 
 # Search paths for st.cmd files
 stpaths = [

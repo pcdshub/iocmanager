@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from . import env_paths
+from .env_paths import env_paths
 from .epics_paths import get_parent
 
 logger = logging.getLogger(__name__)

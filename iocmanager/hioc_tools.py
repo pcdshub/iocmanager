@@ -15,7 +15,7 @@ import re
 import subprocess
 import telnetlib
 
-from . import env_paths
+from .env_paths import env_paths
 from .server_tools import netconfig
 
 logger = logging.getLogger(__name__)

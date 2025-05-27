@@ -10,7 +10,7 @@ from typing import Iterator
 
 import pytest
 
-from iocmanager.env_paths import set_env_var_globals
+from iocmanager.env_paths import env_paths
 from iocmanager.procserv_tools import BASEPORT, AutoRestartMode
 
 EPICS_HOST_ARCH = os.getenv("EPICS_HOST_ARCH")
@@ -40,11 +40,10 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
     monkeypatch.setenv("EPICS_SITE_TOP", str(TESTS_PATH))
     monkeypatch.setenv("SCRIPTROOT", str(TESTS_PATH / "script_root"))
 
-    set_env_var_globals()
+    # Verify that the env_paths object is doing "something"
+    assert env_paths.PYPS_ROOT == str(temp_pyps_root)
 
     yield
-
-    set_env_var_globals()
 
 
 @pytest.fixture(scope="function")

@@ -9,7 +9,7 @@ import copy
 import os
 import subprocess
 
-from . import env_paths
+from .env_paths import env_paths
 
 
 def netconfig(host: str) -> dict[str, str]:

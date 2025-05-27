@@ -20,8 +20,8 @@ import subprocess
 from pathlib import Path
 from socket import gethostname
 
-from . import env_paths
 from .config import read_config
+from .env_paths import env_paths
 
 COMMIT_SCRIPT = str(Path(__file__).parent / "commit.sh")
 

@@ -21,8 +21,8 @@ import typing
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 
-from . import env_paths
 from .config import IOCProc, IOCStatusFile, read_config, read_status_dir
+from .env_paths import env_paths
 from .epics_paths import normalize_path
 from .log_setup import add_spam_level
 
