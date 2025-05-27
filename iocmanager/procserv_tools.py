@@ -679,6 +679,8 @@ def apply_config(
     new_wanted = []
     not_wanted = []
     for line in wanted:
+        # Can ignore HIOCs (e.g. non-linux stuff)
+        # because we can't start or stop them anyway
         if not desired_iocs[line].hard:
             if not desired_iocs[line].disable:
                 new_wanted.append(line)
@@ -686,12 +688,6 @@ def apply_config(
                 not_wanted.append(line)
 
     wanted = new_wanted
-
-    #
-    # Note the hard IOC handling above... we don't want to start them, but they
-    # don't have entries in the running directory anyway so we don't think
-    # we need to!
-    #
 
     # Camera recorders always seem to be in the wrong directory, so cheat!
     for iocproc in config.procs.values():
