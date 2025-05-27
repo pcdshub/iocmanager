@@ -282,17 +282,17 @@ def open_telnet(host: str, port: int) -> telnetlib.Telnet:
     telnet : telnetlib.Telnet
         The Telnet object if successful, otherwise None
     """
-    connected = False
-    telnetCount = 0
-    while (not connected) and (telnetCount < 2):
-        telnetCount += 1
+    tn = None
+    for num in range(3):
+        if num > 0:
+            time.sleep(0.25)
         try:
             tn = telnetlib.Telnet(host, port, 1)
         except Exception:
-            time.sleep(0.25)
+            ...
         else:
-            connected = True
-    if connected:
+            break
+    if tn is not None:
         return tn
     else:
         raise RuntimeError(f"Unable to open telnet to {host}:{port}")
