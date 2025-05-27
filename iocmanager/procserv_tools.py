@@ -698,7 +698,7 @@ def apply_config(
         if iocproc.path == env_paths.CAMRECORD_ROOT:
             try:
                 current[iocproc.name].name = env_paths.CAMRECORD_ROOT
-            except Exception:
+            except KeyError:
                 pass
 
     #
