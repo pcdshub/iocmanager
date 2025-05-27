@@ -774,12 +774,8 @@ def apply_config(
     for ioc_name in kill_list:
         try:
             kill_proc(current[ioc_name].host, int(current[ioc_name].port))
-        except Exception as exc1:
-            try:
-                kill_proc(desired_iocs[ioc_name].host, int(desired_iocs[ioc_name].port))
-            except Exception as exc2:
-                errors.append(exc1)
-                errors.append(exc2)
+        except Exception as exc:
+            errors.append(exc)
         try:
             # This is dead, so get rid of the status file!
             # TODO this fails if cfg given as full path, needs fix
