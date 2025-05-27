@@ -46,7 +46,7 @@ def commit_config(hutch: str, comment: str) -> subprocess.CompletedProcess:
     result : CompletedProcess
         The result of the git operation as returned by subprocess.run.
     """
-    commit_host = get_commithost()
+    commit_host = get_commithost(hutch=hutch)
     config_file = env_paths.CONFIG_FILE % hutch
 
     if commit_host in ("localhost", gethostname()):

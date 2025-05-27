@@ -16,12 +16,17 @@ def test_get_commithost():
 
 @pytest.mark.parametrize("local", (True, False))
 def test_commit_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local: bool):
+    def fake_get_commithost(hutch: str) -> str:
+        return fake_commithost
+
+    monkeypatch.setattr(commit, "get_commithost", fake_get_commithost)
+
     if local:
         # Force us to run locally by forcing get_commithost -> localhost
-        monkeypatch.setattr(commit, "get_commithost", lambda: "localhost")
+        fake_commithost = "localhost"
     else:
         # Force us to ssh to our same server by forcing get_commithost and gethostname
-        monkeypatch.setattr(commit, "get_commithost", lambda: socket.gethostname())
+        fake_commithost = socket.gethostname()
         monkeypatch.setattr(commit, "gethostname", lambda: "localhost")
 
     repo_dir = tmp_path / "pyps_root" / "config" / "pytest"
