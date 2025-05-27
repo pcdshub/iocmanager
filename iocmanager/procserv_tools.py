@@ -695,9 +695,9 @@ def apply_config(
 
     # Camera recorders always seem to be in the wrong directory, so cheat!
     for iocproc in config.procs.values():
-        if iocproc.path == env_paths.CAMRECORDER:
+        if iocproc.path == env_paths.CAMRECORD_ROOT:
             try:
-                current[iocproc.name].name = env_paths.CAMRECORDER
+                current[iocproc.name].name = env_paths.CAMRECORD_ROOT
             except Exception:
                 pass
 
