@@ -11,6 +11,7 @@ import os
 import pwd
 import socket
 import sys
+from dataclasses import dataclass
 
 from psp.caput import caput
 
@@ -26,7 +27,135 @@ from .config import (
 )
 from .epics_paths import has_stcmd
 from .ioc_info import get_base_name
-from .procserv_tools import apply_config, check_status, restart_proc
+from .procserv_tools import ProcServStatus, apply_config, check_status, restart_proc
+
+
+def get_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="imgr",
+        description="Command-line utilities from iocmanager",
+    )
+    parser.add_argument(
+        "ioc_name",
+        nargs="?",
+        default="",
+        help=(
+            "The name of the IOC to act on, when applicable. "
+            "Any action that targets a specific IOC "
+            "will require an ioc_name argument."
+        ),
+    )
+    parser.add_argument(
+        "--hutch",
+        default="",
+        help=(
+            "The name of the hutch to act on or read from. "
+            "If not provided, there will be a best-effort "
+            "attempt to guess which hutch to use."
+        ),
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--status",
+        action="store_true",
+        help=(
+            "Show a one-line status for an IOC "
+            "that matches what is in the iocmanager status field. "
+            f"It will be one of {', '.join(st.value for st in ProcServStatus)}."
+        ),
+    )
+    group.add_argument(
+        "--info",
+        action="store_true",
+        help=(
+            "Show a more verbose status than --status for an IOC, "
+            "also including the host, port, and ioc directory. "
+            "In some cases, this will also show additional annotations."
+        ),
+    )
+    group.add_argument(
+        "--connect",
+        action="store_true",
+        help="Open a terminal telnet session for this IOC.",
+    )
+    group.add_argument(
+        "--reboot",
+        choices=("soft", "hard"),
+        help=(
+            "Reboot an IOC. "
+            "You must choose between a soft reboot, "
+            "which turns off the IOC via the SYSRESET PV, "
+            "allowing procServ to turn it back on, "
+            "or a hard reboot, "
+            "which stops and starts the IOC manually via telnet."
+        ),
+    )
+    group.add_argument(
+        "--enable",
+        action="store_true",
+        help=("Mark an IOC as enabled in the config file. Start the IOC if needed."),
+    )
+    group.add_argument(
+        "--disable",
+        action="store_true",
+        help=("Mark an IOC as disabled in the config file. Kill the IOC if needed."),
+    )
+    group.add_argument(
+        "--upgrade",
+        "--dir",
+        default="",
+        help=(
+            "Change an IOC's release or directory in the config file. "
+            "Restart the IOC if needed."
+        ),
+    )
+    group.add_argument(
+        "--move",
+        "--loc",
+        default="",
+        help=(
+            "Move an IOC to a different host, "
+            "or to a different port on the same host. "
+            "Expects either a HOST or a HOST:PORT specification. "
+            "If no port is provided, keep the same port as before. "
+            "Port can also be provided as CLOSED or OPEN "
+            "to automatically select an available port in the "
+            "CLOSED range (30001-38999) or OPEN range (39100-39199)."
+        ),
+    )
+    return parser
+
+
+@dataclass
+class ImgrArgs:
+    """
+    Internal representation of argparse namespace for type checking
+    """
+
+    ioc_name: str = ""
+    hutch: str = ""
+    status: bool = False
+    info: bool = False
+    reboot: str = ""
+    enable: bool = False
+    disable: bool = False
+    upgrade: str = ""
+    move: str = ""
+    add: bool = False
+    add_loc: str = ""
+    add_dir: str = ""
+    add_enable: bool = False
+    add_disable: bool = False
+    list: bool = False
+    list_host: str = ""
+    list_enabled: bool = False
+    list_disabled: bool = False
+
+
+def parse_args(args: argparse.ArgumentParser) -> ImgrArgs: ...
+
+
+def main(args: ImgrArgs) -> int: ...
 
 
 def match_hutch(h, hlist):
