@@ -13,7 +13,7 @@ import pytest
 from .. import procserv_tools as pt
 from ..config import Config, IOCProc, IOCStatusFile
 from ..procserv_tools import (
-    ApplyConfigPlan,
+    ApplyConfigContext,
     AutoRestartMode,
     IOCStatusLive,
     ProcServStatus,
@@ -394,15 +394,11 @@ def test_apply_config(
     # Change our verify approach based on the input arg
     if do_verify == "allow":
 
-        def verify(apply_config_plan: ApplyConfigPlan) -> VerifyResult:
-            return VerifyResult(
-                kill_list=apply_config_plan.kill_list,
-                start_list=apply_config_plan.start_list,
-                restart_list=apply_config_plan.restart_list,
-            )
+        def verify(ctx: ApplyConfigContext, res: VerifyResult) -> VerifyResult:
+            return res
     elif do_verify == "deny":
 
-        def verify(_: ApplyConfigPlan) -> VerifyResult:
+        def verify(ctx: ApplyConfigContext, res: VerifyResult) -> VerifyResult:
             return VerifyResult(
                 kill_list=[],
                 start_list=[],

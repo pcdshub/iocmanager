@@ -18,6 +18,7 @@ import telnetlib
 import threading
 import time
 import typing
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 
@@ -570,10 +571,10 @@ def start_proc(cfg: str, ioc_proc: IOCProc, local: bool = False) -> None:
         )
 
 
-@dataclass
-class ApplyConfigPlan:
+@dataclass(frozen=True)
+class ApplyConfigContext:
     """
-    The payload sent to an apply_config "verify" function.
+    Contextual information sent to an apply_config "verify" function.
 
     Attributes
     ----------
@@ -583,19 +584,10 @@ class ApplyConfigPlan:
     proc_config : dict[str, IOCProc]
         Information about the desired new state to apply.
         Keys are the IOC name.
-    kill_list : list[str]
-        A list of IOC names to kill.
-    start_list : list[str]
-        A list of IOC names to start.
-    restart_list : list[str]
-        A list of IOC names to restart.
     """
 
     status_files: dict[str, IOCStatusFile]
     proc_config: dict[str, IOCProc]
-    kill_list: list[str]
-    start_list: list[str]
-    restart_list: list[str]
 
 
 @dataclass
@@ -603,14 +595,15 @@ class VerifyResult:
     """
     The payload expected from an external "verify" function in apply_config.
 
-    This should contain all of or a subset of the list contents
-    received in the ApplyConfigPlan object.
+    This is provided to the "verify" function in apply_config.
+    The "verify" function should mutate, replace, or leave these lists
+    as they are, depending on which actions it needs to veto.
 
-    The lists here are the final authority for which changes
-    are allowed to be made. For example, you can return empty lists
-    to veto applying any changes.
-
-    See ApplyConfigPlan for more details.
+    The lists returned by the "verify" function are the final authority
+    for which changes are allowed to be made.
+    For example, you can return empty lists to veto applying any changes,
+    or return the full object again to agree to all changes,
+    or remove a single element from a list to skip only one change.
     """
 
     kill_list: list[str]
@@ -620,7 +613,8 @@ class VerifyResult:
 
 def apply_config(
     cfg: str,
-    verify: typing.Callable[[ApplyConfigPlan], VerifyResult] | None = None,
+    verify: typing.Callable[[ApplyConfigContext, VerifyResult], VerifyResult]
+    | None = None,
     ioc: str | None = None,
 ) -> None:
     """
@@ -644,7 +638,8 @@ def apply_config(
         The name of the hutch, or a full filepath to the config file.
     verify : callable, optional
         An optionally provided function that is expected to take an
-        ApplyConfigPlan and return a VerifyResult.
+        ApplyConfigContext and a VerifyResult and return a VerifyResult.
+        You can create a new VerifyResult or mutate the provided object.
     ioc : str, optional
         The name of a single IOC to apply to, if provided.
         If not provided, we'll apply the entire configuration.
@@ -750,13 +745,15 @@ def apply_config(
 
     if verify is not None:
         verify_result = verify(
-            ApplyConfigPlan(
-                status_files=running,
-                proc_config=desired_iocs,
+            ApplyConfigContext(
+                status_files=deepcopy(running),
+                proc_config=deepcopy(desired_iocs),
+            ),
+            VerifyResult(
                 kill_list=kill_list,
                 start_list=start_list,
                 restart_list=restart_list,
-            )
+            ),
         )
         kill_list = verify_result.kill_list
         start_list = verify_result.start_list
