@@ -663,55 +663,52 @@ def apply_config(
 
     status_files = read_status_dir(cfg)
 
-    current: dict[str, IOCStatusFile] = {}
-    notrunning: dict[str, IOCStatusFile] = {}
+    running: dict[str, IOCStatusFile] = {}
+    not_running: dict[str, IOCStatusFile] = {}
     for ioc_status in status_files:
         if ioc is None or ioc == ioc_status.name:
             result = check_status(ioc_status.host, ioc_status.port, ioc_status.name)
             if result.status == ProcServStatus.RUNNING:
-                current[ioc_status.name] = ioc_status
+                running[ioc_status.name] = ioc_status
             else:
-                notrunning[ioc_status.name] = ioc_status
+                not_running[ioc_status.name] = ioc_status
 
-    running = list(current)
-    wanted = list(desired_iocs)
-
-    new_wanted = []
-    not_wanted = []
-    for line in wanted:
+    wanted: dict[str, IOCProc] = {}
+    not_wanted: dict[str, IOCProc] = {}
+    for ioc_name, ioc_proc in desired_iocs.items():
         # Can ignore HIOCs (e.g. non-linux stuff)
         # because we can't start or stop them anyway
-        if not desired_iocs[line].hard:
-            if not desired_iocs[line].disable:
-                new_wanted.append(line)
-            else:
-                not_wanted.append(line)
-
-    wanted = new_wanted
+        if ioc_proc.hard:
+            continue
+        if ioc_proc.disable:
+            not_wanted[ioc_name] = ioc_proc
+        else:
+            wanted[ioc_name] = ioc_proc
 
     # Camera recorders always seem to be in the wrong directory, so cheat!
+    # TODO evaluate what this does and consider for removal
     for iocproc in config.procs.values():
         if iocproc.path == env_paths.CAMRECORD_ROOT:
             try:
-                current[iocproc.name].name = env_paths.CAMRECORD_ROOT
+                running[iocproc.name].name = env_paths.CAMRECORD_ROOT
             except KeyError:
                 pass
 
     #
-    # Now, we need to make three lists: kill, restart, and start.
+    # We need to make three lists: kill, restart, and start.
     #
 
     # Kill anyone who we don't want, or is running on the wrong host or port
     kill_list = [
         ioc_name
-        for ioc_name in running
+        for ioc_name, running_status in running.items()
         if ioc_name not in wanted
-        or current[ioc_name].host != desired_iocs[ioc_name].host
-        or current[ioc_name].port != desired_iocs[ioc_name].port
+        or running_status.host != desired_iocs[ioc_name].host
+        or running_status.port != desired_iocs[ioc_name].port
     ]
 
     #
-    # Now there is a problem if an IOC is bad and repeatedly crashing.  The running
+    # There is a problem if an IOC is bad and repeatedly crashing.  The running
     # state may not be accurate, as it is oscillating between RUNNING and SHUTDOWN.
     # If it's enabled, not much we can do but let it spin... but if it's disabled, we
     # need to be certain to kill it.
@@ -721,40 +718,40 @@ def apply_config(
     # crashing and needs to be killed again.  If it's old though, let's assume that
     # it's dead and we can leave it alone...
     #
-    # If it's dead, it might not *have* a status file, hence the try.
-    #
     now = time.time()
     for ioc_name in not_wanted:
         try:
-            if ioc_name not in running and now - notrunning[ioc_name].mtime < 600:
+            if ioc_name not in running and now - not_running[ioc_name].mtime < 600:
                 kill_list.append(ioc_name)
-        except Exception:
+        except KeyError:
+            # Not in either running or not_running = no status file
+            # No need to kill, it must not be running
             pass
 
     # Start anyone who wasn't running, or was running on the wrong host or port,
     start_list = [
         ioc_name
-        for ioc_name in wanted
+        for ioc_name, wanted_proc in wanted.items()
         if ioc_name not in running
-        or current[ioc_name].host != desired_iocs[ioc_name].host
-        or current[ioc_name].port != desired_iocs[ioc_name].port
+        or wanted_proc.host != running[ioc_name].host
+        or wanted_proc.port != running[ioc_name].port
     ]
 
     # Anyone running the wrong version, on the right host and port
     # just needs a restart.
     restart_list = [
         ioc_name
-        for ioc_name in wanted
+        for ioc_name, wanted_proc in wanted.items()
         if ioc_name in running
-        and current[ioc_name].host == desired_iocs[ioc_name].host
-        and current[ioc_name].port == desired_iocs[ioc_name].port
-        and current[ioc_name].path != desired_iocs[ioc_name].path
+        and wanted_proc.host == running[ioc_name].host
+        and wanted_proc.port == running[ioc_name].port
+        and wanted_proc.path != running[ioc_name].path
     ]
 
     if verify is not None:
         verify_result = verify(
             ApplyConfigPlan(
-                status_files=current,
+                status_files=running,
                 proc_config=desired_iocs,
                 kill_list=kill_list,
                 start_list=start_list,
@@ -769,13 +766,13 @@ def apply_config(
 
     for ioc_name in kill_list:
         try:
-            kill_proc(current[ioc_name].host, int(current[ioc_name].port))
+            kill_proc(running[ioc_name].host, int(running[ioc_name].port))
         except Exception as exc:
             errors.append(exc)
         try:
             # This is dead, so get rid of the status file!
             # TODO this fails if cfg given as full path, needs fix
-            os.remove(current[ioc_name].get_file_location(hutch=cfg))
+            os.remove(running[ioc_name].get_file_location(hutch=cfg))
         except Exception as exc:
             errors.append(exc)
 
@@ -787,7 +784,7 @@ def apply_config(
 
     for ioc_name in restart_list:
         try:
-            restart_proc(current[ioc_name].host, int(current[ioc_name].port))
+            restart_proc(running[ioc_name].host, int(running[ioc_name].port))
         except Exception as exc:
             errors.append(exc)
 
