@@ -7,13 +7,14 @@ for example listing IOCs or moving them between hosts.
 """
 
 import argparse
+import logging
 import os
 import pwd
 import socket
 import sys
 from dataclasses import dataclass
 
-from psp.caput import caput
+from psp.Pv import Pv
 
 from . import procserv_tools as pt
 from . import utils
@@ -29,11 +30,23 @@ from .epics_paths import has_stcmd
 from .ioc_info import get_base_name
 from .procserv_tools import ProcServStatus, apply_config, check_status, restart_proc
 
+logger = logging.getLogger(__name__)
+
 
 def get_parser() -> argparse.ArgumentParser:
+    """Return the ArgumentParser object used by imgr."""
+    port_help_text = (
+        "Port can also be provided as CLOSED or OPEN "
+        "to automatically select an available port in the "
+        "CLOSED range (30001-38999) or OPEN range (39100-39199)."
+    )
     parser = argparse.ArgumentParser(
         prog="imgr",
-        description="Command-line utilities from iocmanager",
+        description=(
+            "Command-line utilities for iocmanager. "
+            "These allow to you make changes to your iocmanager configuration "
+            "And start/stop IOCs without opening the full GUI. "
+        ),
     )
     parser.add_argument(
         "ioc_name",
@@ -54,34 +67,43 @@ def get_parser() -> argparse.ArgumentParser:
             "attempt to guess which hutch to use."
         ),
     )
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
-        "--status",
-        action="store_true",
-        help=(
+    subp = parser.add_subparsers(
+        dest="subp_cmd",
+        title="commands",
+        # description="Choose one command to run:",
+        help="Use imgr {command} --help for more info about a command.",
+        metavar="{command}",
+    )
+    subp.add_parser(
+        "status",
+        help="Show a one-line status for an IOC",
+        description=(
             "Show a one-line status for an IOC "
             "that matches what is in the iocmanager status field. "
-            f"It will be one of {', '.join(st.value for st in ProcServStatus)}."
+            f'It will be one of "{'", "'.join(st.value for st in ProcServStatus)}".'
         ),
     )
-    group.add_argument(
-        "--info",
-        action="store_true",
-        help=(
-            "Show a more verbose status than --status for an IOC, "
-            "also including the host, port, and ioc directory. "
+    subp.add_parser(
+        "info",
+        help="Show a more verbose status for an IOC",
+        description=(
+            "Show a more verbose for an IOC, "
+            "including the host, port, and ioc directory. "
             "In some cases, this will also show additional annotations."
         ),
     )
-    group.add_argument(
-        "--connect",
-        action="store_true",
-        help="Open a terminal telnet session for this IOC.",
+    subp.add_parser(
+        "connect",
+        help="Open a terminal telnet session for this IOC",
+        description=(
+            "Open a terminal telnet session for this IOC. "
+            "Remember: ctrl+[, then quit to exit."
+        ),
     )
-    group.add_argument(
-        "--reboot",
-        choices=("soft", "hard"),
-        help=(
+    reboot_cmd = subp.add_parser(
+        "reboot",
+        help="Reboot an IOC",
+        description=(
             "Reboot an IOC. "
             "You must choose between a soft reboot, "
             "which turns off the IOC via the SYSRESET PV, "
@@ -90,38 +112,133 @@ def get_parser() -> argparse.ArgumentParser:
             "which stops and starts the IOC manually via telnet."
         ),
     )
-    group.add_argument(
-        "--enable",
-        action="store_true",
-        help=("Mark an IOC as enabled in the config file. Start the IOC if needed."),
+    reboot_cmd.add_argument(
+        "reboot_mode",
+        choices=("soft", "hard"),
+        help="Whether to do a soft reboot or a hard reboot.",
     )
-    group.add_argument(
-        "--disable",
-        action="store_true",
-        help=("Mark an IOC as disabled in the config file. Kill the IOC if needed."),
-    )
-    group.add_argument(
-        "--upgrade",
-        "--dir",
-        default="",
-        help=(
-            "Change an IOC's release or directory in the config file. "
-            "Restart the IOC if needed."
+    subp.add_parser(
+        "enable",
+        help="Enable and start an IOC",
+        description=(
+            "Mark an IOC as enabled in the config file. Start the IOC if needed."
         ),
     )
-    group.add_argument(
-        "--move",
-        "--loc",
-        default="",
-        help=(
+    subp.add_parser(
+        "disable",
+        help="Disable and kill an IOC",
+        description=(
+            "Mark an IOC as disabled in the config file. Kill the IOC if needed."
+        ),
+    )
+    upgrade_cmd = subp.add_parser(
+        "upgrade",
+        help="Change an IOC's release or directory",
+        description=(
+            "Change an IOC's release or directory in the config file. "
+            "Restart the IOC if needed. "
+        ),
+    )
+    dir_cmd = subp.add_parser(
+        "dir",
+        help="Alias of upgrade",
+        description=upgrade_cmd.description,
+    )
+    for cmd in (upgrade_cmd, dir_cmd):
+        cmd.add_argument(
+            "upgrade_dir",
+            help="The release or directory to use for the IOC.",
+        )
+    move_cmd = subp.add_parser(
+        "move",
+        help="Move an IOC to a different host",
+        description=(
             "Move an IOC to a different host, "
             "or to a different port on the same host. "
             "Expects either a HOST or a HOST:PORT specification. "
             "If no port is provided, keep the same port as before. "
-            "Port can also be provided as CLOSED or OPEN "
-            "to automatically select an available port in the "
-            "CLOSED range (30001-38999) or OPEN range (39100-39199)."
+            f"{port_help_text}"
         ),
+    )
+    loc_cmd = subp.add_parser(
+        "loc",
+        help="Alias of move",
+        description=move_cmd.description,
+    )
+    for cmd in (move_cmd, loc_cmd):
+        cmd.add_argument(
+            "move_host_port",
+            help="The HOST or HOST:PORT destination of the move.",
+        )
+    add_cmd = subp.add_parser(
+        "add",
+        help="Add a new IOC to the iocmanager configuration",
+        description=(
+            "Add a new IOC to the iocmanager configuration. "
+            "Note that both --loc and --dir must be supplied as arguments, "
+            "and that exactly one of --enable and --disable must be chosen."
+        ),
+    )
+    add_cmd.add_argument(
+        "--loc",
+        required=True,
+        dest="add_loc",
+        help=f"The HOST:PORT setting to use for the new IOC. {port_help_text}",
+    )
+    add_cmd.add_argument(
+        "--dir",
+        required=True,
+        dest="add_dir",
+        help="The new IOC's release or directory.",
+    )
+    add_enable_group = add_cmd.add_mutually_exclusive_group(required=True)
+    add_enable_group.add_argument(
+        "--enable",
+        action="store_true",
+        dest="add_enable",
+        help=(
+            "Include this argument to add the IOC in an enabled state. "
+            "If we add an enabled IOC, we'll also start the new IOC."
+        ),
+    )
+    add_enable_group.add_argument(
+        "--disable",
+        action="store_true",
+        dest="add_disable",
+        help=(
+            "Include this argument to add the IOC in an disabled state. "
+            "This will not start the IOC."
+        ),
+    )
+    list_cmd = subp.add_parser(
+        "list",
+        help="Show the names of the IOCs in the iocmanager config",
+        description=(
+            "Show the names of the IOCs in the iocmanager config. "
+            "The names will be printed to stdout, one per line. "
+            "Use the optional arguments to filter the output."
+        ),
+    )
+    list_cmd.add_argument(
+        "--host",
+        action="store_true",
+        dest="list_host",
+        help="Limit the --list output to only IOCs configured for a specific host.",
+    )
+    list_enable_group = list_cmd.add_mutually_exclusive_group()
+    list_enable_group.add_argument(
+        "--enabled_only",
+        "--enabled-only",
+        action="store_true",
+        dest="list_enabled",
+        help="Limit the --list output to only IOCs that are enabled.",
+    )
+    list_enable_group.add_argument(
+        "--disabled_only",
+        "--disabled-only",
+        action="store_true",
+        dest="list_disabled",
+        help="Limit the --list output to only IOCs that are disabled.",
     )
     return parser
 
@@ -132,30 +249,41 @@ class ImgrArgs:
     Internal representation of argparse namespace for type checking
     """
 
+    # Main arguments
     ioc_name: str = ""
     hutch: str = ""
-    status: bool = False
-    info: bool = False
-    reboot: str = ""
-    enable: bool = False
-    disable: bool = False
-    upgrade: str = ""
-    move: str = ""
-    add: bool = False
+    # Mutually-exclusive commands.
+    # If no specific args (--status, --info, --connect --enable, --disable)
+    # Just the command name is enough.
+    subp_cmd: str = ""
+    # --reboot soft, --reboot hard
+    reboot_mode: str = ""
+    # --upgrade ioc/lfe/gigECam/R6.0.0 (or --dir)
+    upgrade_dir: str = ""
+    # --move ctl-lfe-cam-02:CLOSED
+    move_host_port: str = ""
+    # --add --loc host:port --dir /some/dir --enable (or --disable)
     add_loc: str = ""
     add_dir: str = ""
     add_enable: bool = False
     add_disable: bool = False
-    list: bool = False
+    # --list [--host host] [(--enabled-only, --disabled-only)]
     list_host: str = ""
     list_enabled: bool = False
     list_disabled: bool = False
 
 
-def parse_args(args: argparse.ArgumentParser) -> ImgrArgs: ...
+def parse_args(args: list[str]) -> ImgrArgs:
+    """Translate the cli args into our dataclass representation."""
+    parser = get_parser()
+    imgr_args = ImgrArgs()
+    parser.parse_args(args, namespace=imgr_args)
+    print(imgr_args)
+    return imgr_args
 
 
-def main(args: ImgrArgs) -> int: ...
+def main(args: ImgrArgs) -> int:
+    return 0
 
 
 def match_hutch(h, hlist):
@@ -263,7 +391,7 @@ def info(hutch, ioc, verbose):
 
 def soft_reboot(hutch, ioc):
     base = get_base_name(ioc)
-    caput(base + ":SYSRESET", 1)
+    Pv(base + ":SYSRESET", initialize=True).put(1, timeout=1.0)
     sys.exit(0)
 
 
@@ -431,6 +559,12 @@ def do_list(hutch, ns):
 
 
 if __name__ == "__main__":
+    imgr_args = parse_args(sys.argv[1:])
+    sys.exit(main(imgr_args))
+
+    """
+    Old main, not ready to delete
+
     try:
         parser = argparse.ArgumentParser(prog="imgr")
         parser.add_argument("ioc", nargs="?")
@@ -486,3 +620,4 @@ if __name__ == "__main__":
     else:
         usage()
     sys.exit(0)
+    """
