@@ -33,8 +33,8 @@ from .procserv_tools import ProcServStatus, apply_config, check_status, restart_
 logger = logging.getLogger(__name__)
 
 
-def get_parser() -> argparse.ArgumentParser:
-    """Return the ArgumentParser object used by imgr."""
+def get_parser() -> tuple[argparse.ArgumentParser, set[str]]:
+    """Return the ArgumentParser object used by imgr and the command set."""
     port_help_text = (
         "Port can also be provided as CLOSED or OPEN "
         "to automatically select an available port in the "
@@ -45,7 +45,12 @@ def get_parser() -> argparse.ArgumentParser:
         description=(
             "Command-line utilities for iocmanager. "
             "These allow to you make changes to your iocmanager configuration "
-            "And start/stop IOCs without opening the full GUI. "
+            "And start/stop IOCs without opening the full GUI."
+        ),
+        epilog=(
+            "For backwards compatibility with older versions of imgr, "
+            "all commands can be prepended with -- and some liberties are "
+            "taken to allow various argument permutations. "
         ),
     )
     parser.add_argument(
@@ -240,7 +245,7 @@ def get_parser() -> argparse.ArgumentParser:
         dest="list_disabled",
         help="Limit the --list output to only IOCs that are disabled.",
     )
-    return parser
+    return parser, set(subp.choices)
 
 
 @dataclass
@@ -255,6 +260,7 @@ class ImgrArgs:
     # Mutually-exclusive commands.
     # If no specific args (--status, --info, --connect --enable, --disable)
     # Just the command name is enough.
+    # Note this will be the variant without -- due to the preprocessing
     subp_cmd: str = ""
     # --reboot soft, --reboot hard
     reboot_mode: str = ""
@@ -275,14 +281,64 @@ class ImgrArgs:
 
 def parse_args(args: list[str]) -> ImgrArgs:
     """Translate the cli args into our dataclass representation."""
-    parser = get_parser()
+    parser, commands = get_parser()
     imgr_args = ImgrArgs()
+    args = args_backcompat(args, commands)
     parser.parse_args(args, namespace=imgr_args)
-    print(imgr_args)
     return imgr_args
 
 
-def main(args: ImgrArgs) -> int:
+def args_backcompat(args: list[str], commands: set[str]) -> list[str]:
+    """
+    Preprocess the args to support old variants that are otherwise parser errors.
+
+    I couldn't support the old behavior 1:1 while leveraging argparse checking,
+    because you're normally not allowed to use -- to prepend subcommand names
+    and because a nargs="?" positional argument like ioc_name are hard for the
+    parser to tell apart from the subcommands if they are allowed to be passed
+    in arbitrary orders.
+
+    This difficulty only applies in the general case, and we have a specific case here.
+    So, we do some light preprocessing of the input given our specific knowledge
+    about what the user and the parser expects.
+
+    Old behavior to support here:
+    - Passing ioc_name prior to --hutch HUTCH
+    - Prepending any command name with --
+    """
+    new_args = []
+    prev_arg = ""
+    has_chosen_cmd = False
+    for user_arg in args:
+        # Send --hutch HUTCH to the front
+        if user_arg == "--hutch":
+            new_args.insert(0, "--hutch")
+        elif prev_arg == "--hutch":
+            new_args.insert(1, user_arg)
+        # Once we've processed a command, just include the rest
+        elif has_chosen_cmd:
+            new_args.append(user_arg)
+        # Here we find a properly named command
+        elif user_arg in commands:
+            new_args.append(user_arg)
+            has_chosen_cmd = True
+        # Here we find an old-style command, remove the --
+        elif user_arg.startswith("--") and user_arg.removeprefix("--") in commands:
+            new_args.append(user_arg.removeprefix("--"))
+            has_chosen_cmd = True
+        # Not a command or post-command, just add it to the args
+        else:
+            new_args.append(user_arg)
+        prev_arg = user_arg
+    return new_args
+
+
+def main(imgr_args: ImgrArgs) -> int:
+    """
+    Main entrypoint for imgr.
+
+    This will fan out to the various helper functions.
+    """
     return 0
 
 
