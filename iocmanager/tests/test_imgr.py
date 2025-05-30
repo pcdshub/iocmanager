@@ -1,6 +1,6 @@
 import pytest
 
-from ..imgr import ImgrArgs, parse_args
+from ..imgr import ImgrArgs, args_backcompat, parse_args
 
 
 @pytest.mark.parametrize(
@@ -176,3 +176,24 @@ def test_parse_args_errors(cli_text: str):
 def _parse_test_invocation(cli_text: str) -> ImgrArgs:
     """Ensure both parser tests invoke the same way."""
     return parse_args(cli_text.split(" ")[1:])
+
+
+@pytest.mark.parametrize(
+    "args,expected",
+    (
+        # Permute ioc_name and --hutch
+        (
+            ["name", "--hutch", "hutch", "CMD1", "arg"],
+            ["--hutch", "hutch", "name", "CMD1", "arg"],
+        ),
+        # Strip -- from command names
+        (["name", "--CMD2", "arg"], ["name", "CMD2", "arg"]),
+        # Pass normal things through as-is
+        (["name", "CMD3", "arg1", "arg2"], ["name", "CMD3", "arg1", "arg2"]),
+        (["--hutch", "hutch", "name", "CMD1"], ["--hutch", "hutch", "name", "CMD1"]),
+        (["CMD3", "arg1"], ["CMD3", "arg1"]),
+    ),
+)
+def test_args_backcompat(args: list[str], expected: list[str]):
+    """Test the backcompat transformations directly."""
+    assert args_backcompat(args=args, commands={"CMD1", "CMD2", "CMD3"}) == expected
