@@ -1,3 +1,6 @@
+import io
+import sys
+
 import pytest
 
 from .. import imgr
@@ -5,6 +8,7 @@ from ..config import Config, IOCProc
 from ..imgr import (
     ImgrArgs,
     args_backcompat,
+    connect_cmd,
     ensure_auth,
     ensure_iocname,
     get_proc,
@@ -455,3 +459,57 @@ def test_info_cmd(
         result2 = capsys.readouterr()
         assert "RUNNING" not in result2.out
         assert "DISABLE" in result2.out
+
+
+def test_connect_cmd_good(
+    procserv: ProcServHelper,
+    monkeypatch: pytest.MonkeyPatch,
+    capfdbinary: pytest.CaptureFixture,
+):
+    """
+    connect_cmd should telnet us to the ioc's port
+    """
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=procserv.proc_name,
+            port=procserv.port,
+            host="localhost",
+            path=procserv.startup_dir,
+        )
+    )
+    local_input = io.BytesIO()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(sys, "stdin", local_input)
+        capfdbinary.readouterr()
+        try:
+            connect_cmd(config=config, ioc_name=procserv.proc_name)
+        except RuntimeError:
+            # Original idea was to ask for a quit but couldn't get anything to work
+            # It should be sufficient to verify some form of connection
+            ...
+
+    result = capfdbinary.readouterr()
+    assert b"Connected to localhost" in result.out
+
+
+def test_connect_cmd_bad(capfdbinary: pytest.CaptureFixture):
+    """
+    connect_cmd should raise if the host or port can't be reached
+    """
+    ioc_name = "ioc_name"
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=ioc_name,
+            port=35000,
+            host="localhost",
+            path="",
+        )
+    )
+    capfdbinary.readouterr()
+    with pytest.raises(RuntimeError):
+        connect_cmd(config=config, ioc_name=ioc_name)
+    result = capfdbinary.readouterr()
+    assert b"Connected to localhost" not in result.out
