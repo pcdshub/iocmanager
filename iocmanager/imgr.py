@@ -379,11 +379,46 @@ def args_backcompat(args: list[str], commands: set[str]) -> list[str]:
     return new_args
 
 
-def main(imgr_args: ImgrArgs):
+def main() -> int:
     """
-    Main entrypoint for imgr.
+    Main cli entrypoint for imgr.
 
-    This will fan out to the various command functions.
+    This function parses the cli args, sets up logging,
+    and handles the return codes.
+
+    The fanout is in run_command, the various subcommands are
+    implemented in dedicated functions.
+
+    The main outputs of the cli will be in stdout, log messages and
+    errors will be in stderr.
+
+    Returns
+    -------
+    return_code : int
+        The shell return code for the cli program.
+    """
+    imgr_args = parse_args(sys.argv[1:])
+    if not imgr_args.verbose:
+        logging.basicConfig(level=logging.INFO)
+    elif imgr_args.verbose == 1:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=log_setup.SPAM_LEVEL)
+    try:
+        run_command(imgr_args)
+    except Exception as exc:
+        if imgr_args.verbose:
+            raise
+        else:
+            print(exc)
+            return 1
+    else:
+        return 0
+
+
+def run_command(imgr_args: ImgrArgs):
+    """
+    Main work function. Fans out to the various subcommands.
 
     Parameters
     ----------
@@ -941,20 +976,4 @@ def list_cmd(config: Config, list_host: str, list_enabled: bool, list_disabled: 
 
 
 if __name__ == "__main__":
-    imgr_args = parse_args(sys.argv[1:])
-    if not imgr_args.verbose:
-        logging.basicConfig(level=logging.INFO)
-    elif imgr_args.verbose == 1:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=log_setup.SPAM_LEVEL)
-    try:
-        main(imgr_args)
-    except Exception as exc:
-        if imgr_args.verbose:
-            raise
-        else:
-            print(exc)
-            sys.exit(1)
-    else:
-        sys.exit(0)
+    sys.exit(main())
