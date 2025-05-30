@@ -9,16 +9,17 @@ for example listing IOCs or moving them between hosts.
 import argparse
 import logging
 import os
-import pwd
 import socket
 import sys
 from dataclasses import dataclass
+from getpass import getuser
 
 from psp.Pv import Pv
 
+from . import log_setup
 from . import procserv_tools as pt
-from . import utils
 from .config import (
+    Config,
     IOCProc,
     check_auth,
     check_special,
@@ -33,12 +34,51 @@ from .procserv_tools import ProcServStatus, apply_config, check_status, restart_
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class ImgrArgs:
+    """
+    Internal representation of argparse namespace for type checking
+    """
+
+    # Main arguments
+    ioc_name: str = ""
+    hutch: str = ""
+    verbose: int = 0
+    # Mutually-exclusive commands.
+    # If no specific args (--status, --info, --connect --enable, --disable)
+    # Just the command name is enough.
+    # Note this will be the variant without -- due to the preprocessing
+    command: str = ""
+    # --reboot soft, --reboot hard
+    reboot_mode: str = ""
+    # --upgrade ioc/lfe/gigECam/R6.0.0 (or --dir)
+    upgrade_dir: str = ""
+    # --move ctl-lfe-cam-02:CLOSED
+    move_host_port: str = ""
+    # --add --loc host:port --dir /some/dir --enable (or --disable)
+    add_loc: str = ""
+    add_dir: str = ""
+    add_enable: bool = False
+    add_disable: bool = False
+    # --list [--host host] [(--enabled-only, --disabled-only)]
+    list_host: str = ""
+    list_enabled: bool = False
+    list_disabled: bool = False
+
+
 def get_parser() -> tuple[argparse.ArgumentParser, set[str]]:
-    """Return the ArgumentParser object used by imgr and the command set."""
+    """
+    Return the ArgumentParser object used by imgr and the command set.
+
+    Returns
+    -------
+    parser, commands : Argumentparser, set[str]
+        The parser object and all of the allowed subcommands.
+    """
     port_help_text = (
-        "Port can also be provided as CLOSED or OPEN "
+        "Port can also be provided as closed or open "
         "to automatically select an available port in the "
-        "CLOSED range (30001-38999) or OPEN range (39100-39199)."
+        "closed range (30001-38999) or open range (39100-39199)."
     )
     parser = argparse.ArgumentParser(
         prog="imgr",
@@ -72,8 +112,19 @@ def get_parser() -> tuple[argparse.ArgumentParser, set[str]]:
             "attempt to guess which hutch to use."
         ),
     )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="count",
+        default=0,
+        help=(
+            "Increase debug verbosity. "
+            "-v or --verbose shows debug messages, "
+            "-vv shows spammy debug messages."
+        ),
+    )
     subp = parser.add_subparsers(
-        dest="subp_cmd",
+        dest="command",
         title="commands",
         # description="Choose one command to run:",
         help="Use imgr {command} --help for more info about a command.",
@@ -248,39 +299,20 @@ def get_parser() -> tuple[argparse.ArgumentParser, set[str]]:
     return parser, set(subp.choices)
 
 
-@dataclass
-class ImgrArgs:
-    """
-    Internal representation of argparse namespace for type checking
-    """
-
-    # Main arguments
-    ioc_name: str = ""
-    hutch: str = ""
-    # Mutually-exclusive commands.
-    # If no specific args (--status, --info, --connect --enable, --disable)
-    # Just the command name is enough.
-    # Note this will be the variant without -- due to the preprocessing
-    subp_cmd: str = ""
-    # --reboot soft, --reboot hard
-    reboot_mode: str = ""
-    # --upgrade ioc/lfe/gigECam/R6.0.0 (or --dir)
-    upgrade_dir: str = ""
-    # --move ctl-lfe-cam-02:CLOSED
-    move_host_port: str = ""
-    # --add --loc host:port --dir /some/dir --enable (or --disable)
-    add_loc: str = ""
-    add_dir: str = ""
-    add_enable: bool = False
-    add_disable: bool = False
-    # --list [--host host] [(--enabled-only, --disabled-only)]
-    list_host: str = ""
-    list_enabled: bool = False
-    list_disabled: bool = False
-
-
 def parse_args(args: list[str]) -> ImgrArgs:
-    """Translate the cli args into our dataclass representation."""
+    """
+    Translate the cli args into our dataclass representation.
+
+    Parameters
+    ----------
+    args : list[str]
+        The cli args, aside from the program name.
+
+    Returns
+    -------
+    imgr_args : ImgrArgs
+        The interpreted, structured user arguments.
+    """
     parser, commands = get_parser()
     imgr_args = ImgrArgs()
     args = args_backcompat(args, commands)
@@ -305,6 +337,18 @@ def args_backcompat(args: list[str], commands: set[str]) -> list[str]:
     Old behavior to support here:
     - Passing ioc_name prior to --hutch HUTCH
     - Prepending any command name with --
+
+    Parameters
+    ----------
+    args : list[str]
+        The cli args, aside from the program name.
+    commands : set[str]
+        The valid commands, e.g. those returned from get_parser().
+
+    Returns
+    -------
+    new_args : list[str]
+        A modified copy of args with backwards compatibility tweaks.
     """
     new_args = []
     prev_arg = ""
@@ -333,347 +377,579 @@ def args_backcompat(args: list[str], commands: set[str]) -> list[str]:
     return new_args
 
 
-def main(imgr_args: ImgrArgs) -> int:
+def main(imgr_args: ImgrArgs):
     """
     Main entrypoint for imgr.
 
-    This will fan out to the various helper functions.
+    This will fan out to the various command functions.
+
+    Parameters
+    ----------
+    imgr_args : ImgrArgs
+        The structured options chosen by the user.
     """
-    return 0
-
-
-def match_hutch(h, hlist):
-    h = h.split("-")
-    for i in range(min(2, len(h))):
-        if h[i] in hlist:
-            return h[i]
-    return None
-
-
-def get_hutch(ns):
-    hlist = get_hutch_list()
-    # First, take the --hutch specified on the command line.
-    if ns.hutch is not None:
-        if ns.hutch not in hlist:
-            raise Exception("Nonexistent hutch %s" % ns.hutch)
-        return ns.hutch
-    # Second, try to match the current host.
-    v = match_hutch(socket.gethostname(), hlist)
-    # Finally, try to match the IOC name.
-    if v is None and ns.ioc is not None:
-        v = match_hutch(ns.ioc, hlist)
-    return v
-
-
-def usage():
-    print("Usage: imgr IOCNAME [--hutch HUTCH] --status")
-    print("       imgr IOCNAME [--hutch HUTCH] --info")
-    print("       imgr IOCNAME [--hutch HUTCH] --connect")
-    print("       imgr IOCNAME [--hutch HUTCH] --reboot soft")
-    print("       imgr IOCNAME [--hutch HUTCH] --reboot hard")
-    print("       imgr IOCNAME [--hutch HUTCH] --enable")
-    print("       imgr IOCNAME [--hutch HUTCH] --disable")
-    print("       imgr IOCNAME [--hutch HUTCH] --upgrade/dir RELEASE_DIR")
-    print("       imgr IOCNAME [--hutch HUTCH] --move/loc HOST")
-    print("       imgr IOCNAME [--hutch HUTCH] --move/loc HOST:PORT")
-    print(
-        "       imgr IOCNAME [--hutch HUTCH] --add --loc HOST:PORT --dir RELEASE_DIR "
-        "--enable/disable"
-    )
-    print(
-        "       imgr [--hutch HUTCH] --list [--host HOST] "
-        "[--enabled_only|--disabled_only]"
-    )
-    print("")
-    print("Note that '/' denotes a choice between two possible command names.")
-    print("Also, --add, PORT may also be specified as 'open' or 'closed'.")
-    sys.exit(1)
-
-
-# Convert the port string to an integer.
-# We need the host and the config list in case of 'open' or 'closed'.
-def port_to_int(port, host, procs):
-    if port != "closed" and port != "open":
-        return int(port)
-    plist = []
-    for iocproc in procs.values():
-        if iocproc.host == host:
-            plist.append(int(iocproc.port))
-    if port == "closed":
-        r = list(range(30001, 39000))
+    if imgr_args.hutch:
+        hutch = imgr_args.hutch
     else:
-        r = list(range(39100, 39200))
-    for i in r:
-        if i not in plist:
-            print("Choosing %s port %d" % (port, i))
-            return i
-    raise ValueError("No available %s port?!?" % port)
-
-
-def info(hutch, ioc, verbose):
+        hutch = guess_hutch(
+            host=socket.gethostname(),
+            ioc_name=imgr_args.ioc_name,
+        )
     config = read_config(hutch)
-    try:
-        iocproc = config.procs[ioc]
-    except KeyError:
-        print("IOC %s not found in hutch %s!" % (ioc, hutch))
-        sys.exit(1)
+    match imgr_args.command:
+        case "status":
+            status_cmd(config=config, ioc_name=imgr_args.ioc_name)
+        case "info":
+            info_cmd(config=config, ioc_name=imgr_args.ioc_name)
+        case "connect":
+            connect_cmd(config=config, ioc_name=imgr_args.ioc_name)
+        case "reboot":
+            reboot_cmd(
+                config=config,
+                ioc_name=imgr_args.ioc_name,
+                reboot_mode=imgr_args.reboot_mode,
+            )
+        case "enable":
+            enable_cmd(config=config, ioc_name=imgr_args.ioc_name, hutch=hutch)
+        case "disable":
+            disable_cmd(config=config, ioc_name=imgr_args.ioc_name, hutch=hutch)
+        case "upgrade" | "dir":
+            upgrade_cmd(
+                config=config,
+                ioc_name=imgr_args.ioc_name,
+                hutch=hutch,
+                upgrade_dir=imgr_args.upgrade_dir,
+            )
+        case "move" | "loc":
+            move_cmd(
+                config=config,
+                ioc_name=imgr_args.ioc_name,
+                hutch=hutch,
+                move_host_port=imgr_args.move_host_port,
+            )
+        case "add":
+            add_cmd(
+                config=config,
+                ioc_name=imgr_args.ioc_name,
+                hutch=hutch,
+                add_loc=imgr_args.add_loc,
+                add_dir=imgr_args.add_dir,
+                add_enable=imgr_args.add_enable,
+                add_disable=imgr_args.add_disable,
+            )
+        case "list":
+            list_cmd(
+                config=config,
+                list_host=imgr_args.list_host,
+                list_enabled=imgr_args.list_enabled,
+                list_disabled=imgr_args.list_disabled,
+            )
+        case other:
+            raise RuntimeError(f"{other} is not a valid imgr command.")
 
-    status = check_status(iocproc.host, iocproc.port, ioc)
+
+# TODO decide if this should be part of another module, may be useful in GUI
+def guess_hutch(host: str, ioc_name: str) -> str:
+    """
+    In cases where hutch is not provided, guess given the inputs.
+
+    A guess using the hostname takes priority over a guess from the
+    ioc name.
+
+    Returns the name of a valid hutch or raises.
+
+    Parameters
+    ----------
+    host : str
+        The name of the host we're on.
+    ioc_name : str
+        The name of the ioc we're working with.
+
+    Returns
+    -------
+    hutch : str
+        A valid hutch that matches our situation.
+    """
+    options = set(get_hutch_list())
+    for name in (host, ioc_name):
+        for part in name.split("-"):
+            if part in options:
+                return part
+    raise RuntimeError(
+        f"Cannot guess hutch from host={host}, ioc_name={ioc_name}. "
+        f"Available hutches are {options}."
+    )
+
+
+def get_proc(config: Config, ioc_name: str) -> IOCProc:
+    """
+    Helper function for common handling of the ioc_name argument.
+
+    This ensures we have the same error handling everywhere for
+    this standard operation.
+
+    Parameters
+    ----------
+    config : Config
+        The loaded config object.
+    ioc_name : str
+        The name of the IOC.
+
+    Returns
+    -------
+    ioc_proc : IOCProc
+        The data associated with the given IOC.
+    """
+    try:
+        return config.procs[ioc_name]
+    except KeyError as exc:
+        raise ValueError(f"IOC {ioc_name} not found in config!") from exc
+
+
+def ensure_iocname(ioc_name: str):
+    """
+    Helper function for post-parsing of the ioc_name.
+
+    Raise if the ioc_name is invalid, e.g. if the user did not provide a name.
+    Normally you'd solve this in the parser by making ioc_name a positional
+    argument to the subcommands, but the original version of the app chose
+    not to do this so we'll need to add an extra check ourselves sometimes.
+
+    Parameters
+    ----------
+    ioc_name : str
+        The name of the ioc
+    """
+    if not ioc_name:
+        raise ValueError("Must provide an ioc_name argument, see imgr --help.")
+
+
+def ensure_auth(hutch: str, ioc_name: str, special_ok: bool, special_version: str = ""):
+    """
+    Helper function for common handling of authentication.
+
+    This pulls together a few core module functions and wraps them
+    with clear errors for the user.
+
+    Returns if auth is ok, raises if not.
+
+    Parameters
+    ----------
+    hutch : str
+        The name of the hutch.
+    ioc_name : str
+        The name of the IOC.
+    special_ok : bool
+        True if authentication through the "iocmanger.special" file
+        is sufficient, False if full authentication through the
+        "iocmanager.auth" file is needed.
+    special_version: str, optional
+        If looking for special authentication to change to a specific special
+        version/release/dir of this ioc, it should be provided here.
+    """
+    user = getuser()
+    if check_auth(user=user, hutch=hutch):
+        return
+    elif not special_ok:
+        ...
+    elif special_version:
+        if check_special(
+            req_ioc=ioc_name, req_hutch=hutch, req_version=special_version
+        ):
+            return
+    elif check_special(req_ioc=ioc_name, req_hutch=hutch):
+        return
+
+    msg = (
+        f"Action not permitted for {user} in {hutch}. "
+        "Request access from the hutch controls system owner"
+    )
+    if special_ok:
+        msg = f"{msg}, or request that {ioc_name} be added to iocmanager.special."
+    else:
+        msg = f"{msg}."
+
+    raise RuntimeError(msg)
+
+
+# TODO decide if the open-port-finding code should be in a module
+# because it might be used in the GUI too
+def parse_host_port(config: Config, host_port: str) -> tuple[str, int]:
+    """
+    Convert the "host:port" string from the cli to a (str host, int port) tuple.
+
+    The port might literally be an integer, or it might
+    be "closed" or "open", in which case we need to pick
+    an unsed port in the correct range.
+
+    Always returns a (host, port) tuple or raises.
+
+    Parameters
+    ----------
+    config : Config
+        The active iocmanager configuration.
+    host_port : str
+        The user's host:port input.
+
+    Returns
+    -------
+    host, port : str, int
+        Tuple of host, port.
+    """
+    try:
+        host, port = host_port.split(":")
+    except ValueError as exc:
+        raise ValueError(f"Expected host:port format, received {host_port}") from exc
+    try:
+        return host, int(port)
+    except ValueError:
+        ...
+    if port.lower() == "closed":
+        port_options = range(30001, 39000)
+    elif port.lower() == "open":
+        port_options = range(39100, 39200)
+    else:
+        raise ValueError(
+            f"Invalid port {port}, expected an integer or one of closed, open"
+        )
+    used_ports = set()
+    for ioc_proc in config.procs.values():
+        if ioc_proc.host == host:
+            used_ports.add(ioc_proc.port)
+    for check_port in port_options:
+        if check_port not in used_ports:
+            return host, check_port
+
+    raise ValueError(f"No available port for {host_port}")
+
+
+def status_cmd(config: Config, ioc_name: str):
+    """
+    Implementation of "imgr ioc_name status"
+
+    This prints a one-line status for an IOC matching the options from
+    the ProcServStatus enum, for example it might say NO CONNECT or RUNNING.
+
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    ioc_name : str
+        The name of the ioc to check
+    """
+    ioc_proc = get_proc(config=config, ioc_name=ioc_name)
+    status = check_status(host=ioc_proc.host, port=ioc_proc.port, name=ioc_name)
+    print(status.status.name)
+
+
+def info_cmd(config: Config, ioc_name: str):
+    """
+    Implementation of "imgr ioc_name info"
+
+    This shows verbose status information about an IOC.
+
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    ioc_name : str
+        The name of the ioc to check
+    """
+    ensure_iocname(ioc_name)
+    ioc_proc = get_proc(config=config, ioc_name=ioc_name)
+    status = check_status(host=ioc_proc.host, port=ioc_proc.port, name=ioc_name)
+
     status_text = status.status.name
-    if verbose:
-        try:
-            if iocproc.disable:
-                if status.status == pt.ProcServStatus.NOCONNECT:
-                    status_text = "DISABLED"
-                elif status.status == pt.ProcServStatus.RUNNING:
-                    status_text = "DISABLED, BUT RUNNING?!?"
-        except Exception:
-            pass
-        try:
-            if iocproc.alias != "":
-                print("%s (%s):" % (ioc, iocproc.alias))
-            else:
-                print("%s:" % (ioc))
-        except Exception:
-            print("%s:" % (ioc))
-        print("    host  : %s" % iocproc.host)
-        print("    port  : %s" % iocproc.port)
-        print("    dir   : %s" % iocproc.path)
-        print("    status: %s" % status_text)
+    if ioc_proc.disable:
+        if status.status == pt.ProcServStatus.NOCONNECT:
+            status_text = "DISABLED"
+        elif status.status == pt.ProcServStatus.RUNNING:
+            status_text = "DISABLED, BUT RUNNING?!?"
+
+    if ioc_proc.alias:
+        print(f"{ioc_name} ({ioc_proc.alias}):")
     else:
-        print(status_text)
-    sys.exit(0)
+        print(f"{ioc_name}:")
+
+    print(f"    host  : {ioc_proc.host}")
+    print(f"    port  : {ioc_proc.port}")
+    print(f"    dir   : {ioc_proc.path}")
+    print(f"    status: {status_text}")
 
 
-def soft_reboot(hutch, ioc):
-    base = get_base_name(ioc)
-    Pv(base + ":SYSRESET", initialize=True).put(1, timeout=1.0)
-    sys.exit(0)
+# TODO reimplement this without execvp
+# execvp isn't testable
+def connect_cmd(config: Config, ioc_name: str):
+    """
+    Implementation of "imgr ioc_name connect"
+
+    This opens a telnet connection to the IOC.
+
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    ioc_name : str
+        The name of the ioc to check
+    """
+    ensure_iocname(ioc_name)
+    ioc_proc = get_proc(config=config, ioc_name=ioc_name)
+    os.execvp("telnet", ["telnet", ioc_proc.host, str(ioc_proc.port)])
+    raise RuntimeError("Error opening telnet in imgr connect")
 
 
-def hard_reboot(hutch, ioc):
-    config = read_config(hutch)
-    try:
-        iocproc = config.procs[ioc]
-    except KeyError:
-        print("IOC %s not found in hutch %s!" % (ioc, hutch))
-        sys.exit(1)
+def reboot_cmd(config: Config, ioc_name: str, reboot_mode: str):
+    """
+    Implementation of "imgr ioc_name reboot soft/hard".
 
-    restart_proc(iocproc.host, iocproc.port)
-    sys.exit(0)
+    These commands restart the IOC process.
 
-
-def do_connect(hutch, ioc):
-    config = read_config(hutch)
-    try:
-        iocproc = config.procs[ioc]
-    except KeyError:
-        print("IOC %s not found in hutch %s!" % (ioc, hutch))
-        sys.exit(1)
-
-    os.execvp("telnet", ["telnet", iocproc.host, str(iocproc.port)])
-    print("Exec failed?!?")
-    sys.exit(1)
-
-
-def set_state(hutch, ioc, enable):
-    if not check_special(ioc, hutch) and not check_auth(
-        pwd.getpwuid(os.getuid())[0], hutch
-    ):
-        print("Not authorized!")
-        sys.exit(1)
-    config = read_config(hutch)
-    try:
-        utils.COMMITHOST = config.commithost
-    except Exception:
-        pass
-    try:
-        iocproc = config.procs[ioc]
-    except KeyError:
-        print("IOC %s not found in hutch %s!" % (ioc, hutch))
-        sys.exit(1)
-
-    iocproc.disable = not enable
-    write_config(hutch, config)
-    apply_config(hutch, None, ioc)
-    sys.exit(0)
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    ioc_name : str
+        The name of the ioc to check
+    reboot_mode : str
+        One of "soft" or "hard"
+    """
+    ensure_iocname(ioc_name)
+    match reboot_mode.lower():
+        case "soft":
+            base = get_base_name(ioc_name)
+            Pv(base + ":SYSRESET", initialize=True).put(1, timeout=1.0)
+        case "hard":
+            ioc_proc = get_proc(config=config, ioc_name=ioc_name)
+            restart_proc(ioc_proc.host, ioc_proc.port)
+        case other:
+            raise ValueError(f"Invalid reboot mode {other}, must be soft or hard.")
 
 
-def add(hutch, ioc, version, hostport, disable):
-    if not check_auth(pwd.getpwuid(os.getuid())[0], hutch):
-        print("Not authorized!")
-        sys.exit(1)
-    if not has_stcmd(version, ioc):
-        print("%s does not have an st.cmd for %s!" % (version, ioc))
-        sys.exit(1)
-    config = read_config(hutch)
-    try:
-        utils.COMMITHOST = config.commithost
-    except Exception:
-        pass
-    hp = hostport.split(":")
-    host = hp[0].lower()
-    port = hp[1].lower()
-    if len(hp) != 2:
-        print("Must specify host and port!")
-        sys.exit(1)
-    if config.procs.get(ioc) is not None:
-        print("IOC %s already exists in hutch %s!" % (ioc, hutch))
-        sys.exit(1)
-    port = port_to_int(port, host, config.procs)
+def enable_cmd(config: Config, ioc_name: str, hutch: str):
+    """
+    Implementation of "imgr ioc_name enable".
+
+    This command enables an IOC in the config and starts it.
+
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    ioc_name : str
+        The name of the ioc to check
+    hutch : str
+        The name of the hutch this is in, for auth
+    """
+    _apply_disable(config=config, ioc_name=ioc_name, hutch=hutch, disable=False)
+
+
+def disable_cmd(config: Config, ioc_name: str, hutch: str):
+    """
+    Implementation of "imgr ioc_name disable".
+
+    This command enables an IOC in the config and starts it.
+
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    ioc_name : str
+        The name of the ioc to check
+    hutch : str
+        The name of the hutch this is in, for auth
+    """
+    _apply_disable(config=config, ioc_name=ioc_name, hutch=hutch, disable=True)
+
+
+def _apply_disable(config: Config, ioc_name: str, hutch: str, disable: bool):
+    """Shared routines between enable_cmd and disable_cmd."""
+    ensure_iocname(ioc_name)
+    ensure_auth(hutch=hutch, ioc_name=ioc_name, special_ok=True)
+    ioc_proc = get_proc(config=config, ioc_name=ioc_name)
+    ioc_proc.disable = disable
+    write_config(cfgname=hutch, config=config)
+    apply_config(cfg=hutch, verify=None, ioc=ioc_name)
+
+
+def upgrade_cmd(config: Config, ioc_name: str, hutch: str, upgrade_dir: str):
+    """
+    Implementation of "imgr ioc_name upgrade --dir directory"
+
+    This command changes the release directory of an IOC,
+    e.g. to upgrade to a new version.
+
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    ioc_name : str
+        The name of the ioc to check
+    hutch : str
+        The name of the hutch this is in, for auth
+    upgrade_dir : str
+        The new directory for the ioc.
+    """
+    ensure_iocname(ioc_name)
+    ensure_auth(
+        hutch=hutch, ioc_name=ioc_name, special_ok=True, special_version=upgrade_dir
+    )
+    if not has_stcmd(directory=upgrade_dir, ioc_name=ioc_name):
+        raise RuntimeError(f"{upgrade_dir} does not have an st.cmd for {ioc_name}!")
+    ioc_proc = get_proc(config=config, ioc_name=ioc_name)
+    ioc_proc.path = upgrade_dir
+    write_config(cfgname=hutch, config=config)
+    apply_config(cfg=hutch, verify=None, ioc=ioc_name)
+
+
+def move_cmd(config: Config, ioc_name: str, hutch: str, move_host_port: str):
+    """
+    Implementation of "imgr ioc_name move host:port".
+
+    This command moves an IOC to a new location, possibly on a different
+    host, stopping the old IOC and starting the new one if necessary.
+
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    ioc_name : str
+        The name of the ioc to check
+    hutch : str
+        The name of the hutch this is in, for auth
+    move_host_port : str
+        The host:port combination to move the ioc to
+    """
+    ensure_iocname(ioc_name)
+    ensure_auth(hutch=hutch, ioc_name=ioc_name, special_ok=False)
+    host, port = parse_host_port(config=config, host_port=move_host_port)
+    ioc_proc = get_proc(config=config, ioc_name=ioc_name)
+    ioc_proc.host = host
+    ioc_proc.port = port
+    if not config.validate():
+        raise RuntimeError(
+            f"Port conflict when moving {ioc_name} to {host}:{port}, not moved."
+        )
+    write_config(cfgname=hutch, config=config)
+    apply_config(cfg=hutch, verify=None, ioc=ioc_name)
+
+
+def add_cmd(
+    config: Config,
+    ioc_name: str,
+    hutch: str,
+    add_loc: str,
+    add_dir: str,
+    add_enable: bool,
+    add_disable: bool,
+):
+    """
+    Implementation of "imgr ioc_name add --loc host:port --dir dir --enable/disable
+
+    This command adds a new ioc to the config and optionally enables and starts it.
+
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    ioc_name : str
+        The name of the ioc to check
+    hutch : str
+        The name of the hutch this is in, for auth
+    add_loc : str
+        The host:port combination to use for the ioc
+    add_dir : str
+        The directory of the ioc's repo
+    add_enable : bool
+        True if the user passed the --enable arg, which is in a required mutually
+        exclusive group with the --disable arg.
+    add_disable : bool
+        True if the user passed the --disable arg, which is in a required mutually
+        exclusive group with the --enable arg.
+    """
+    ensure_iocname(ioc_name)
+    ensure_auth(hutch=hutch, ioc_name=ioc_name, special_ok=False)
+    if ioc_name in config.procs:
+        raise ValueError(f"IOC {ioc_name} already exists in hutch {hutch}!")
+    if not has_stcmd(directory=add_dir, ioc_name=ioc_name):
+        raise RuntimeError(f"{add_dir} does not have an st.cmd for {ioc_name}!")
+    host, port = parse_host_port(config=config, host_port=add_loc)
+    if add_enable:
+        disable = False
+    elif add_disable:
+        disable = True
+    else:
+        raise ValueError("Must provide --enable or --disable.")
     config.add_proc(
         IOCProc(
-            name=ioc,
+            name=ioc_name,
             port=port,
             host=host,
-            path=version,
+            path=add_dir,
             alias="",
             disable=disable,
             cmd="",
             history=[],
         )
     )
-    if host not in config.hosts:
-        config.hosts.append(host)
-    write_config(hutch, config)
-    apply_config(hutch, None, ioc)
-    sys.exit(0)
+    if not config.validate():
+        raise RuntimeError(
+            f"Port conflict when adding {ioc_name} at {host}:{port}, aborting."
+        )
+    write_config(cfgname=hutch, config=config)
+    apply_config(cfg=hutch, verify=None, ioc=ioc_name)
 
 
-def upgrade(hutch, ioc, version):
-    # check if the version change is permissible
-    allow_toggle = check_special(ioc, hutch, version)
+def list_cmd(config: Config, list_host: str, list_enabled: bool, list_disabled: bool):
+    """
+    Implementation of "imgr ioc_name list --host host --enabled-only/--disabled-only
 
-    # check if user is authed to do any upgrade
-    allow_upgrade = check_auth(pwd.getpwuid(os.getuid())[0], hutch)
+    This command shows the names of configured iocs.
 
-    if not (allow_upgrade or allow_toggle):
-        print("Not authorized!")
-        sys.exit(1)
-    if not has_stcmd(version, ioc):
-        print("%s does not have an st.cmd for %s!" % (version, ioc))
-        sys.exit(1)
-    config = read_config(hutch)
-    try:
-        utils.COMMITHOST = config.commithost
-    except Exception:
-        pass
-    try:
-        iocproc = config.procs[ioc]
-    except KeyError:
-        print("IOC %s not found in hutch %s!" % (ioc, hutch))
-        sys.exit(1)
-
-    iocproc.path = version
-    write_config(hutch, config)
-    apply_config(hutch, None, ioc)
-    sys.exit(0)
-
-
-def move(hutch, ioc, hostport):
-    if not check_auth(pwd.getpwuid(os.getuid())[0], hutch):
-        print("Not authorized!")
-        sys.exit(1)
-    config = read_config(hutch)
-    try:
-        utils.COMMITHOST = config.commithost
-    except Exception:
-        pass
-    try:
-        iocproc = config.procs[ioc]
-    except KeyError:
-        print("IOC %s not found in hutch %s!" % (ioc, hutch))
-        sys.exit(1)
-
-    hp = hostport.split(":")
-    iocproc.host = hp[0]
-    if len(hp) > 1:
-        iocproc["newport"] = port_to_int(hp[1], hp[0], config.procs)
-    if config.validate():
-        print("Port conflict when moving %s to %s, not moved!" % (ioc, hostport))
-        sys.exit(1)
-    write_config(hutch, config)
-    apply_config(hutch, None, ioc)
-    sys.exit(0)
-
-
-def do_list(hutch, ns):
-    config = read_config(hutch)
-    h = ns.host
-    show_disabled = not ns.enabled_only
-    show_enabled = not ns.disabled_only
-    for iocproc in config.procs.values():
-        if h is not None and iocproc.host != h:
+    Parameters
+    ----------
+    config : Config
+        The parsed iocmanager configuration
+    list_host : str
+        If provided, only show iocs running on this host
+    list_enabled : bool
+        If True, only show enabled IOCs. This is mutually incompatible with
+        list_disabled in the parser.
+    list_disabled : bool
+        If True, only show disabled IOCs. This is mutually incompatible with
+        list_disabled in the parser.
+    """
+    for ioc_proc in config.procs.values():
+        # Skip if wrong host
+        if list_host and ioc_proc.host != list_host:
             continue
-        if not (show_disabled if iocproc.disable else show_enabled):
+        # Skip if --enabled-only and disabled
+        if list_enabled and ioc_proc.disable:
             continue
-        if iocproc.alias != "":
-            print(("%s (%s)" % (iocproc.name, iocproc.alias)))
+        # Skip if --disabled-only and enabled
+        if list_disabled and not ioc_proc.disable:
+            continue
+        # We're through the filters, show the name
+        if ioc_proc.alias:
+            print("{ioc_proc.name} ({ioc_proc.alias})")
         else:
-            print(("%s" % iocproc.name))
-    sys.exit(0)
+            print(ioc_proc.name)
 
 
 if __name__ == "__main__":
     imgr_args = parse_args(sys.argv[1:])
-    sys.exit(main(imgr_args))
-
-    """
-    Old main, not ready to delete
-
-    try:
-        parser = argparse.ArgumentParser(prog="imgr")
-        parser.add_argument("ioc", nargs="?")
-        parser.add_argument("--status", action="store_true")
-        parser.add_argument("--info", action="store_true")
-        parser.add_argument("--connect", action="store_true")
-        parser.add_argument("--reboot")
-        parser.add_argument("--disable", action="store_true")
-        parser.add_argument("--enable", action="store_true")
-        parser.add_argument("--upgrade")
-        parser.add_argument("--dir")
-        parser.add_argument("--move")
-        parser.add_argument("--loc")
-        parser.add_argument("--hutch")
-        parser.add_argument("--list", action="store_true")
-        parser.add_argument("--disabled_only", action="store_true")
-        parser.add_argument("--enabled_only", action="store_true")
-        parser.add_argument("--add", action="store_true")
-        parser.add_argument("--host")
-        ns = parser.parse_args(sys.argv[1:])
-    except Exception:
-        usage()
-    hutch = get_hutch(ns)
-    if hutch is None:
-        usage()
-    if ns.list:
-        do_list(hutch, ns)
-    if ns.ioc is None:
-        usage()
-    if ns.status or ns.info:
-        info(hutch, ns.ioc, ns.info)
-    elif ns.connect:
-        do_connect(hutch, ns.ioc)
-    elif ns.reboot is not None:
-        if ns.reboot == "hard":
-            hard_reboot(hutch, ns.ioc)
-        elif ns.reboot == "soft":
-            soft_reboot(hutch, ns.ioc)
-        else:
-            usage()
-    elif ns.add:
-        if ns.dir is None or ns.loc is None or (ns.disable and ns.enable):
-            usage()
-        add(hutch, ns.ioc, ns.dir, ns.loc, ns.disable)
-    elif ns.disable and ns.enable:
-        usage()
-    elif ns.disable or ns.enable:
-        set_state(hutch, ns.ioc, ns.enable)
-    elif ns.upgrade is not None or ns.dir is not None:
-        upgrade(hutch, ns.ioc, ns.dir if ns.upgrade is None else ns.upgrade)
-    elif ns.move is not None or ns.loc is not None:
-        move(hutch, ns.ioc, ns.loc if ns.move is None else ns.move)
+    if not imgr_args.verbose:
+        logging.basicConfig(level=logging.INFO)
+    elif imgr_args.verbose == 1:
+        logging.basicConfig(level=logging.DEBUG)
     else:
-        usage()
-    sys.exit(0)
-    """
+        logging.basicConfig(level=log_setup.SPAM_LEVEL)
+    try:
+        main(imgr_args)
+    except Exception as exc:
+        if imgr_args.verbose:
+            raise
+        else:
+            print(exc)
+            sys.exit(1)
+    else:
+        sys.exit(0)
