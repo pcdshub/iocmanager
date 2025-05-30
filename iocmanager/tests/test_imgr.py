@@ -1,9 +1,11 @@
 import pytest
 
+from .. import imgr
 from ..config import Config, IOCProc
 from ..imgr import (
     ImgrArgs,
     args_backcompat,
+    ensure_auth,
     ensure_iocname,
     get_proc,
     guess_hutch,
@@ -260,3 +262,69 @@ def test_ensure_iocname_invalid():
     """ensure_iocname should fail for empty string"""
     with pytest.raises(ValueError):
         ensure_iocname("")
+
+
+# Compare parameters to pyps_root/config/iocmanager.auth and iocmanager.special
+good_user = "imgr_test"
+bad_user = "not_authorized"
+special_ioc = "has_two_variants"
+normal_ioc = "nonono"
+special_version = "ioc/pytest/normal"
+normal_version = "badbadbad"
+
+
+@pytest.mark.parametrize(
+    "user,ioc_name,special_ok,special_version,expect_pass",
+    (
+        # Good users always are authorized
+        (good_user, normal_ioc, False, "anything", True),
+        (good_user, special_ioc, False, "should", True),
+        (good_user, normal_ioc, True, "be", True),
+        (good_user, special_ioc, True, "good", True),
+        # Bad users are only authorized for special modes
+        (bad_user, normal_ioc, False, normal_version, False),
+        (bad_user, special_ioc, False, normal_version, False),
+        (bad_user, normal_ioc, True, normal_version, False),
+        (bad_user, special_ioc, True, normal_version, False),
+        (bad_user, normal_ioc, False, special_version, False),
+        (bad_user, special_ioc, False, special_version, False),
+        (bad_user, normal_ioc, True, special_version, False),
+        # Allowed: ioc is special, special is allowed, special version
+        (bad_user, special_ioc, True, special_version, True),
+        (bad_user, normal_ioc, False, "", False),
+        (bad_user, special_ioc, False, "", False),
+        (bad_user, normal_ioc, True, "", False),
+        # Allowed: ioc is special, special is allowed, generic version
+        (bad_user, special_ioc, True, "", True),
+    ),
+)
+def test_ensure_auth(
+    user: str,
+    ioc_name: str,
+    special_ok: bool,
+    special_version: str,
+    expect_pass: bool,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """ensure_auth should raise if the user is not authorized"""
+
+    def fake_get_user():
+        return user
+
+    monkeypatch.setattr(imgr, "getuser", fake_get_user)
+    hutch = "pytest"
+    if expect_pass:
+        ensure_auth(
+            hutch=hutch,
+            ioc_name=ioc_name,
+            special_ok=special_ok,
+            special_version=special_version,
+        )
+    else:
+        with pytest.raises(RuntimeError):
+            ensure_auth(
+                hutch=hutch,
+                ioc_name=ioc_name,
+                special_ok=special_ok,
+                special_version=special_version,
+            )
