@@ -8,8 +8,8 @@ for example listing IOCs or moving them between hosts.
 
 import argparse
 import logging
-import os
 import socket
+import subprocess
 import sys
 from dataclasses import dataclass
 from getpass import getuser
@@ -677,8 +677,6 @@ def info_cmd(config: Config, ioc_name: str):
     print(f"    status: {status_text}")
 
 
-# TODO reimplement this without execvp
-# execvp isn't testable
 def connect_cmd(config: Config, ioc_name: str):
     """
     Implementation of "imgr ioc_name connect"
@@ -694,8 +692,13 @@ def connect_cmd(config: Config, ioc_name: str):
     """
     ensure_iocname(ioc_name)
     ioc_proc = get_proc(config=config, ioc_name=ioc_name)
-    os.execvp("telnet", ["telnet", ioc_proc.host, str(ioc_proc.port)])
-    raise RuntimeError("Error opening telnet in imgr connect")
+    subpr = subprocess.run(["telnet", ioc_proc.host, str(ioc_proc.port)])
+    try:
+        subpr.check_returncode()
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f'Error running "telnet {ioc_proc.host} {ioc_proc.port}"'
+        ) from exc
 
 
 def reboot_cmd(config: Config, ioc_name: str, reboot_mode: str):
