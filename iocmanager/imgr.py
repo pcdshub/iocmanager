@@ -34,7 +34,7 @@ from .procserv_tools import ProcServStatus, apply_config, check_status, restart_
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(eq=True)
 class ImgrArgs:
     """
     Internal representation of argparse namespace for type checking
@@ -277,7 +277,7 @@ def get_parser() -> tuple[argparse.ArgumentParser, set[str]]:
     )
     list_cmd.add_argument(
         "--host",
-        action="store_true",
+        default="",
         dest="list_host",
         help="Limit the --list output to only IOCs configured for a specific host.",
     )
@@ -302,6 +302,8 @@ def get_parser() -> tuple[argparse.ArgumentParser, set[str]]:
 def parse_args(args: list[str]) -> ImgrArgs:
     """
     Translate the cli args into our dataclass representation.
+
+    Warning: this can raise SystemExit from argparse!
 
     Parameters
     ----------
