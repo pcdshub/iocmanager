@@ -10,6 +10,7 @@ from ..imgr import (
     get_proc,
     guess_hutch,
     parse_args,
+    parse_host_port,
 )
 
 
@@ -328,3 +329,46 @@ def test_ensure_auth(
                 special_ok=special_ok,
                 special_version=special_version,
             )
+
+
+@pytest.mark.parametrize(
+    "host_port,expected_host,port_range",
+    (
+        ("host1:35000", "host1", [35000, 35000]),
+        ("host2:39160", "host2", [39160, 39160]),
+        ("host1:closed", "host1", [30001, 38999]),
+        ("host2:closed", "host2", [30001, 38999]),
+        ("host1:open", "host1", [39100, 39199]),
+        ("host2:open", "host2", [39100, 39199]),
+    ),
+)
+def test_parse_host_port(
+    host_port: str, expected_host: str, port_range: tuple[int, int]
+):
+    """parse_host_port should unpack host, port tuples and pick unused ports"""
+    config = Config("")
+    # Fill up some junk configs, try to cover a lot of the port range
+    for port in range(30001, 31000):
+        config.add_proc(
+            IOCProc(
+                name=f"ioc{port}",
+                port=port,
+                host="host1",
+                path="",
+            )
+        )
+    for port in range(39100, 39150):
+        config.add_proc(
+            IOCProc(
+                name=f"ioc{port}",
+                port=port,
+                host="host2",
+                path="",
+            )
+        )
+    host, port = parse_host_port(config, host_port)
+    assert host == expected_host
+    assert port_range[0] <= port <= port_range[1]
+    # Make sure that the automatically chosen port doesn't
+    # conflict with existing ports
+    assert config.validate()
