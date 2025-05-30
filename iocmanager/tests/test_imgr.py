@@ -1,6 +1,7 @@
 import pytest
 
-from ..imgr import ImgrArgs, args_backcompat, guess_hutch, parse_args
+from ..config import Config, IOCProc
+from ..imgr import ImgrArgs, args_backcompat, get_proc, guess_hutch, parse_args
 
 
 @pytest.mark.parametrize(
@@ -224,3 +225,16 @@ def test_guess_hutch(host: str, ioc_name: str, expected: str):
     else:
         with pytest.raises(RuntimeError):
             guess_hutch(host=host, ioc_name=ioc_name)
+
+
+def test_get_proc_valid():
+    config = Config(path="")
+    proc = IOCProc(name="test", port=0, host="", path="")
+    config.add_proc(proc)
+    assert get_proc(config, "test") == proc
+
+
+def test_get_proc_invalid():
+    config = Config(path="")
+    with pytest.raises(ValueError):
+        get_proc(config, "test")
