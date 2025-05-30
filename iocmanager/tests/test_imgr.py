@@ -1,6 +1,6 @@
 import pytest
 
-from ..imgr import ImgrArgs, args_backcompat, parse_args
+from ..imgr import ImgrArgs, args_backcompat, guess_hutch, parse_args
 
 
 @pytest.mark.parametrize(
@@ -197,3 +197,30 @@ def _parse_test_invocation(cli_text: str) -> ImgrArgs:
 def test_args_backcompat(args: list[str], expected: list[str]):
     """Test the backcompat transformations directly."""
     assert args_backcompat(args=args, commands={"CMD1", "CMD2", "CMD3"}) == expected
+
+
+@pytest.mark.parametrize(
+    "host,ioc_name,expected",
+    (
+        # Guessable from both, host wins
+        ("pytest-console", "ioc-second_hutch-test", "pytest"),
+        # Guessable from host only
+        ("pytest-console", "ioc-dumb-test", "pytest"),
+        # Guessable from ioc_name only
+        ("psbuild-rocky9-01", "ioc-second_hutch-test", "second_hutch"),
+        # Not guessable
+        ("psbuild-rocky9-01", "ioc-dumb-test", ""),
+    ),
+)
+def test_guess_hutch(host: str, ioc_name: str, expected: str):
+    """
+    Check that guess_hutch works
+
+    Note: this relies on there being valid hutches "pytest" and "second_hutch"
+    as defined by the contents of the pyps_root/config folder.
+    """
+    if expected:
+        assert guess_hutch(host=host, ioc_name=ioc_name) == expected
+    else:
+        with pytest.raises(RuntimeError):
+            guess_hutch(host=host, ioc_name=ioc_name)
