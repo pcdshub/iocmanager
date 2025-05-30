@@ -11,7 +11,9 @@ from ..imgr import (
     guess_hutch,
     parse_args,
     parse_host_port,
+    status_cmd,
 )
+from .conftest import ProcServHelper
 
 
 @pytest.mark.parametrize(
@@ -372,3 +374,24 @@ def test_parse_host_port(
     # Make sure that the automatically chosen port doesn't
     # conflict with existing ports
     assert config.validate()
+
+
+def test_status_cmd(procserv: ProcServHelper, capsys: pytest.CaptureFixture):
+    """
+    status_cmd should give us the ioc status in stdout
+
+    No need to test tons of cases, check_status is sufficiently tested elsewhere.
+    """
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=procserv.proc_name,
+            port=procserv.port,
+            host="localhost",
+            path=procserv.startup_dir,
+        )
+    )
+    capsys.readouterr()
+    status_cmd(config=config, ioc_name=procserv.proc_name)
+    result = capsys.readouterr()
+    assert result.out == "SHUTDOWN\n"
