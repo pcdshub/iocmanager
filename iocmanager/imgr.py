@@ -379,112 +379,6 @@ def args_backcompat(args: list[str], commands: set[str]) -> list[str]:
     return new_args
 
 
-def main() -> int:
-    """
-    Main cli entrypoint for imgr.
-
-    This function parses the cli args, sets up logging,
-    and handles the return codes.
-
-    The fanout is in run_command, the various subcommands are
-    implemented in dedicated functions.
-
-    The main outputs of the cli will be in stdout, log messages and
-    errors will be in stderr.
-
-    Returns
-    -------
-    return_code : int
-        The shell return code for the cli program.
-    """
-    imgr_args = parse_args(sys.argv[1:])
-    if not imgr_args.verbose:
-        logging.basicConfig(level=logging.INFO)
-    elif imgr_args.verbose == 1:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=log_setup.SPAM_LEVEL)
-    try:
-        run_command(imgr_args)
-    except Exception as exc:
-        if imgr_args.verbose:
-            raise
-        else:
-            print(exc)
-            return 1
-    else:
-        return 0
-
-
-def run_command(imgr_args: ImgrArgs):
-    """
-    Main work function. Fans out to the various subcommands.
-
-    Parameters
-    ----------
-    imgr_args : ImgrArgs
-        The structured options chosen by the user.
-    """
-    if imgr_args.hutch:
-        hutch = imgr_args.hutch
-    else:
-        hutch = guess_hutch(
-            host=socket.gethostname(),
-            ioc_name=imgr_args.ioc_name,
-        )
-    config = read_config(hutch)
-    match imgr_args.command:
-        case "status":
-            status_cmd(config=config, ioc_name=imgr_args.ioc_name)
-        case "info":
-            info_cmd(config=config, ioc_name=imgr_args.ioc_name)
-        case "connect":
-            connect_cmd(config=config, ioc_name=imgr_args.ioc_name)
-        case "reboot":
-            reboot_cmd(
-                config=config,
-                ioc_name=imgr_args.ioc_name,
-                reboot_mode=imgr_args.reboot_mode,
-            )
-        case "enable":
-            enable_cmd(config=config, ioc_name=imgr_args.ioc_name, hutch=hutch)
-        case "disable":
-            disable_cmd(config=config, ioc_name=imgr_args.ioc_name, hutch=hutch)
-        case "upgrade" | "dir":
-            upgrade_cmd(
-                config=config,
-                ioc_name=imgr_args.ioc_name,
-                hutch=hutch,
-                upgrade_dir=imgr_args.upgrade_dir,
-            )
-        case "move" | "loc":
-            move_cmd(
-                config=config,
-                ioc_name=imgr_args.ioc_name,
-                hutch=hutch,
-                move_host_port=imgr_args.move_host_port,
-            )
-        case "add":
-            add_cmd(
-                config=config,
-                ioc_name=imgr_args.ioc_name,
-                hutch=hutch,
-                add_loc=imgr_args.add_loc,
-                add_dir=imgr_args.add_dir,
-                add_enable=imgr_args.add_enable,
-                add_disable=imgr_args.add_disable,
-            )
-        case "list":
-            list_cmd(
-                config=config,
-                list_host=imgr_args.list_host,
-                list_enabled=imgr_args.list_enabled,
-                list_disabled=imgr_args.list_disabled,
-            )
-        case other:
-            raise RuntimeError(f"{other} is not a valid imgr command.")
-
-
 # TODO decide if this should be part of another module, may be useful in GUI
 def guess_hutch(host: str, ioc_name: str) -> str:
     """
@@ -973,6 +867,118 @@ def list_cmd(config: Config, list_host: str, list_enabled: bool, list_disabled: 
             print("{ioc_proc.name} ({ioc_proc.alias})")
         else:
             print(ioc_proc.name)
+
+
+def run_command(imgr_args: ImgrArgs):
+    """
+    Main work function. Fans out to the various subcommands.
+
+    Subcommands are expected to raise with clear error messages
+    if they have any issues.
+
+    Their return values will be unused and could optionally be
+    used as unit test aids.
+
+    Parameters
+    ----------
+    imgr_args : ImgrArgs
+        The structured options chosen by the user.
+    """
+    if imgr_args.hutch:
+        hutch = imgr_args.hutch
+    else:
+        hutch = guess_hutch(
+            host=socket.gethostname(),
+            ioc_name=imgr_args.ioc_name,
+        )
+    config = read_config(hutch)
+    match imgr_args.command:
+        case "status":
+            status_cmd(config=config, ioc_name=imgr_args.ioc_name)
+        case "info":
+            info_cmd(config=config, ioc_name=imgr_args.ioc_name)
+        case "connect":
+            connect_cmd(config=config, ioc_name=imgr_args.ioc_name)
+        case "reboot":
+            reboot_cmd(
+                config=config,
+                ioc_name=imgr_args.ioc_name,
+                reboot_mode=imgr_args.reboot_mode,
+            )
+        case "enable":
+            enable_cmd(config=config, ioc_name=imgr_args.ioc_name, hutch=hutch)
+        case "disable":
+            disable_cmd(config=config, ioc_name=imgr_args.ioc_name, hutch=hutch)
+        case "upgrade" | "dir":
+            upgrade_cmd(
+                config=config,
+                ioc_name=imgr_args.ioc_name,
+                hutch=hutch,
+                upgrade_dir=imgr_args.upgrade_dir,
+            )
+        case "move" | "loc":
+            move_cmd(
+                config=config,
+                ioc_name=imgr_args.ioc_name,
+                hutch=hutch,
+                move_host_port=imgr_args.move_host_port,
+            )
+        case "add":
+            add_cmd(
+                config=config,
+                ioc_name=imgr_args.ioc_name,
+                hutch=hutch,
+                add_loc=imgr_args.add_loc,
+                add_dir=imgr_args.add_dir,
+                add_enable=imgr_args.add_enable,
+                add_disable=imgr_args.add_disable,
+            )
+        case "list":
+            list_cmd(
+                config=config,
+                list_host=imgr_args.list_host,
+                list_enabled=imgr_args.list_enabled,
+                list_disabled=imgr_args.list_disabled,
+            )
+        case other:
+            raise RuntimeError(f"{other} is not a valid imgr command.")
+
+
+def main() -> int:
+    """
+    Main cli entrypoint for imgr.
+
+    This function parses the cli args, sets up logging,
+    and handles the return codes.
+
+    The fanout is in run_command, the various subcommands are
+    implemented in dedicated functions.
+
+    The main outputs of the cli will be in stdout, log messages and
+    errors will be in stderr.
+
+    Returns
+    -------
+    return_code : int
+        The shell return code for the cli program.
+    """
+    imgr_args = parse_args(sys.argv[1:])
+    if not imgr_args.verbose:
+        logging.basicConfig(level=logging.INFO)
+    elif imgr_args.verbose == 1:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=log_setup.SPAM_LEVEL)
+    try:
+        run_command(imgr_args)
+    except Exception as exc:
+        if imgr_args.verbose:
+            raise
+        else:
+            print(exc)
+            return 1
+    else:
+        return 0
 
 
 if __name__ == "__main__":
