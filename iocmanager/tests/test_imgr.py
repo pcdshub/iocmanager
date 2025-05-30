@@ -9,10 +9,12 @@ from ..imgr import (
     ensure_iocname,
     get_proc,
     guess_hutch,
+    info_cmd,
     parse_args,
     parse_host_port,
     status_cmd,
 )
+from ..procserv_tools import AutoRestartMode
 from .conftest import ProcServHelper
 
 
@@ -378,7 +380,7 @@ def test_parse_host_port(
 
 def test_status_cmd(procserv: ProcServHelper, capsys: pytest.CaptureFixture):
     """
-    status_cmd should give us the ioc status in stdout
+    status_cmd should give us the ioc status in stdout.
 
     No need to test tons of cases, check_status is sufficiently tested elsewhere.
     """
@@ -395,3 +397,61 @@ def test_status_cmd(procserv: ProcServHelper, capsys: pytest.CaptureFixture):
     status_cmd(config=config, ioc_name=procserv.proc_name)
     result = capsys.readouterr()
     assert result.out == "SHUTDOWN\n"
+
+
+@pytest.mark.parametrize(
+    "alias,disable",
+    (
+        ("", False),
+        ("Coolest Counter Ever", False),
+        ("", True),
+        ("Even Cooler Counter", True),
+    ),
+)
+def test_info_cmd(
+    alias: str, disable: bool, procserv: ProcServHelper, capsys: pytest.CaptureFixture
+):
+    """
+    info_cmd should give us verbose ioc status in stdout.
+
+    No need to test tons of cases, (see test_status_cmd), but there are some
+    special branches for disabled IOCs and IOCs with aliases.
+    """
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=procserv.proc_name,
+            port=procserv.port,
+            host="localhost",
+            path=procserv.startup_dir,
+            alias=alias,
+            disable=disable,
+        )
+    )
+    # This gets us to some of the interesting behavior for disable
+    procserv.set_state_from_start(running=True, mode=AutoRestartMode.OFF)
+    capsys.readouterr()
+    info_cmd(config=config, ioc_name=procserv.proc_name)
+    result = capsys.readouterr()
+    # Let's not tie this test to precise output formats
+    # But let's check to make sure the key info is present
+    assert procserv.proc_name in result.out
+    assert "localhost" in result.out
+    assert str(procserv.port) in result.out
+    assert str(procserv.startup_dir) in result.out
+    if alias:
+        assert alias in result.out
+    assert "RUNNING" in result.out
+    if disable:
+        # This is a flabbergasted DISABLED, BUT RUNNING?!? message
+        # But the specifics are subject to change
+        assert "DISABLE" in result.out
+        # One more case: if the IOC goes down it should say
+        # DISABLED still, but not say running, and not NO CONNECT
+        procserv.close_procserv()
+        procserv.wait_procserv_closed(timeout=1.0)
+        capsys.readouterr()
+        info_cmd(config=config, ioc_name=procserv.proc_name)
+        result2 = capsys.readouterr()
+        assert "RUNNING" not in result2.out
+        assert "DISABLE" in result2.out

@@ -44,7 +44,10 @@ class ProcServStatus(StrEnum):
     - RUNNING: the IOC is running inside the procServ
     - SHUTDOWN: the IOC is not running, but the procServ process is
     - DOWN: the host is not accessible
-    - ERROR: the status could not be determined
+    - ERROR: we connected to telnet, but the status could not be determined,
+        sometimes this means we connected right before the IOC was killed,
+        but it can also mean there's not a procServ running on the port
+        or something similar.
     """
 
     INIT = "INITIALIZE WAIT"
