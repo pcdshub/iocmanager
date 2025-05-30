@@ -1,7 +1,14 @@
 import pytest
 
 from ..config import Config, IOCProc
-from ..imgr import ImgrArgs, args_backcompat, get_proc, guess_hutch, parse_args
+from ..imgr import (
+    ImgrArgs,
+    args_backcompat,
+    ensure_iocname,
+    get_proc,
+    guess_hutch,
+    parse_args,
+)
 
 
 @pytest.mark.parametrize(
@@ -143,7 +150,7 @@ from ..imgr import ImgrArgs, args_backcompat, get_proc, guess_hutch, parse_args
     ),
 )
 def test_parse_args_good(cli_text: str, expected: ImgrArgs):
-    """Test all normal and backcompat uses of the parser alone."""
+    """parse_args should succeed and behave as expected for well-formed args"""
     assert _parse_test_invocation(cli_text) == expected
 
 
@@ -169,13 +176,15 @@ def test_parse_args_good(cli_text: str, expected: ImgrArgs):
     ),
 )
 def test_parse_args_errors(cli_text: str):
-    """Test that certain cli invocations are errors."""
+    """parse_args should fail if the user passes invalid args"""
     with pytest.raises(SystemExit):
         _parse_test_invocation(cli_text)
 
 
 def _parse_test_invocation(cli_text: str) -> ImgrArgs:
-    """Ensure both parser tests invoke the same way."""
+    """
+    If both parse_args tests share code, we can make sure we're testing them fairly.
+    """
     return parse_args(cli_text.split(" ")[1:])
 
 
@@ -196,7 +205,7 @@ def _parse_test_invocation(cli_text: str) -> ImgrArgs:
     ),
 )
 def test_args_backcompat(args: list[str], expected: list[str]):
-    """Test the backcompat transformations directly."""
+    """args_backcompat should rearrange the args to make old varaints like new"""
     assert args_backcompat(args=args, commands={"CMD1", "CMD2", "CMD3"}) == expected
 
 
@@ -215,7 +224,7 @@ def test_args_backcompat(args: list[str], expected: list[str]):
 )
 def test_guess_hutch(host: str, ioc_name: str, expected: str):
     """
-    Check that guess_hutch works
+    guess_hutch should pick valid hutches from the available options
 
     Note: this relies on there being valid hutches "pytest" and "second_hutch"
     as defined by the contents of the pyps_root/config folder.
@@ -228,6 +237,7 @@ def test_guess_hutch(host: str, ioc_name: str, expected: str):
 
 
 def test_get_proc_valid():
+    """get_proc should find the process"""
     config = Config(path="")
     proc = IOCProc(name="test", port=0, host="", path="")
     config.add_proc(proc)
@@ -235,6 +245,18 @@ def test_get_proc_valid():
 
 
 def test_get_proc_invalid():
+    """get_proc should raise if it cannot find the process"""
     config = Config(path="")
     with pytest.raises(ValueError):
         get_proc(config, "test")
+
+
+def test_ensure_iocname_valid():
+    """ensure_iocname should pass for a generic name"""
+    ensure_iocname("test")
+
+
+def test_ensure_iocname_invalid():
+    """ensure_iocname should fail for empty string"""
+    with pytest.raises(ValueError):
+        ensure_iocname("")
