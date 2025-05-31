@@ -1,2 +1,2 @@
-pyca
+pyepics
 qtpy

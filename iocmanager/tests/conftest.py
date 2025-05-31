@@ -316,3 +316,21 @@ def ctrl(char: str) -> bytes:
     if len(char) != 1:
         raise ValueError("Expected a length 1 string")
     return bytes([ord(char.lower()) - ord("a") + 1])
+
+
+@pytest.fixture(scope="function")
+def pvs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """
+    Run an IOC, return a list of PVs
+    """
+    monkeypatch.setenv("EPICS_CA_SERVER_PORT", "5066")
+    monkeypatch.setenv("EPICS_CA_AUTO_ADDR_LIST", "NO")
+    monkeypatch.setenv("EPICS_CA_ADDR_LIST", "localhost")
+
+    proc = subprocess.Popen(
+        ["python3", str(TESTS_PATH / "iocs" / "caproto" / "sysreset.py")]
+    )
+
+    yield ["IOC:PYTEST:01:SYSRESET"]
+
+    proc.kill()

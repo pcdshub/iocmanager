@@ -14,7 +14,7 @@ import sys
 from dataclasses import dataclass
 from getpass import getuser
 
-from psp.Pv import Pv
+from epics import caput
 
 from . import log_setup
 from . import procserv_tools as pt
@@ -651,7 +651,7 @@ def reboot_cmd(config: Config, ioc_name: str, reboot_mode: str):
     match reboot_mode.lower():
         case "soft":
             base = get_base_name(ioc_name)
-            Pv(base + ":SYSRESET", initialize=True).put(1, timeout=1.0)
+            caput(base + ":SYSRESET", 1)
         case "hard":
             ioc_proc = get_proc(config=config, ioc_name=ioc_name)
             restart_proc(ioc_proc.host, ioc_proc.port)

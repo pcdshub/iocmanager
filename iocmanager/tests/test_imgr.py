@@ -1,7 +1,9 @@
 import io
 import sys
+import time
 
 import pytest
+from epics import PV
 
 from .. import imgr
 from ..config import Config, IOCProc
@@ -16,9 +18,10 @@ from ..imgr import (
     info_cmd,
     parse_args,
     parse_host_port,
+    reboot_cmd,
     status_cmd,
 )
-from ..procserv_tools import AutoRestartMode
+from ..procserv_tools import AutoRestartMode, ProcServStatus, check_status
 from .conftest import ProcServHelper
 
 
@@ -513,3 +516,87 @@ def test_connect_cmd_bad(capfdbinary: pytest.CaptureFixture):
         connect_cmd(config=config, ioc_name=ioc_name)
     result = capfdbinary.readouterr()
     assert b"Connected to localhost" not in result.out
+
+
+def test_reboot_cmd_soft(pvs):
+    """
+    reboot_cmd should write to the SYSRESET PV in soft mode
+    """
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name="ioc1",
+            port=0,
+            host="localhost",
+            path="",
+        )
+    )
+    # PV starts at 0
+    pvname = [pv for pv in pvs if "SYSRESET" in pv][0]
+    pv = PV(pvname)
+    # Chill and wait for test IOC to start
+    assert pv.get(timeout=10.0) == 0
+    # Restart
+    reboot_cmd(config=config, ioc_name="ioc1", reboot_mode="soft")
+    for _ in range(10):
+        if pv.get() == 1:
+            break
+        time.sleep(0.1)
+    assert pv.get() == 1
+
+
+@pytest.mark.parametrize(
+    "running,mode",
+    (
+        (True, AutoRestartMode.OFF),
+        (True, AutoRestartMode.ON),
+        (True, AutoRestartMode.ONESHOT),
+        (False, AutoRestartMode.OFF),
+        (False, AutoRestartMode.ON),
+        (False, AutoRestartMode.ONESHOT),
+    ),
+)
+def test_reboot_cmd_hard(
+    procserv: ProcServHelper, running: bool, mode: AutoRestartMode
+):
+    """
+    reboot_cmd should telnet and send commands in hard mode
+
+    This could probably be more thorough, but I'll trust that
+    restart_proc is sufficiently tested elsewhere.
+    """
+    procserv.set_state_from_start(running=running, mode=mode)
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=procserv.proc_name,
+            port=procserv.port,
+            host="localhost",
+            path=procserv.startup_dir,
+        )
+    )
+    # Check that we're as we expect
+    status = check_status(host="localhost", port=procserv.port, name=procserv.proc_name)
+    assert status.autorestart_mode == mode
+    if running:
+        assert status.status == ProcServStatus.RUNNING
+    else:
+        assert status.status == ProcServStatus.SHUTDOWN
+    # Reboot
+    reboot_cmd(config=config, ioc_name=procserv.proc_name, reboot_mode="hard")
+    # Wait for the dust to settle
+    time.sleep(1.0)
+    new_status = check_status(
+        host="localhost", port=procserv.port, name=procserv.proc_name
+    )
+    # Check that we're running and in the same mode
+    assert new_status.autorestart_mode == mode
+    assert new_status.status == ProcServStatus.RUNNING
+
+
+def test_reboot_cmd_other():
+    """
+    Any other option should raise a ValueError
+    """
+    with pytest.raises(ValueError):
+        reboot_cmd(config=Config(""), ioc_name="anything", reboot_mode="wild")
