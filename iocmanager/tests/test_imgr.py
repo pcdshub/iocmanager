@@ -11,6 +11,7 @@ from ..imgr import (
     ImgrArgs,
     args_backcompat,
     connect_cmd,
+    disable_cmd,
     enable_cmd,
     ensure_auth,
     ensure_iocname,
@@ -681,4 +682,50 @@ def test_enable_cmd(
         with pytest.raises(RuntimeError):
             enable_cmd(config=config, ioc_name=ioc_name, hutch=hutch)
         assert config.procs[ioc_name].disable
+        assert len(call_history) == 0
+
+
+@pytest.mark.parametrize(
+    "user,ioc_name,should_run",
+    (
+        ("any_user", "any_ioc", False),
+        ("imgr_test", "any_ioc", True),
+        ("any_user", "just_a_name", True),
+    ),
+)
+def test_disable_cmd(
+    user: str, ioc_name: str, should_run: bool, monkeypatch: pytest.MonkeyPatch
+):
+    """
+    disable_cmd should disable the ioc.
+
+    Authentication can be done either by user or by special
+    """
+    setup_user(username=user, monkeypatch=monkeypatch)
+    call_history = setup_mock_write_apply(monkeypatch=monkeypatch)
+
+    hutch = "pytest"
+
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=ioc_name,
+            port=30001,
+            host="localhost",
+            path="",
+            disable=False,
+        )
+    )
+    assert not config.procs[ioc_name].disable
+    if should_run:
+        disable_cmd(config=config, ioc_name=ioc_name, hutch=hutch)
+        assert config.procs[ioc_name].disable
+        assert len(call_history) == 1
+        assert call_history[0][0] == config
+        assert call_history[0][1] == ioc_name
+        assert call_history[0][2] == hutch
+    else:
+        with pytest.raises(RuntimeError):
+            disable_cmd(config=config, ioc_name=ioc_name, hutch=hutch)
+        assert not config.procs[ioc_name].disable
         assert len(call_history) == 0
