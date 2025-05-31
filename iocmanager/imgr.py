@@ -681,7 +681,7 @@ def disable_cmd(config: Config, ioc_name: str, hutch: str):
     """
     Implementation of "imgr ioc_name disable".
 
-    This command enables an IOC in the config and starts it.
+    This command disables an IOC in the config and kills it.
 
     Parameters
     ----------
