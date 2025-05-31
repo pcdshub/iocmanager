@@ -659,6 +659,25 @@ def reboot_cmd(config: Config, ioc_name: str, reboot_mode: str):
             raise ValueError(f"Invalid reboot mode {other}, must be soft or hard.")
 
 
+def _write_apply(config: Config, ioc_name: str, hutch: str):
+    """
+    Super common write + apply combination.
+
+    Pulled out for ease of testing.
+    """
+    write_config(cfgname=hutch, config=config)
+    apply_config(cfg=hutch, verify=None, ioc=ioc_name)
+
+
+def _apply_disable(config: Config, ioc_name: str, hutch: str, disable: bool):
+    """Shared routines between enable_cmd and disable_cmd."""
+    ensure_iocname(ioc_name)
+    ensure_auth(hutch=hutch, ioc_name=ioc_name, special_ok=True)
+    ioc_proc = get_proc(config=config, ioc_name=ioc_name)
+    ioc_proc.disable = disable
+    _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
+
+
 def enable_cmd(config: Config, ioc_name: str, hutch: str):
     """
     Implementation of "imgr ioc_name enable".
@@ -695,16 +714,6 @@ def disable_cmd(config: Config, ioc_name: str, hutch: str):
     _apply_disable(config=config, ioc_name=ioc_name, hutch=hutch, disable=True)
 
 
-def _apply_disable(config: Config, ioc_name: str, hutch: str, disable: bool):
-    """Shared routines between enable_cmd and disable_cmd."""
-    ensure_iocname(ioc_name)
-    ensure_auth(hutch=hutch, ioc_name=ioc_name, special_ok=True)
-    ioc_proc = get_proc(config=config, ioc_name=ioc_name)
-    ioc_proc.disable = disable
-    write_config(cfgname=hutch, config=config)
-    apply_config(cfg=hutch, verify=None, ioc=ioc_name)
-
-
 def upgrade_cmd(config: Config, ioc_name: str, hutch: str, upgrade_dir: str):
     """
     Implementation of "imgr ioc_name upgrade --dir directory"
@@ -731,8 +740,7 @@ def upgrade_cmd(config: Config, ioc_name: str, hutch: str, upgrade_dir: str):
         raise RuntimeError(f"{upgrade_dir} does not have an st.cmd for {ioc_name}!")
     ioc_proc = get_proc(config=config, ioc_name=ioc_name)
     ioc_proc.path = upgrade_dir
-    write_config(cfgname=hutch, config=config)
-    apply_config(cfg=hutch, verify=None, ioc=ioc_name)
+    _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
 
 
 def move_cmd(config: Config, ioc_name: str, hutch: str, move_host_port: str):
@@ -763,8 +771,7 @@ def move_cmd(config: Config, ioc_name: str, hutch: str, move_host_port: str):
         raise RuntimeError(
             f"Port conflict when moving {ioc_name} to {host}:{port}, not moved."
         )
-    write_config(cfgname=hutch, config=config)
-    apply_config(cfg=hutch, verify=None, ioc=ioc_name)
+    _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
 
 
 def add_cmd(
@@ -829,8 +836,7 @@ def add_cmd(
         raise RuntimeError(
             f"Port conflict when adding {ioc_name} at {host}:{port}, aborting."
         )
-    write_config(cfgname=hutch, config=config)
-    apply_config(cfg=hutch, verify=None, ioc=ioc_name)
+    _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
 
 
 def list_cmd(config: Config, list_host: str, list_enabled: bool, list_disabled: bool):

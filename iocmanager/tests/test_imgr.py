@@ -11,6 +11,7 @@ from ..imgr import (
     ImgrArgs,
     args_backcompat,
     connect_cmd,
+    enable_cmd,
     ensure_auth,
     ensure_iocname,
     get_proc,
@@ -276,6 +277,15 @@ def test_ensure_iocname_invalid():
         ensure_iocname("")
 
 
+def setup_user(username: str, monkeypatch: pytest.MonkeyPatch):
+    """Helper for all the tests that need to spoof a username."""
+
+    def fake_get_user():
+        return username
+
+    monkeypatch.setattr(imgr, "getuser", fake_get_user)
+
+
 # Compare parameters to pyps_root/config/iocmanager.auth and iocmanager.special
 good_user = "imgr_test"
 bad_user = "not_authorized"
@@ -319,11 +329,8 @@ def test_ensure_auth(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """ensure_auth should raise if the user is not authorized"""
+    setup_user(username=user, monkeypatch=monkeypatch)
 
-    def fake_get_user():
-        return user
-
-    monkeypatch.setattr(imgr, "getuser", fake_get_user)
     hutch = "pytest"
     if expect_pass:
         ensure_auth(
@@ -595,8 +602,83 @@ def test_reboot_cmd_hard(
 
 
 def test_reboot_cmd_other():
-    """
-    Any other option should raise a ValueError
-    """
+    """any other option should raise a ValueError"""
     with pytest.raises(ValueError):
         reboot_cmd(config=Config(""), ioc_name="anything", reboot_mode="wild")
+
+
+def setup_mock_write_apply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[Config, str, str]]:
+    """
+    Test subroutine for all commands that would write the config and apply.
+
+    It's really slow to do this a lot and it takes a lot of overhead.
+    Trust that write_config and apply_config were tested sufficiently elsewhere,
+    instead use this to keep track of how many times _write_apply was called
+    and with what arguments.
+
+    Parameters
+    ----------
+    monkeypatch : MonkeyPatch
+        The monkeypatch test fixture for the current test.
+
+    returns
+    -------
+    call_history : list[tuple[Config, str, str]]
+        The arguments used to call _write_apply.
+    """
+    call_history = []
+
+    def mock_write_apply(config: Config, ioc_name: str, hutch: str):
+        call_history.append((config, ioc_name, hutch))
+
+    monkeypatch.setattr(imgr, "_write_apply", mock_write_apply)
+    return call_history
+
+
+# Pick one failure case and a few simple success cases, not as thorough as auth test
+@pytest.mark.parametrize(
+    "user,ioc_name,should_run",
+    (
+        ("any_user", "any_ioc", False),
+        ("imgr_test", "any_ioc", True),
+        ("any_user", "just_a_name", True),
+    ),
+)
+def test_enable_cmd(
+    user: str, ioc_name: str, should_run: bool, monkeypatch: pytest.MonkeyPatch
+):
+    """
+    enable_cmd should enable the ioc.
+
+    Authentication can be done either by user or by special
+    """
+    setup_user(username=user, monkeypatch=monkeypatch)
+    call_history = setup_mock_write_apply(monkeypatch=monkeypatch)
+
+    hutch = "pytest"
+
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=ioc_name,
+            port=30001,
+            host="localhost",
+            path="",
+            disable=True,
+        )
+    )
+    assert config.procs[ioc_name].disable
+    if should_run:
+        enable_cmd(config=config, ioc_name=ioc_name, hutch=hutch)
+        assert not config.procs[ioc_name].disable
+        assert len(call_history) == 1
+        assert call_history[0][0] == config
+        assert call_history[0][1] == ioc_name
+        assert call_history[0][2] == hutch
+    else:
+        with pytest.raises(RuntimeError):
+            enable_cmd(config=config, ioc_name=ioc_name, hutch=hutch)
+        assert config.procs[ioc_name].disable
+        assert len(call_history) == 0
