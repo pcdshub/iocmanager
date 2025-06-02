@@ -18,6 +18,7 @@ from ..imgr import (
     get_proc,
     guess_hutch,
     info_cmd,
+    move_cmd,
     parse_args,
     parse_host_port,
     reboot_cmd,
@@ -824,4 +825,72 @@ def test_upgrade_cmd(
                 config=config, ioc_name=ioc_name, hutch=hutch, upgrade_dir=upgrade_dir
             )
         assert config.procs[ioc_name].path == starting_dir
+        assert len(call_history) == 0
+
+
+@pytest.mark.parametrize(
+    "user,host_port,host,port,should_run",
+    (
+        ("imgr_test", "pstest:40000", "pstest", 40000, True),
+        ("imgr_test", "original:40000", "original", 40000, True),
+        ("imgr_test", "pstest:30001", "pstest", 30001, True),
+        ("asdfsd", "pstest:40000", "pstest", 40000, False),
+    ),
+)
+def test_move_cmd(
+    user: str,
+    host_port: str,
+    host: str,
+    port: int,
+    should_run: bool,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """
+    move_cmd should move an IOC's host and port
+
+    Only authenticated users can do this
+    """
+
+    setup_user(username=user, monkeypatch=monkeypatch)
+    call_history = setup_mock_write_apply(monkeypatch=monkeypatch)
+
+    ioc_name = "move_me"
+    hutch = "pytest"
+    starting_host = "original"
+    starting_port = 30001
+
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=ioc_name,
+            port=starting_port,
+            host=starting_host,
+            path="",
+        )
+    )
+    assert config.procs[ioc_name].host == starting_host
+    assert config.procs[ioc_name].port == starting_port
+    if should_run:
+        move_cmd(
+            config=config,
+            ioc_name=ioc_name,
+            hutch=hutch,
+            move_host_port=host_port,
+        )
+        assert config.procs[ioc_name].host == host
+        assert config.procs[ioc_name].port == port
+        assert len(call_history) == 1
+        assert call_history[0][0] == config
+        assert call_history[0][1] == ioc_name
+        assert call_history[0][2] == hutch
+    else:
+        with pytest.raises(RuntimeError):
+            move_cmd(
+                config=config,
+                ioc_name=ioc_name,
+                hutch=hutch,
+                move_host_port=host_port,
+            )
+        assert config.procs[ioc_name].host == starting_host
+        assert config.procs[ioc_name].port == starting_port
         assert len(call_history) == 0
