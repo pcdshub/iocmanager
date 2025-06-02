@@ -22,6 +22,7 @@ from ..imgr import (
     parse_host_port,
     reboot_cmd,
     status_cmd,
+    upgrade_cmd,
 )
 from ..procserv_tools import AutoRestartMode, ProcServStatus, check_status
 from .conftest import ProcServHelper
@@ -292,7 +293,7 @@ good_user = "imgr_test"
 bad_user = "not_authorized"
 special_ioc = "has_two_variants"
 normal_ioc = "nonono"
-special_version = "ioc/pytest/normal"
+special_version = "ioc/variant/opt1"
 normal_version = "badbadbad"
 
 
@@ -728,4 +729,99 @@ def test_disable_cmd(
         with pytest.raises(RuntimeError):
             disable_cmd(config=config, ioc_name=ioc_name, hutch=hutch)
         assert not config.procs[ioc_name].disable
+        assert len(call_history) == 0
+
+
+# Some complications here:
+# - super special directory-specific special auth
+# - the ioc actually needs a real st.cmd file or this will be mad at you
+# - we can only change paths for things that already exist in the config
+auth_user = "imgr_test"  # Can do any change (to a real dir)
+other_user = "asdfsdf"  # Can only do special permitted changes
+good_ioc = "has_two_variants"  # In special, opt1 and opt2 are permitted
+bad_ioc1 = "just_a_name"  # In special, but not for dir changes!
+bad_ioc2 = "asdfsdf"  # Not in special
+real_ver = "ioc/variant/real"  # Should pass for auth (st.cmd)
+good_ver = "ioc/variant/opt1"  # Should pass for special (st.cmd)
+bad_ver1 = "ioc/variant/opt2"  # This dir doesn't have st.cmd so it must be rejected
+bad_ver2 = "ioc/variant/asdfsdf"  # Does not exist
+
+
+@pytest.mark.parametrize(
+    "user,ioc_name,upgrade_dir,should_run",
+    (
+        # Variants with authenticated user: real IOCs should pass, fake should not
+        (auth_user, good_ioc, real_ver, True),
+        (auth_user, good_ioc, good_ver, True),
+        (auth_user, good_ioc, bad_ver1, False),
+        (auth_user, good_ioc, bad_ver2, False),
+        (auth_user, bad_ioc1, real_ver, True),
+        (auth_user, bad_ioc1, good_ver, True),
+        (auth_user, bad_ioc1, bad_ver1, False),
+        (auth_user, bad_ioc1, bad_ver2, False),
+        (auth_user, bad_ioc2, real_ver, True),
+        (auth_user, bad_ioc2, good_ver, True),
+        (auth_user, bad_ioc2, bad_ver1, False),
+        (auth_user, bad_ioc2, bad_ver2, False),
+        # Variants with other user: real IOCs on the special list with dir should pass
+        (other_user, good_ioc, real_ver, False),
+        (other_user, good_ioc, good_ver, True),  # Note: only one that's all good
+        (other_user, good_ioc, bad_ver1, False),
+        (other_user, good_ioc, bad_ver2, False),
+        (other_user, bad_ioc1, real_ver, False),
+        (other_user, bad_ioc1, good_ver, False),
+        (other_user, bad_ioc1, bad_ver1, False),
+        (other_user, bad_ioc1, bad_ver2, False),
+        (other_user, bad_ioc2, real_ver, False),
+        (other_user, bad_ioc2, good_ver, False),
+        (other_user, bad_ioc2, bad_ver1, False),
+        (other_user, bad_ioc2, bad_ver2, False),
+    ),
+)
+def test_upgrade_cmd(
+    user: str,
+    ioc_name: str,
+    upgrade_dir: str,
+    should_run: bool,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """
+    upgrade_cmd should change the ioc's directory.
+
+    Authentication can be done either by user or by special with the specified version
+    present in the special file.
+
+    Expect failures on bad auth or on picking a release without a st.cmd
+    """
+    setup_user(username=user, monkeypatch=monkeypatch)
+    call_history = setup_mock_write_apply(monkeypatch=monkeypatch)
+
+    hutch = "pytest"
+    starting_dir = "original"
+
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=ioc_name,
+            port=30001,
+            host="localhost",
+            path=starting_dir,
+        )
+    )
+    assert config.procs[ioc_name].path == starting_dir
+    if should_run:
+        upgrade_cmd(
+            config=config, ioc_name=ioc_name, hutch=hutch, upgrade_dir=upgrade_dir
+        )
+        assert config.procs[ioc_name].path == upgrade_dir
+        assert len(call_history) == 1
+        assert call_history[0][0] == config
+        assert call_history[0][1] == ioc_name
+        assert call_history[0][2] == hutch
+    else:
+        with pytest.raises(RuntimeError):
+            upgrade_cmd(
+                config=config, ioc_name=ioc_name, hutch=hutch, upgrade_dir=upgrade_dir
+            )
+        assert config.procs[ioc_name].path == starting_dir
         assert len(call_history) == 0

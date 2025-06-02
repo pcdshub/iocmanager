@@ -57,7 +57,7 @@ def procserv() -> Iterator[ProcServHelper]:
     Closes the procServ afterwards.
     """
     proc_name = "counter"
-    startup_dir = str(TESTS_PATH / "iocs" / "counter")
+    startup_dir = str(TESTS_PATH / "ioc" / "counter")
     command = "./st.cmd"
     port = 34567
 
@@ -328,7 +328,7 @@ def pvs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
     monkeypatch.setenv("EPICS_CA_ADDR_LIST", "localhost")
 
     proc = subprocess.Popen(
-        ["python3", str(TESTS_PATH / "iocs" / "caproto" / "sysreset.py")]
+        ["python3", str(TESTS_PATH / "ioc" / "caproto" / "sysreset.py")]
     )
 
     yield ["IOC:PYTEST:01:SYSRESET"]

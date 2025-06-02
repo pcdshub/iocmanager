@@ -47,10 +47,10 @@ def test_normalize_path_absdir():
 
 
 dname_opts = (
-    "iocs/common_ioc",
-    "iocs/common_ioc/children",
-    "iocs/common_ioc/children/build",
-    "iocs/common_ioc/children/build/iocBoot/child_ioc",
+    "ioc/common_ioc",
+    "ioc/common_ioc/children",
+    "ioc/common_ioc/children/build",
+    "ioc/common_ioc/children/build/iocBoot/child_ioc",
 )
 bopts = (True, False)
 
@@ -135,7 +135,7 @@ def test_epics_readlines():
         "I guess\n",
     ]
 
-    assert epics_readlines("iocs/test_read_all.txt") == my_lines
-    assert epics_readlines(str(TESTS_FOLDER / "iocs" / "test_read_all.txt")) == my_lines
+    assert epics_readlines("ioc/test_read_all.txt") == my_lines
+    assert epics_readlines(str(TESTS_FOLDER / "ioc" / "test_read_all.txt")) == my_lines
     with pytest.raises(OSError):
         epics_readlines("defo_not_a_path")

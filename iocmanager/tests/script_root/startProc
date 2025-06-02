@@ -13,5 +13,5 @@ CMD="$4"
 echo "Starting fake IOC ${IOC} on port ${PORT} for hutch ${CFG} using cmd ${CMD}"
 
 THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-cd "${THIS_DIR}/../iocs/${IOC}" || exit
+cd "${THIS_DIR}/../ioc/${IOC}" || exit
 $CMD

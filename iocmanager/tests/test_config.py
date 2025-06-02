@@ -93,8 +93,8 @@ def test_check_auth():
 
 def test_check_special_two_variants():
     # We should get True for the two versions we have but not for others
-    assert check_special("has_two_variants", "pytest", "ioc/pytest/normal")
-    assert check_special("has_two_variants", "pytest", "ioc/pytest/other")
+    assert check_special("has_two_variants", "pytest", "ioc/variant/opt1")
+    assert check_special("has_two_variants", "pytest", "ioc/variant/opt2")
     assert not check_special("has_two_variants", "pytest", "what_the_heck")
 
 
