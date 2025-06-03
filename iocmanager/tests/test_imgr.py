@@ -9,6 +9,7 @@ from .. import imgr
 from ..config import Config, IOCProc
 from ..imgr import (
     ImgrArgs,
+    add_cmd,
     args_backcompat,
     connect_cmd,
     disable_cmd,
@@ -893,4 +894,109 @@ def test_move_cmd(
             )
         assert config.procs[ioc_name].host == starting_host
         assert config.procs[ioc_name].port == starting_port
+        assert len(call_history) == 0
+
+
+@pytest.mark.parametrize(
+    "user,add_enable,add_disable,same_port,same_name,should_run",
+    (
+        # The normal good cases
+        ("imgr_test", True, False, False, False, True),
+        ("imgr_test", False, True, False, False, True),
+        # Each possible bad case in isolation
+        # Everything is right except the user
+        ("bad_user", True, False, False, False, False),
+        # Neither enable nor disable
+        ("imgr_test", False, False, False, False, False),
+        # Both enable and disable
+        ("imgr_test", True, True, False, False, False),
+        # Port conflict
+        ("imgr_test", True, False, True, False, False),
+        # Name conflict
+        ("imgr_test", True, False, False, True, False),
+    ),
+)
+def test_add_cmd(
+    user: str,
+    add_enable: bool,
+    add_disable: bool,
+    same_port: bool,
+    same_name: bool,
+    should_run: bool,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """
+    add_cmd should create a new IOC
+
+    Only authenticated users can do this
+
+    This should fail for various inputs, such as:
+    - ambiguous enable/disable
+    - re-using an existing host/port combination
+    - adding something without a stcmd
+    - addding the same name again
+    """
+
+    setup_user(username=user, monkeypatch=monkeypatch)
+    call_history = setup_mock_write_apply(monkeypatch=monkeypatch)
+
+    ioc_name = "add_me"
+    ioc_dir = "ioc/counter"
+    hutch = "pytest"
+    host = "test_host"
+    other_port = 30001
+    if same_port:
+        new_port = other_port
+    else:
+        new_port = other_port + 1
+    if same_name:
+        other_name = ioc_name
+    else:
+        other_name = "already_there"
+
+    config = Config("")
+    config.add_proc(
+        IOCProc(
+            name=other_name,
+            port=other_port,
+            host=host,
+            path="",
+        )
+    )
+    if same_name:
+        assert ioc_name in config.procs
+    else:
+        assert ioc_name not in config.procs
+    if should_run:
+        add_cmd(
+            config=config,
+            ioc_name=ioc_name,
+            hutch=hutch,
+            add_loc=f"{host}:{new_port}",
+            add_dir=ioc_dir,
+            add_enable=add_enable,
+            add_disable=add_disable,
+        )
+        assert config.procs[ioc_name].name == ioc_name
+        assert config.procs[ioc_name].host == host
+        assert config.procs[ioc_name].port == new_port
+        assert len(call_history) == 1
+        assert call_history[0][0] == config
+        assert call_history[0][1] == ioc_name
+        assert call_history[0][2] == hutch
+    else:
+        with pytest.raises((RuntimeError, ValueError)):
+            add_cmd(
+                config=config,
+                ioc_name=ioc_name,
+                hutch=hutch,
+                add_loc=f"{host}:{new_port}",
+                add_dir=ioc_dir,
+                add_enable=add_enable,
+                add_disable=add_disable,
+            )
+        if same_name:
+            assert ioc_name in config.procs
+        else:
+            assert ioc_name not in config.procs
         assert len(call_history) == 0

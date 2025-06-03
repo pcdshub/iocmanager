@@ -145,6 +145,8 @@ class Config:
     mtime: float = 0.0
 
     def add_proc(self, proc: IOCProc) -> None:
+        if proc.name in self.procs:
+            raise ValueError(f"IOC named {proc.name} already exists!")
         self.procs[proc.name] = proc
         if proc.host not in self.hosts:
             self.hosts.append(proc.host)

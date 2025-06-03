@@ -809,17 +809,19 @@ def add_cmd(
     """
     ensure_iocname(ioc_name)
     ensure_auth(hutch=hutch, ioc_name=ioc_name, special_ok=False)
-    if ioc_name in config.procs:
-        raise ValueError(f"IOC {ioc_name} already exists in hutch {hutch}!")
     if not has_stcmd(directory=add_dir, ioc_name=ioc_name):
         raise RuntimeError(f"{add_dir} does not have an st.cmd for {ioc_name}!")
-    host, port = parse_host_port(config=config, host_port=add_loc)
-    if add_enable:
+    if not add_enable ^ add_disable:
+        raise ValueError("Must provide exactly one of --enable or --disable.")
+    elif add_enable:
         disable = False
     elif add_disable:
         disable = True
     else:
-        raise ValueError("Must provide --enable or --disable.")
+        raise RuntimeError("Invalid codepath?")
+
+    host, port = parse_host_port(config=config, host_port=add_loc)
+
     config.add_proc(
         IOCProc(
             name=ioc_name,
@@ -833,6 +835,7 @@ def add_cmd(
         )
     )
     if not config.validate():
+        del config.procs[ioc_name]
         raise RuntimeError(
             f"Port conflict when adding {ioc_name} at {host}:{port}, aborting."
         )
