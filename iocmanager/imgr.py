@@ -873,7 +873,7 @@ def list_cmd(config: Config, list_host: str, list_enabled: bool, list_disabled: 
             continue
         # We're through the filters, show the name
         if ioc_proc.alias:
-            print("{ioc_proc.name} ({ioc_proc.alias})")
+            print(f"{ioc_proc.name} ({ioc_proc.alias})")
         else:
             print(ioc_proc.name)
 

@@ -19,6 +19,7 @@ from ..imgr import (
     get_proc,
     guess_hutch,
     info_cmd,
+    list_cmd,
     move_cmd,
     parse_args,
     parse_host_port,
@@ -1000,3 +1001,106 @@ def test_add_cmd(
         else:
             assert ioc_name not in config.procs
         assert len(call_history) == 0
+
+
+@pytest.mark.parametrize(
+    "list_host,list_enabled,list_disabled",
+    (
+        ("", True, False),
+        ("", False, True),
+        ("", False, False),
+        ("one", True, False),
+        ("one", False, True),
+        ("one", False, False),
+    ),
+)
+def test_list_cmd(
+    list_host: str,
+    list_enabled: bool,
+    list_disabled: bool,
+    capsys: pytest.CaptureFixture,
+):
+    """
+    list_cmd shows the names of configured IOCs
+
+    We can filter the list by host, by enabled, by disabled or not at all.
+    Combinations of filters except enabled + disabled are valid.
+    """
+    config = Config("")
+
+    config.add_proc(
+        IOCProc(
+            name="basic1",
+            port=30001,
+            host="one",
+            path="",
+        )
+    )
+    config.add_proc(
+        IOCProc(
+            name="basic2",
+            port=30001,
+            host="two",
+            path="",
+        )
+    )
+    config.add_proc(
+        IOCProc(
+            name="disa1",
+            port=30002,
+            host="one",
+            path="",
+        )
+    )
+    config.add_proc(
+        IOCProc(
+            name="disa2",
+            port=30002,
+            host="two",
+            path="",
+        )
+    )
+    config.add_proc(
+        IOCProc(
+            name="aliased1",
+            port=30003,
+            host="one",
+            path="",
+            alias="COOL",
+        )
+    )
+    config.add_proc(
+        IOCProc(
+            name="aliased2",
+            port=30003,
+            host="two",
+            path="",
+            alias="BEANS",
+        )
+    )
+    capsys.readouterr()
+    list_cmd(
+        config=config,
+        list_host=list_host,
+        list_enabled=list_enabled,
+        list_disabled=list_disabled,
+    )
+    result = capsys.readouterr()
+    all_names = set(config.procs)
+    exclude_names = set()
+    for proc in config.procs.values():
+        if list_host and list_host != proc.host:
+            exclude_names.add(proc.name)
+        if list_disabled and not proc.disable:
+            exclude_names.add(proc.name)
+        if list_enabled and proc.disable:
+            exclude_names.add(proc.name)
+    include_names = all_names - exclude_names
+    for name in include_names:
+        assert name in result.out
+        if config.procs[name].alias:
+            assert config.procs[name].alias in result.out
+    for name in exclude_names:
+        assert name not in result.out
+        if config.procs[name].alias:
+            assert config.procs[name].alias not in result.out
