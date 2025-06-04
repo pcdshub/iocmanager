@@ -1,5 +1,7 @@
 import dataclasses
 import io
+import itertools
+import logging
 import socket
 import sys
 import time
@@ -8,7 +10,7 @@ from unittest.mock import Mock
 import pytest
 from epics import PV
 
-from .. import imgr
+from .. import imgr, log_setup
 from ..config import Config, IOCProc, read_config
 from ..imgr import (
     ImgrArgs,
@@ -23,6 +25,7 @@ from ..imgr import (
     guess_hutch,
     info_cmd,
     list_cmd,
+    main,
     move_cmd,
     parse_args,
     parse_host_port,
@@ -1254,3 +1257,46 @@ def test_run_command_bad_command(monkeypatch: pytest.MonkeyPatch):
     imgr_args = ImgrArgs(hutch="pytest", command="asdfasdf")
     with pytest.raises(RuntimeError):
         run_command(imgr_args=imgr_args)
+
+
+@pytest.mark.parametrize(
+    "verbosity,succeed", itertools.product((0, 1, 2), (True, False))
+)
+def test_main(verbosity: int, succeed: bool, monkeypatch: pytest.MonkeyPatch):
+    """
+    main is the entrypoint, it parses args, sets up logging, and calls run_command.
+
+    When run_command fails, it should give a nonzero return code, or raise in
+    the verbose modes to give us the full tracebacks.
+    """
+    basic_config_mock = Mock()
+    run_command_mock = Mock()
+
+    monkeypatch.setattr(logging, "basicConfig", basic_config_mock)
+    monkeypatch.setattr(imgr, "run_command", run_command_mock)
+
+    argv = ["imgr"]
+    if verbosity:
+        verb_arg = "-" + verbosity * "v"
+        argv.append(verb_arg)
+    argv.append("list")
+    if not succeed:
+        run_command_mock.side_effect = RuntimeError
+
+    monkeypatch.setattr(sys, "argv", argv)
+    if verbosity and not succeed:
+        with pytest.raises(RuntimeError):
+            main()
+    elif succeed:
+        assert main() == 0
+    else:
+        assert main() > 0
+
+    if verbosity == 0:
+        basic_config_mock.assert_called_with(level=logging.INFO)
+    elif verbosity == 1:
+        basic_config_mock.assert_called_with(level=logging.DEBUG)
+    elif verbosity == 2:
+        basic_config_mock.assert_called_with(level=log_setup.SPAM_LEVEL)
+    else:
+        raise RuntimeError("Test writer error")
