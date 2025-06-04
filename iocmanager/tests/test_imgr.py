@@ -1,12 +1,15 @@
+import dataclasses
 import io
+import socket
 import sys
 import time
+from unittest.mock import Mock
 
 import pytest
 from epics import PV
 
 from .. import imgr
-from ..config import Config, IOCProc
+from ..config import Config, IOCProc, read_config
 from ..imgr import (
     ImgrArgs,
     add_cmd,
@@ -24,6 +27,7 @@ from ..imgr import (
     parse_args,
     parse_host_port,
     reboot_cmd,
+    run_command,
     status_cmd,
     upgrade_cmd,
 )
@@ -1104,3 +1108,149 @@ def test_list_cmd(
         assert name not in result.out
         if config.procs[name].alias:
             assert config.procs[name].alias not in result.out
+
+
+# Settings for test_run_command
+all_commands = (
+    "status",
+    "info",
+    "connect",
+    "reboot",
+    "enable",
+    "disable",
+    "upgrade",
+    "move",
+    "add",
+    "list",
+)
+
+command_aliases = {
+    "dir": "upgrade",
+    "loc": "move",
+}
+
+requires_ioc_name = [cmd for cmd in all_commands if cmd != "list"]
+
+requires_hutch = (
+    "enable",
+    "disable",
+    "upgrade",
+    "move",
+    "add",
+)
+
+
+@pytest.mark.parametrize(
+    "cmd_alias",
+    list(all_commands) + list(command_aliases),
+)
+def test_run_command(cmd_alias: str, monkeypatch: pytest.MonkeyPatch):
+    """
+    run_command resolves the hutch, reads the config file, and runs the correct cmd
+
+    This will need to make heavy use of mocks and monkeypatches to avoid re-testing
+    all the previous functions tested above.
+
+    This test assumes that we have some naming consistency between the ImgrArgs
+    fields and the keyword arguments in our functions.
+    """
+    mocks: dict[str, Mock] = {}
+    for cmd in all_commands:
+        mocks[cmd] = Mock()
+        monkeypatch.setattr(imgr, f"{cmd}_cmd", mocks[cmd])
+
+    # The specifics don't matter, except we may need to check them later
+    imgr_args = ImgrArgs(
+        ioc_name="ioc_name",
+        hutch="pytest",
+        command=cmd_alias,
+        reboot_mode="reboot_mode",
+        upgrade_dir="upgrade_dir",
+        move_host_port="move_host_port",
+        add_loc="add_loc",
+        add_dir="add_dir",
+        add_enable=True,
+        add_disable=True,
+        list_host="list_host",
+        list_enabled=True,
+        list_disabled=True,
+    )
+
+    run_command(imgr_args=imgr_args)
+
+    try:
+        command = command_aliases[cmd_alias]
+    except KeyError:
+        command = cmd_alias
+
+    # Generic check, did we call the right command?
+    for cmd in all_commands:
+        if cmd == command:
+            mocks[cmd].assert_called_once()
+        else:
+            mocks[cmd].assert_not_called()
+
+    # Specific checks (command-specific)
+    args: tuple
+    kwargs: dict
+    args, kwargs = mocks[command].call_args
+    assert not args
+    expected_config = read_config(imgr_args.hutch)
+    assert kwargs["config"] == expected_config
+    expected_kw_count = 1  # Config
+    if command in requires_ioc_name:
+        assert kwargs["ioc_name"] == imgr_args.ioc_name
+        expected_kw_count += 1
+    else:
+        assert "ioc_name" not in kwargs
+    if command in requires_hutch:
+        assert kwargs["hutch"] == imgr_args.hutch
+        expected_kw_count += 1
+    else:
+        assert "hutch" not in kwargs
+    # For each cmd-prefixed field in ImgrArgs, check that it passes through
+    for field_name, value in dataclasses.asdict(imgr_args).items():
+        if field_name.startswith(f"{command}_"):
+            assert kwargs[field_name] == value
+            expected_kw_count += 1
+
+    # Ensure no extra kw
+    assert len(kwargs) == expected_kw_count
+
+
+@pytest.mark.parametrize(
+    "guess",
+    (True, False),
+)
+def test_run_command_guess_hutch(guess: bool, monkeypatch: pytest.MonkeyPatch):
+    """
+    run_command should call guess_hutch if hutch was not provided
+    """
+    for cmd in all_commands:
+        monkeypatch.setattr(imgr, f"{cmd}_cmd", Mock())
+    guess_hutch_mock = Mock()
+    monkeypatch.setattr(imgr, "guess_hutch", guess_hutch_mock)
+    monkeypatch.setattr(imgr, "read_config", Mock())
+    if guess:
+        imgr_args = ImgrArgs(ioc_name="ioc_name", command="status")
+    else:
+        imgr_args = ImgrArgs(hutch="hutch", command="status")
+    run_command(imgr_args=imgr_args)
+    if guess:
+        guess_hutch_mock.assert_called_with(
+            host=socket.gethostname(), ioc_name="ioc_name"
+        )
+    else:
+        guess_hutch_mock.assert_not_called()
+
+
+def test_run_command_bad_command(monkeypatch: pytest.MonkeyPatch):
+    """
+    run_command should raise if the command is not valid
+    """
+    for cmd in all_commands:
+        monkeypatch.setattr(imgr, f"{cmd}_cmd", Mock())
+    monkeypatch.setattr(imgr, "read_config", Mock())
+    imgr_args = ImgrArgs(hutch="pytest", command="asdfasdf")
+    with pytest.raises(RuntimeError):
+        run_command(imgr_args=imgr_args)
