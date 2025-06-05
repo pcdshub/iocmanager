@@ -23,13 +23,20 @@ from qtpy.QtWidgets import (
 
 from . import hostname_ui, table_model, utils
 from .epics_paths import get_parent, normalize_path
-from .table_model import TableModel
+from .table_model import IOCTableModel
 from .type_hints import ParentWidget
+
+STATELIST = ["Off", "Dev", "Prod"]
+STATECOMBOLIST = ["Off", "Dev/Prod"]
 
 
 class HostnameDialog(QDialog):
     """
     Load the pyuic-compiled ui/hostname.ui into a QDialog.
+
+    This is a simple dialog that allows the user to input a
+    hostname into a QLineEdit. It pops up when the user selects
+    the "New Host" option when editing IOC hosts in the table.
     """
 
     def __init__(self, parent: ParentWidget = None):
@@ -38,7 +45,7 @@ class HostnameDialog(QDialog):
         self.ui.setupUi(self)
 
 
-class TableDelegate(QStyledItemDelegate):
+class IOCTableDelegate(QStyledItemDelegate):
     def __init__(self, hutch: str, parent: ParentWidget = None):
         super().__init__(parent)
         self.hutch = hutch
@@ -63,7 +70,7 @@ class TableDelegate(QStyledItemDelegate):
             elif col == table_model.VERSION:
                 items = index.model().history(index.row())
             else:
-                items = table_model.statecombolist
+                items = STATECOMBOLIST
             for item in items:
                 editor.addItem(item)
             editor.lastitem = editor.count()
@@ -96,9 +103,9 @@ class TableDelegate(QStyledItemDelegate):
         elif col == table_model.STATE:
             value = index.model().data(index, Qt.EditRole).value()
             try:
-                idx = table_model.statelist.index(value)
-                if idx >= len(table_model.statecombolist):
-                    idx = len(table_model.statecombolist) - 1
+                idx = STATELIST.index(value)
+                if idx >= len(STATECOMBOLIST):
+                    idx = len(STATECOMBOLIST) - 1
                 editor.setCurrentIndex(idx)
             except Exception:
                 editor.setCurrentIndex(editor.lastitem)
@@ -106,7 +113,7 @@ class TableDelegate(QStyledItemDelegate):
             QStyledItemDelegate.setEditorData(self, editor, index)
 
     def setModelData(
-        self, editor: QWidget | QComboBox, model: TableModel, index: QModelIndex
+        self, editor: QWidget | QComboBox, model: IOCTableModel, index: QModelIndex
     ):
         """https://doc.qt.io/qt-5/qstyleditemdelegate.html#setModelData"""
         col = index.column()

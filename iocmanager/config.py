@@ -268,17 +268,17 @@ def get_host_os(hosts_list: list[str]) -> dict[str, str]:
 
     Returns
     -------
-    hosttype : dict[str, str]
+    host_os : dict[str, str]
         Dictionary from hostname to OS.
     """
-    hosttype = {}
+    host_os = {}
     for fn in hosts_list:
         try:
             with open("%s/%s" % (env_paths.HOST_DIR, fn)) as fd:
-                hosttype[fn] = fd.readlines()[0].strip()
+                host_os[fn] = fd.readlines()[0].strip()
         except Exception:
             ...
-    return hosttype
+    return host_os
 
 
 def _cfg_file_lines(config: Config) -> list[str]:

@@ -23,7 +23,7 @@ from .epics_paths import get_parent
 from .ioc_info import get_base_name
 from .ioc_ui import Ui_MainWindow
 from .server_tools import netconfig
-from .table_delegate import TableDelegate
+from .table_delegate import IOCTableDelegate
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +76,9 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         self.setWindowTitle("%s IocManager%s" % (hutch.upper(), version))
         self.hutch = hutch
         self.authdialog = authdialog(self)
-        self.model = table_model.TableModel(hutch)
+        self.model = table_model.IOCTableModel(hutch)
         self.utimer = QtCore.QTimer()
-        self.delegate = TableDelegate(hutch)
+        self.delegate = IOCTableDelegate(hutch)
         self.ui.actionApply.triggered.connect(self.doApply)
         self.ui.actionSave.triggered.connect(self.doSave)
         self.ui.actionRevert.triggered.connect(self.model.doRevert)

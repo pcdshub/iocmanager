@@ -7,19 +7,16 @@ for the central QTableView in the main GUI.
 See https://doc.qt.io/qt-5/qabstracttablemodel.html#details
 """
 
-# TODO: big fix
-# self.cfglist, self.hosts, self.vdict must be replaced with self.config
 import concurrent.futures
 import logging
 import os
-import pwd
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import threading
 import time
+from enum import IntEnum
 
 import psp
 from qtpy.QtCore import QAbstractTableModel, QEvent, QModelIndex, Qt, QVariant
@@ -36,171 +33,122 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from . import commit_ui, details_ui, utils
-from .config import get_host_os, read_config, read_status_dir, write_config
+from . import commit_ui, details_ui
+from .config import Config, get_host_os, read_config, read_status_dir, write_config
 from .epics_paths import get_parent, normalize_path
 from .hioc_tools import get_hard_ioc_dir_for_display, reboot_hioc, restart_hioc
 from .ioc_info import find_pv, get_base_name
 from .procserv_tools import apply_config, check_status, restart_proc
 from .server_tools import netconfig, reboot_server
+from .type_hints import ParentWidget
 
 logger = logging.getLogger(__name__)
 
-#
-# Column definitions.
-#
-IOCNAME = 0
-ID = 1
-STATE = 2
-STATUS = 3
-HOST = 4
-OSVER = 5
-PORT = 6
-VERSION = 7
-PARENT = 8
-EXTRA = 9
-statelist = ["Off", "Dev", "Prod"]
-statecombolist = ["Off", "Dev/Prod"]
+
+class TableColumn(IntEnum):
+    """
+    Options and indices for table headers
+    """
+
+    IOCNAME = 0
+    ID = 1
+    STATE = 2
+    STATUS = 3
+    HOST = 4
+    OSVER = 5
+    PORT = 6
+    VERSION = 7
+    PARENT = 8
+    EXTRA = 9
 
 
-class StatusPoll(threading.Thread):
-    def __init__(self, model, interval, hosttype):
-        threading.Thread.__init__(self)
-        self.model = model
-        self.hutch = model.hutch
-        self.mtime = None
-        self.interval = interval
-        self.rmtime = {}
-        self.daemon = True
-        self.dialog = None
-        self.hosttype = hosttype
+class CommitOption(IntEnum):
+    """
+    Integer codes for the three results from the CommitDialog.
+    """
 
-    def run(self):
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            while True:
-                start_time = time.monotonic()
-                futures = []
-
-                try:
-                    config = read_config(self.hutch)
-                except Exception:
-                    ...
-                else:
-                    self.hosttype = get_host_os(config.hosts)
-                    self.rmtime = {}  # Force a re-read!
-                    self.model.configuration(config)
-
-                result = read_status_dir(self.hutch)
-                for line in result:
-                    futures.append(executor.submit(self.check_one_file_status, line))
-
-                for line in self.model.cfglist:
-                    futures.append(executor.submit(self.check_one_config_status, line))
-
-                for p in self.model.children:
-                    futures.append(executor.submit(self.poll_one_child, p))
-
-                for fut in futures:
-                    fut.result()
-                duration = time.monotonic() - start_time
-                if duration < self.interval:
-                    time.sleep(self.interval + 1 - duration)
-
-    def check_one_file_status(self, line):
-        rdir = line["rdir"]
-        line.update(check_status(line["rhost"], line["rport"], line["rid"]))
-        line["stattime"] = time.time()
-        if line["rdir"] == "/tmp":
-            line["rdir"] = rdir
-        else:
-            line["newstyle"] = False
-        self.model.running(line)
-
-    def check_one_config_status(self, line):
-        if line["stattime"] + self.interval > time.time():
-            return
-        if line["hard"]:
-            s = {"pid": -1, "autorestart": False}
-            try:
-                pv = psp.Pv.Pv(line["base"] + ":HEARTBEAT")
-                pv.connect(1.0)
-                pv.disconnect()
-                s["status"] = utils.STATUS_RUNNING
-            except Exception:
-                s["status"] = utils.STATUS_SHUTDOWN
-            s["rid"] = line["id"]
-            s["rdir"] = line["dir"]
-        else:
-            s = check_status(line["host"], line["port"], line["id"])
-        s["stattime"] = time.time()
-        s["rhost"] = line["host"]
-        s["rport"] = line["port"]
-        if line["newstyle"]:
-            if s["rdir"] == "/tmp":
-                del s["rdir"]
-            else:
-                s["newstyle"] = False  # We've switched from new to old?!?
-        self.model.running(s)
-
-    def poll_one_child(self, p):
-        if p.poll() is not None:
-            self.model.children.remove(p)
+    SAVE_AND_COMMIT = 0
+    SAVE_ONLY = 1
+    CANCEL = 2
 
 
-class detailsdialog(QDialog):
-    def __init__(self, parent=None):
-        QWidget.__init__(self, parent)
+class DetailsDialog(QDialog):
+    """
+    Load the pyuic-compiled ui/details.ui into a QDialog.
+
+    This dialog contains edit widgets for some of the less common IOC settings,
+    namely, the ones that are not editable in the table using the table delegate.
+    This dialog is launched when someone right-clicks on a table row and clicks
+    on "Edit Details".
+    """
+
+    def __init__(self, parent: ParentWidget = None):
+        super().__init__(parent)
         self.ui = details_ui.Ui_Dialog()
         self.ui.setupUi(self)
 
 
-class commitdialog(QDialog):
-    def doYes(self):
-        self.result = QDialogButtonBox.Yes
+class CommitDialog(QDialog):
+    """
+    Load the pyuic-compiled ui/commit.ui into a QDialog.
 
-    def doNo(self):
-        self.result = QDialogButtonBox.No
+    This dialog contains a large QTextEdit that can be used to enter a
+    commit message.
+    It is opened right after a user asks to apply the configuration,
+    and right before we save the file.
+    """
 
-    def doCancel(self):
-        self.result = QDialogButtonBox.Cancel
-
-    def __init__(self, parent=None):
-        self.result = QDialogButtonBox.Cancel
-        QWidget.__init__(self, parent)
+    def __init__(self, parent: ParentWidget = None):
+        super().__init__(parent)
         self.ui = commit_ui.Ui_Dialog()
         self.ui.setupUi(self)
-        self.ui.buttonBox.button(QDialogButtonBox.Yes).clicked.connect(self.doYes)
-        self.ui.buttonBox.button(QDialogButtonBox.No).clicked.connect(self.doNo)
-        self.ui.buttonBox.button(QDialogButtonBox.Cancel).clicked.connect(self.doCancel)
+        self.setResult(CommitOption.CANCEL)
+        self.ui.buttonBox.button(QDialogButtonBox.Yes).clicked.connect(self.yes_clicked)
+        self.ui.buttonBox.button(QDialogButtonBox.No).clicked.connect(self.no_clicked)
+        self.ui.buttonBox.button(QDialogButtonBox.Cancel).clicked.connect(
+            self.cancel_clicked
+        )
+
+    def yes_clicked(self):
+        self.setResult(CommitOption.SAVE_AND_COMMIT)
+
+    def no_clicked(self):
+        self.setResult(CommitOption.SAVE_ONLY)
+
+    def cancel_clicked(self):
+        # Technically this is always already set, but it's good to be paranoid
+        self.setResult(CommitOption.CANCEL)
 
 
-class TableModel(QAbstractTableModel):
-    def __init__(self, hutch, parent=None):
-        QAbstractTableModel.__init__(self, parent)
-        self.myuid = "%s.x%d.x%%d" % (pwd.getpwuid(os.getuid())[0], os.getpid())
-        self.nextid = 0
-        self.detailsdialog = detailsdialog(parent)
-        self.commitdialog = commitdialog(parent)
-        self.hutch = hutch
-        self.user = ""
-        self.userIO = None
-        self.children = []
-        try:
-            self.config = read_config(hutch)
-        except Exception:
-            print("Cannot read configuration for %s!" % hutch)
-            sys.exit(-1)
-        self.poll = StatusPoll(self, 5, get_host_os(self.config.hosts))
-        self.poll.mtime = self.config.mtime
-        try:
-            utils.COMMITHOST = self.config.commithost
-        except Exception:
-            pass
-        self.addUsedHosts()
+class IOCTableModel(QAbstractTableModel):
+    """
+    The data model for the contents of the big IOC table in the GUI.
 
-        for line in self.cfglist:
-            line["status"] = utils.STATUS_INIT
-            line["stattime"] = 0
+    This has two purposes:
+    1. Allow the user to see data from and related to the config in a table format
+    2. Allow the user to modify data in the config using the table
+
+    This reads to and writes from the hosts and procs parts of the
+    configuration. It also inspects the statuses of running processes
+    to show them to the user.
+
+    Parameters
+    ----------
+    config : Config
+        The config object that represents the hutch's iocmanager config.
+    parent : QWidget or None
+        The parent qt widget if any (standard qt argument).
+    """
+
+    def __init__(self, config: Config, parent: ParentWidget = None):
+        super().__init__(parent)
+        self.config = config
+        self.details_dialog = DetailsDialog(parent)
+        self.commit_dialog = CommitDialog(parent)
+        self.poll_thread = StatusPollThread(
+            model=self, interval=5.0, config=self.config
+        )
+
         self.headerdata = [
             "IOC Name",
             "IOC ID",
@@ -265,15 +213,8 @@ class TableModel(QAbstractTableModel):
         x = subprocess.Popen(cmdlist)
         self.children.append(x)
 
-    def addUsedHosts(self):
-        hosts = [line["host"] for line in self.cfglist]
-        hosts[-1:] = self.hosts
-        hosts = list(set(hosts))
-        hosts.sort()
-        self.hosts = hosts
-
     def startPoll(self):
-        self.poll.start()
+        self.poll_thread.start()
 
     def findid(self, id, line=None):
         if line is None:
@@ -441,7 +382,7 @@ class TableModel(QAbstractTableModel):
             return entry["status"]
         if c == OSVER:
             try:
-                return self.poll.hosttype[entry["host"]]
+                return self.poll_thread.host_os[entry["host"]]
             except Exception:
                 return ""
         elif c == EXTRA:
@@ -786,7 +727,7 @@ class TableModel(QAbstractTableModel):
             )
             return False
         # Do we want to check it in!?
-        d = self.commitdialog
+        d = self.commit_dialog
         d.setWindowTitle("Commit %s" % self.hutch)
         d.ui.commentEdit.setPlainText("")
         while True:
@@ -857,7 +798,7 @@ class TableModel(QAbstractTableModel):
                         del entry[f]
                 except Exception:
                     pass
-        self.poll.mtime = None  # Force a re-read!
+        self.poll_thread.mtime = None  # Force a re-read!
         self.dataChanged.emit(
             self.index(0, 0), self.index(len(self.cfglist), len(self.headerdata) - 1)
         )
@@ -1001,30 +942,30 @@ class TableModel(QAbstractTableModel):
             except Exception:
                 pass
             entry["details"] = details
-        self.detailsdialog.setWindowTitle("Edit Details - %s" % entry["id"])
+        self.details_dialog.setWindowTitle("Edit Details - %s" % entry["id"])
         try:
-            self.detailsdialog.ui.aliasEdit.setText(entry["newalias"])
+            self.details_dialog.ui.aliasEdit.setText(entry["newalias"])
         except Exception:
-            self.detailsdialog.ui.aliasEdit.setText(entry["alias"])
+            self.details_dialog.ui.aliasEdit.setText(entry["alias"])
         try:
-            self.detailsdialog.ui.cmdEdit.setText(entry["cmd"])
+            self.details_dialog.ui.cmdEdit.setText(entry["cmd"])
         except Exception:
-            self.detailsdialog.ui.cmdEdit.setText("")
+            self.details_dialog.ui.cmdEdit.setText("")
         try:
-            self.detailsdialog.ui.delayEdit.setText(str(entry["delay"]))
+            self.details_dialog.ui.delayEdit.setText(str(entry["delay"]))
         except Exception:
-            self.detailsdialog.ui.delayEdit.setText("")
+            self.details_dialog.ui.delayEdit.setText("")
         try:
-            self.detailsdialog.ui.flagCheckBox.setChecked("u" in entry["flags"])
+            self.details_dialog.ui.flagCheckBox.setChecked("u" in entry["flags"])
         except Exception:
-            self.detailsdialog.ui.flagCheckBox.setChecked(False)
-        if self.detailsdialog.exec_() == QDialog.Accepted:
+            self.details_dialog.ui.flagCheckBox.setChecked(False)
+        if self.details_dialog.exec_() == QDialog.Accepted:
             if entry["hard"]:
                 newcmd = ""
                 newdelay = 0
                 newflags = ""
             else:
-                newcmd = str(self.detailsdialog.ui.cmdEdit.text())
+                newcmd = str(self.details_dialog.ui.cmdEdit.text())
                 if newcmd == "":
                     try:
                         del entry["cmd"]
@@ -1035,7 +976,7 @@ class TableModel(QAbstractTableModel):
 
                 if (
                     "cmd" in list(entry.keys())
-                    and self.detailsdialog.ui.flagCheckBox.isChecked()
+                    and self.details_dialog.ui.flagCheckBox.isChecked()
                 ):
                     newflags = "u"
                     entry["flags"] = "u"
@@ -1047,7 +988,7 @@ class TableModel(QAbstractTableModel):
                         pass
 
                 try:
-                    newdelay = int(self.detailsdialog.ui.delayEdit.text())
+                    newdelay = int(self.details_dialog.ui.delayEdit.text())
                 except Exception:
                     newdelay = 0
                 if newdelay == 0:
@@ -1058,7 +999,7 @@ class TableModel(QAbstractTableModel):
                 else:
                     entry["delay"] = newdelay
 
-            alias = str(self.detailsdialog.ui.aliasEdit.text())
+            alias = str(self.details_dialog.ui.aliasEdit.text())
             if alias != entry["alias"]:
                 entry["newalias"] = alias
             else:
@@ -1418,3 +1359,102 @@ class TableModel(QAbstractTableModel):
             if not hit:
                 return port
         return None
+
+
+class StatusPollThread(threading.Thread):
+    """
+    A thread running a loop to continually check the status of configured IOCs.
+
+    This updates data in the model that is used for the "Status" column.
+
+    Parameters
+    ----------
+    model : IOCTableModel
+        The model we need to update.
+    config : Config
+        The config object that represents the hutch's iocmanager config.
+    interval : float
+        How often to check the status in seconds.
+    """
+
+    def __init__(self, model: IOCTableModel, interval: float, config: Config):
+        threading.Thread.__init__(self)
+        self.model = model
+        self.hutch = model.hutch
+        self.mtime = None
+        self.interval = interval
+        self.rmtime = {}
+        self.daemon = True
+        self.dialog = None
+        self.host_os = host_os
+
+    def run(self):
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            while True:
+                start_time = time.monotonic()
+                futures = []
+
+                try:
+                    config = read_config(self.hutch)
+                except Exception:
+                    ...
+                else:
+                    self.host_os = get_host_os(config.hosts)
+                    self.rmtime = {}  # Force a re-read!
+                    self.model.configuration(config)
+
+                result = read_status_dir(self.hutch)
+                for line in result:
+                    futures.append(executor.submit(self.check_one_file_status, line))
+
+                for line in self.model.cfglist:
+                    futures.append(executor.submit(self.check_one_config_status, line))
+
+                for p in self.model.children:
+                    futures.append(executor.submit(self.poll_one_child, p))
+
+                for fut in futures:
+                    fut.result()
+                duration = time.monotonic() - start_time
+                if duration < self.interval:
+                    time.sleep(self.interval + 1 - duration)
+
+    def check_one_file_status(self, line):
+        rdir = line["rdir"]
+        line.update(check_status(line["rhost"], line["rport"], line["rid"]))
+        line["stattime"] = time.time()
+        if line["rdir"] == "/tmp":
+            line["rdir"] = rdir
+        else:
+            line["newstyle"] = False
+        self.model.running(line)
+
+    def check_one_config_status(self, line):
+        if line["stattime"] + self.interval > time.time():
+            return
+        if line["hard"]:
+            s = {"pid": -1, "autorestart": False}
+            try:
+                pv = psp.Pv.Pv(line["base"] + ":HEARTBEAT")
+                pv.connect(1.0)
+                pv.disconnect()
+                s["status"] = utils.STATUS_RUNNING
+            except Exception:
+                s["status"] = utils.STATUS_SHUTDOWN
+            s["rid"] = line["id"]
+            s["rdir"] = line["dir"]
+        else:
+            s = check_status(line["host"], line["port"], line["id"])
+        s["stattime"] = time.time()
+        s["rhost"] = line["host"]
+        s["rport"] = line["port"]
+        if line["newstyle"]:
+            if s["rdir"] == "/tmp":
+                del s["rdir"]
+            else:
+                s["newstyle"] = False  # We've switched from new to old?!?
+        self.model.running(s)
+
+    def poll_one_child(self, p):
+        if p.poll() is not None:
+            self.model.children.remove(p)
