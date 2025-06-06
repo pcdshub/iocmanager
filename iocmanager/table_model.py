@@ -4,32 +4,31 @@ The table_model module defines a data model for the main GUI table.
 This implements a QAbstractTableModel which manages reading and writing data
 for the central QTableView in the main GUI.
 
+The data in the table represents:
+
+- The contents of the IOC manager config file's IOC data
+- Any pending edits of the config file IOCs (to include at next save)
+- Helpful status and context information for each IOC
+
 See https://doc.qt.io/qt-5/qabstracttablemodel.html#details
+
+TODO: handle IOCs that are running, but not in the config at all
+TODO: e.g. IOCs that have status files but are not in config
 """
 
 import concurrent.futures
 import itertools
 import logging
-import os
-import re
-import tempfile
 import threading
 import time
+from copy import deepcopy
 from enum import IntEnum, StrEnum
 
-import psp
-from qtpy.QtCore import QAbstractTableModel, QEvent, QModelIndex, Qt, QVariant
+from qtpy.QtCore import QAbstractTableModel, QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
 from qtpy.QtWidgets import (
-    QCheckBox,
     QDialog,
     QDialogButtonBox,
-    QFrame,
-    QLabel,
-    QMessageBox,
-    QScrollArea,
-    QVBoxLayout,
-    QWidget,
 )
 
 from . import commit_ui, details_ui
@@ -40,19 +39,13 @@ from .config import (
     get_host_os,
     read_config,
     read_status_dir,
-    write_config,
 )
-from .epics_paths import get_parent, normalize_path
-from .hioc_tools import get_hard_ioc_dir_for_display, reboot_hioc, restart_hioc
-from .ioc_info import find_pv, get_base_name
 from .procserv_tools import (
+    AutoRestartMode,
     IOCStatusLive,
     ProcServStatus,
-    apply_config,
     check_status,
-    restart_proc,
 )
-from .server_tools import netconfig, reboot_server
 from .type_hints import ParentWidget
 
 logger = logging.getLogger(__name__)
@@ -121,6 +114,8 @@ class DetailsDialog(QDialog):
         self.ui.setupUi(self)
 
 
+# TODO migrate CommitDialog to a new module
+# A previous version conflated data model code and save/commit code
 class CommitDialog(QDialog):
     """
     Load the pyuic-compiled ui/commit.ui into a QDialog.
@@ -191,30 +186,117 @@ class IOCTableModel(QAbstractTableModel):
         The parent qt widget if any (standard qt argument).
     """
 
-    def __init__(self, config: Config, parent: ParentWidget = None):
+    config: Config
+
+    def __init__(self, config: Config, hutch: str, parent: ParentWidget = None):
         super().__init__(parent)
+        self.hutch = hutch
         self.details_dialog = DetailsDialog(parent)
-        self.commit_dialog = CommitDialog(parent)
-        self.poll_thread = StatusPollThread(
-            model=self, interval=5.0, config=self.config
-        )
+        self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         # Track last sort to reapply sorting after changing the IOC list
         self.last_sort: tuple[int, Qt.SortOrder] = (0, Qt.DescendingOrder)
-        # Note: this sets self.config
-        self.update_from_config_file(config)
         # Local changes (not applied yet)
         self.add_iocs: dict[str, IOCProc] = {}
         self.edit_iocs: dict[str, IOCProc] = {}
-        self.delete_iocs: list[str] = []
-        # Live info
+        self.delete_iocs: set[str] = set()
+        # Live info, collected in poll_thread
         self.status_live: dict[str, IOCStatusLive] = {}
-        self.status_files: dict[str, IOCStatusLive] = {}
+        self.status_files: dict[str, IOCStatusFile] = {}
         self.host_os: dict[str, str] = {}
+        # Note: this sets self.config
+        self.update_from_config_file(config)
 
-    # Basic helpers for implementing the QAbstractTableModel API
+    # Main external business logic
+    def get_next_config(self) -> Config:
+        """
+        Creates a new config including the edits made by the user.
+
+        This should be used when the user asks to save and apply config to decide
+        which config to apply.
+
+        Note: the order is important: add first, then edit, then delete.
+        This creates a priority for IOCs that are included in multiple local change
+        categories.
+        For example, if the user added the IOC to the table but then edited it,
+        or edited an IOC and then deleted it, we always end in the desired final
+        state.
+        """
+        config = deepcopy(self.config)
+        for ioc_proc in self.add_iocs.values():
+            config.add_proc(ioc_proc)
+        for ioc_name, ioc_proc in self.edit_iocs.items():
+            config.procs[ioc_name] = ioc_proc
+        for ioc_name in self.delete_iocs:
+            del config.procs[ioc_name]
+        return config
+
+    def reset_edits(self):
+        """
+        Removes pending configuration edits.
+
+        Call this after saving the config file.
+        Note that this doesn't ask for a model update, intentionally.
+        We'll update on the next poll.
+        """
+        self.add_iocs.clear()
+        self.edit_iocs.clear()
+        self.delete_iocs.clear()
+
+    # Basic helpers
     def get_ioc_proc(self, row: int) -> IOCProc:
-        """Define the row -> proc mapping for the table."""
-        return (list(self.config.procs.values()) + list(self.add_iocs.values()))[row]
+        """
+        Define the row -> proc mapping for the table.
+
+        This does not need maintain stable row indices, nor does it need to consider
+        the timing of data updates.
+
+        We'll define the rows in the apparent dictionary order:
+        - First, the config file contents
+        - Second, any IOCs that are being added
+
+        When picking an IOCProc instance to return, one from the edit_iocs dict
+        will be chosen first, to make sure we display and edit the values that
+        include the user's edits.
+        """
+        ioc_name = self.get_ioc_row_map()[row]
+        return self.edit_iocs.get(
+            ioc_name, self.add_iocs.get(ioc_name, self.config.procs[ioc_name])
+        )
+
+    def get_ioc_row_map(self) -> list[str]:
+        """
+        Define the row -> name mapping for the table.
+
+        See get_ioc_proc.
+        """
+        return list(self.config.procs) + list(self.add_iocs)
+
+    def get_live_info(self, ioc_name: str) -> IOCStatusLive:
+        """
+        Return the information about a live IOC.
+
+        This uses the cached IOCStatusLive if it is fully populated,
+        but auguments it with values from the IOCStatusFile if not.
+        """
+        try:
+            live_info = self.status_live[ioc_name]
+        except KeyError:
+            # This might get called too early,
+            # use some default values for display purposes
+            live_info = IOCStatusLive(
+                name=ioc_name,
+                port=0,
+                host="",
+                path="",
+                pid=None,
+                status=ProcServStatus.INIT,
+                autorestart_mode=AutoRestartMode.OFF,
+            )
+        if ioc_name in self.status_files:
+            for attr in ("port", "host", "path", "pid"):
+                if not getattr(live_info, attr):
+                    setattr(live_info, attr, getattr(self.status_files[ioc_name], attr))
+        return live_info
 
     # Implement QAbstractTableModel API
     def rowCount(self, parent: QModelIndex | None = None) -> int:
@@ -293,7 +375,7 @@ class IOCTableModel(QAbstractTableModel):
                 else:
                     return StateOption.DEV
             case TableColumn.STATUS:
-                return self.status_live[ioc_proc.name].status
+                return self.get_live_info(ioc_name=ioc_proc.name).status
             case TableColumn.HOST:
                 return ioc_proc.host
             case TableColumn.OSVER:
@@ -308,15 +390,15 @@ class IOCTableModel(QAbstractTableModel):
                 if ioc_proc.hard:
                     return "HARD IOC"
                 # Goal: summarize differences between configured and running
-                status_file = self.status_files[ioc_proc.name]
+                status_live = self.get_live_info(ioc_name=ioc_proc.name)
                 text_parts = []
-                if ioc_proc.path != status_file.path:
-                    text_parts.append(f"{status_file.path}")
+                if ioc_proc.path != status_live.path:
+                    text_parts.append(f"{status_live.path}")
                 if (
-                    ioc_proc.host != status_file.host
-                    or ioc_proc.port != status_file.port
+                    ioc_proc.host != status_live.host
+                    or ioc_proc.port != status_live.port
                 ):
-                    text_parts.append(f"on {status_file.host}:{status_file.port}")
+                    text_parts.append(f"on {status_live.host}:{status_live.port}")
                 if text_parts:
                     text_parts.insert(0, "Live:")
                     return " ".join(text_parts)
@@ -329,25 +411,23 @@ class IOCTableModel(QAbstractTableModel):
         # Universal handling for pending deletion
         if ioc_proc.name in self.delete_iocs:
             return Qt.red
+        # Universal handling for new ioc row
+        if ioc_proc.name not in self.config.procs:
+            return Qt.blue
+        file_proc = self.config.procs[ioc_proc.name]
         # Specific handling for modified (blue) and other
         match column:
             case TableColumn.IOCNAME:
                 # Check modified
-                try:
-                    if self.edit_iocs[ioc_proc.name].alias != ioc_proc.alias:
-                        return Qt.blue
-                except KeyError:
-                    ...
+                if ioc_proc.alias != file_proc.alias:
+                    return Qt.blue
             case TableColumn.ID:
                 # User can't modify this, keep as default
                 ...
             case TableColumn.STATE:
                 # Check modified
-                try:
-                    if self.edit_iocs[ioc_proc.name].disable != ioc_proc.disable:
-                        return Qt.blue
-                except KeyError:
-                    ...
+                if ioc_proc.disable != file_proc.disable:
+                    return Qt.blue
             case TableColumn.STATUS:
                 # Read-only field, pick black or white for contrast with background
                 bg_color = self.get_background_color(ioc_proc=ioc_proc, column=column)
@@ -355,28 +435,19 @@ class IOCTableModel(QAbstractTableModel):
                     return Qt.white
             case TableColumn.HOST:
                 # Check modified
-                try:
-                    if self.edit_iocs[ioc_proc.name].host != ioc_proc.host:
-                        return Qt.blue
-                except KeyError:
-                    ...
+                if ioc_proc.host != file_proc.host:
+                    return Qt.blue
             case TableColumn.OSVER:
                 # User can't modify this, keep as default
                 ...
             case TableColumn.PORT:
                 # Check modified
-                try:
-                    if self.edit_iocs[ioc_proc.name].port != ioc_proc.port:
-                        return Qt.blue
-                except KeyError:
-                    ...
+                if ioc_proc.port != file_proc.port:
+                    return Qt.blue
             case TableColumn.VERSION:
                 # Check modified
-                try:
-                    if self.edit_iocs[ioc_proc.name].path != ioc_proc.path:
-                        return Qt.blue
-                except KeyError:
-                    ...
+                if ioc_proc.path != file_proc.path:
+                    return Qt.blue
             case TableColumn.PARENT:
                 # User can't modify this, keep as default
                 ...
@@ -405,7 +476,7 @@ class IOCTableModel(QAbstractTableModel):
                 ):
                     return Qt.yellow
             case TableColumn.STATUS:
-                status = self.status_live[ioc_proc.name]
+                status = self.get_live_info(ioc_name=ioc_proc.name)
                 # Yellow has priority and means reality != configured (host, port, path)
                 if (
                     ioc_proc.host != status.host
@@ -458,7 +529,8 @@ class IOCTableModel(QAbstractTableModel):
         """
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
             return QVariant(table_headers[TableColumn(section)])
-        # We only have text and only on the horizontal headers, the rest should be invalid
+        # We only have text and only on the horizontal headers,
+        # the rest should be invalid
         return QVariant()
 
     def setData(
@@ -478,6 +550,7 @@ class IOCTableModel(QAbstractTableModel):
 
         raw_value = value.value()
         ioc_proc = self.get_ioc_proc(index.row())
+        new_proc = deepcopy(ioc_proc)
 
         # We mostly need to do type handling based on the column
         # Some columns could never be meaningfully written to
@@ -485,21 +558,21 @@ class IOCTableModel(QAbstractTableModel):
         # in the context of the gui application.
         match index.column():
             case TableColumn.IOCNAME:
-                ioc_proc.alias = str(raw_value)
+                new_proc.alias = str(raw_value)
             case TableColumn.ID:
-                ioc_proc.name = str(raw_value)
+                new_proc.name = str(raw_value)
             case TableColumn.STATE:
-                ioc_proc.disable = not bool(raw_value)
+                new_proc.disable = not bool(raw_value)
             case TableColumn.STATUS:
                 return False
             case TableColumn.HOST:
-                ioc_proc.host = str(raw_value)
+                new_proc.host = str(raw_value)
             case TableColumn.OSVER:
                 return False
             case TableColumn.PORT:
-                ioc_proc.port = int(raw_value)
+                new_proc.port = int(raw_value)
             case TableColumn.VERSION:
-                ioc_proc.path = str(raw_value)
+                new_proc.path = str(raw_value)
             case TableColumn.PARENT:
                 return False
             case TableColumn.EXTRA:
@@ -507,6 +580,7 @@ class IOCTableModel(QAbstractTableModel):
             case _:
                 raise ValueError(f"Invalid column {index.column()}")
         # Write succeeded!
+        self.edit_iocs[new_proc.name] = new_proc
         self.dataChanged.emit(index, index)
         return True
 
@@ -535,6 +609,7 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.STATE:
                 return Qt.ItemIsEnabled | Qt.ItemIsSelectable | edit_flag
             case TableColumn.STATUS:
+                # Implementation note: type checker upset if I don't use an or here
                 return Qt.ItemIsEnabled | Qt.NoItemFlags
             case TableColumn.HOST:
                 return Qt.ItemIsEnabled | edit_flag
@@ -556,6 +631,63 @@ class IOCTableModel(QAbstractTableModel):
         """Public API to start checking IOC statuses in the background."""
         self.poll_thread.start()
 
+    def _poll_loop(self):
+        """
+        Continually check the status of configured IOCs.
+
+        Uses the following sources to update the table:
+        - iocmanager.cfg config file
+        - status directory
+        - check ioc statuses e.g. via ping, telnet from info in the above
+        """
+        interval = 10
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            while True:
+                start_time = time.monotonic()
+                self._inner_poll(executor=executor)
+                duration = time.monotonic() - start_time
+                if duration < interval:
+                    time.sleep(interval - duration)
+
+    def _inner_poll(self, executor: concurrent.futures.ThreadPoolExecutor):
+        """
+        One poll for updates to the IOC.
+
+        This function exists to avoid deep nesting.
+        See _poll_loop
+        """
+        # Ensure an up-to-date config
+        try:
+            config = read_config(self.hutch)
+        except Exception:
+            ...
+        else:
+            self.host_os = get_host_os(config.hosts)
+            self.update_from_config_file(config)
+
+        # IO-bound task, use threads
+        futures: list[concurrent.futures.Future[IOCStatusLive]] = []
+        for ioc_proc in self.config.procs.values():
+            futures.append(
+                executor.submit(
+                    check_status,
+                    host=ioc_proc.host,
+                    port=ioc_proc.port,
+                    name=ioc_proc.name,
+                )
+            )
+
+        # TODO consider reordering, might be correct to check status files first
+        # TODO so we can include running-but-not-in-config IOC candidates
+        # TODO when we extend this to support these dark IOCs
+        # Check the status files while thread IO finishes
+        for status_file in read_status_dir(self.hutch):
+            self.update_from_status_file(status_file=status_file)
+
+        # Collect the thread results and apply them
+        for fut in futures:
+            self.update_from_live_ioc(fut.result())
+
     def update_from_config_file(self, config: Config):
         """
         Update the GUI when the config file changes, e.g. from other users.
@@ -571,8 +703,12 @@ class IOCTableModel(QAbstractTableModel):
         config : Config
             The config object that represents the hutch's iocmanager config.
         """
+        if config.mtime <= self.config.mtime:
+            return
         self.config = config
-        # todo emit which fields have changed for the model
+        # It should be faster to tell most everything to update than to pick cells
+        # Technically we could skip the status columns but it's ok
+        self._emit_all_changed()
         self.sort(self.last_sort[0], self.last_sort[1])
 
     def update_from_status_file(self, status_file: IOCStatusFile):
@@ -585,12 +721,22 @@ class IOCTableModel(QAbstractTableModel):
         The StatusPollThread calls this function cyclically with up-to-date
         status files.
 
+        Functionally, this can only impact the contents of the "extra"
+        information, which can help us identify what the real running
+        IOC is when different from the configuration.
+
         Parameters
         ----------
         status_file : IOCStatusFile
             Boot-time information about an IOC
         """
-        ...
+        if status_file != self.status_files.get(status_file.name):
+            self.status_files[status_file.name] = status_file
+            # Update extra cell
+            row_map = self.get_ioc_row_map()
+            row = row_map.index(status_file.name)
+            idx = self.index(row, TableColumn.EXTRA)
+            self.dataChanged.emit(idx, idx)
 
     def update_from_live_ioc(self, status_live: IOCStatusLive):
         """
@@ -601,1020 +747,112 @@ class IOCTableModel(QAbstractTableModel):
         the IOC is running, in addition to the same boot-time information
         found in the status files.
 
+        Functionally, this can impact the "status" and "extra" information.
+        It has priority over the status file when their shared information
+        is in conflict.
+
         Parameters
         ----------
         status_live : IOCStatusLive
             Live-inspected information about an IOC
         """
-        ...
+        if status_live != self.status_live.get(status_live.name):
+            self.status_live[status_live.name] = status_live
+            # Update status, extra cells
+            row_map = self.get_ioc_row_map()
+            row = row_map.index(status_live.name)
+            idx1 = self.index(row, TableColumn.STATUS)
+            idx2 = self.index(row, TableColumn.EXTRA)
+            self.dataChanged.emit(idx1, idx1)
+            self.dataChanged.emit(idx2, idx2)
 
-    def running(self, d):
-        # Process a new status dictionary!
-        i = self.findid(d["rid"], self.cfglist)
-        if i is None:
-            i = self.findhostport(d["rhost"], d["rport"], self.cfglist)
-        if i is not None:
-            if self.cfglist[i]["dir"] == utils.CAMRECORDER:
-                d["rdir"] = utils.CAMRECORDER
-            if (
-                d["status"] == utils.STATUS_RUNNING
-                or self.cfglist[i]["cfgstat"] != utils.CONFIG_DELETED
-            ):
-                # Sigh.  If we just emit dataChanged for the row, editing the port
-                # number becomes nearly impossible, because we keep writing it over.
-                # Therefore, we need to avoid it... except, of course, sometimes it
-                # *does* change!
-                oldport = self.cfglist[i]["rport"]
-                self.cfglist[i].update(d)
-                if oldport != self.cfglist[i]["rport"]:
-                    self.dataChanged.emit(
-                        self.index(i, 0), self.index(i, len(self.headerdata) - 1)
-                    )
-                else:
-                    if PORT > 0:
-                        self.dataChanged.emit(self.index(i, 0), self.index(i, PORT - 1))
-                    if PORT < len(self.headerdata) - 1:
-                        self.dataChanged.emit(
-                            self.index(i, PORT + 1),
-                            self.index(i, len(self.headerdata) - 1),
-                        )
-            else:
-                self.cfglist = self.cfglist[0:i] + self.cfglist[i + 1 :]
-                self.sort(self.last_sort[0], self.last_sort[1])
+    # Additional helpers for working with and editing the table
+    def edit_details(self, index: QModelIndex):
+        """
+        Open the details dialog to edit settings not directly displayed in the table.
+        """
+        ioc_proc = self.get_ioc_proc(row=index.row())
+        self.details_dialog.setWindowTitle(f"Edit Details - {ioc_proc.name}")
+        self.details_dialog.ui.aliasEdit.setText(ioc_proc.alias)
+        self.details_dialog.ui.cmdEdit.setText(ioc_proc.cmd)
+        self.details_dialog.ui.delayEdit.setValue(ioc_proc.delay)
+
+        # Hard IOCs cannot edit cmd or delay
+        self.details_dialog.ui.cmdEdit.setDisabled(ioc_proc.hard)
+        self.details_dialog.ui.delayEdit.setDisabled(ioc_proc.hard)
+
+        index_to_update = []
+
+        if self.details_dialog.exec_() != QDialog.Accepted:
             return
-        elif d["status"] == utils.STATUS_RUNNING:
-            d["id"] = d["rid"]
-            d["host"] = d["rhost"]
-            d["port"] = d["rport"]
-            d["dir"] = d["rdir"]
-            d["pdir"] = ""
-            d["disable"] = False
-            d["cfgstat"] = utils.CONFIG_DELETED
-            d["alias"] = ""
-            self.cfglist.append(d)
-            self.sort(self.last_sort[0], self.last_sort[1])
 
-    def value(self, entry, c, display=True):
-        if c == STATUS:
-            return entry["status"]
-        if c == OSVER:
-            try:
-                return self.poll_thread.host_os[entry["host"]]
-            except Exception:
-                return ""
-        elif c == EXTRA:
-            if entry["hard"]:
-                return "HARD IOC"
-            v = ""
-            if entry["dir"] != entry["rdir"] and entry["rdir"] != "/tmp":
-                v = entry["rdir"] + " "
-            if entry["host"] != entry["rhost"] or entry["port"] != entry["rport"]:
-                v += "on " + entry["rhost"] + ":" + str(entry["rport"])
-            if entry["id"] != entry["rid"]:
-                v += "as " + entry["rid"]
-            return v
-        elif c == STATE:
-            try:
-                v = entry["newdisable"]
-            except Exception:
-                v = entry["disable"]
-            if v:
-                return "Off"
-            try:
-                v = entry["newdir"]
-            except Exception:
-                v = entry["dir"]
-            if v[:4] == "ioc/" or v == "/reg/g/pcds/controls/camrecord":
-                return "Prod"
-            else:
-                return "Dev"
-        if c == IOCNAME and display:
-            # First try to find an alias!
-            try:
-                if entry["newalias"] != "":
-                    return entry["newalias"]
-            except Exception:
-                if entry["alias"] != "":
-                    return entry["alias"]
-        if c == PORT and entry["hard"]:
-            return ""
+        new_proc = deepcopy(ioc_proc)
+        new_alias = self.details_dialog.ui.aliasEdit.text()
+        if new_proc.alias != new_alias:
+            new_proc.alias = new_alias
+            index_to_update.append(self.index(index.row(), TableColumn.IOCNAME))
+        # Not shown in the table, nothing special to do
+        new_proc.cmd = self.details_dialog.ui.cmdEdit.text()
+        new_proc.delay = self.details_dialog.ui.delayEdit.value()
+
+        if new_proc != ioc_proc:
+            self.edit_iocs[new_proc.name] = new_proc
+        for idx in index_to_update:
+            self.dataChanged.emit(idx, idx)
+
+    def add_ioc(self, ioc_proc: IOCProc):
+        """
+        Add a completely new IOC to the config.
+
+        Refreshes the bottom few rows of the table (the added IOCs section)
+        """
+        self.add_iocs[ioc_proc.name] = ioc_proc
+        self._emit_added_changed()
+
+    def delete_ioc(self, row: int):
+        """
+        Mark the IOC at row as pending deletion.
+
+        Refreshes that row to pick up the color updates.
+        """
+        ioc_name = self.get_ioc_row_map()[row]
+        self.delete_iocs.add(ioc_name)
+        self._emit_row_changed(row=row)
+
+    def revert_ioc(self, row: int):
+        """
+        Revert all pending adds, edits, and deletes for an IOC.
+
+        Refreshes the row in the case of reverting edits and deletes,
+        or the added rows section in the case of reverting an add.
+        """
+        ioc_name = self.get_ioc_row_map()[row]
+        undo_add = self.add_iocs.pop(ioc_name, None)
+        undo_edit = self.edit_iocs.pop(ioc_name, None)
         try:
-            return entry[self.newfield[c]]
-        except Exception:
-            try:
-                return entry[self.field[c]]
-            except Exception:
-                print("No %s in entry:" % self.field[c])
-                print(entry)
-                return ""
-
-    def _portkey(self, d, Ncol):
-        v = self.value(d, Ncol)
-        if v == "":
-            return -1
-        else:
-            return int(v)
-
-    def sort(self, Ncol, order):
-        self.last_sort = (Ncol, order)
-        self.layoutAboutToBeChanged.emit()
-        if Ncol == PORT:
-            self.cfglist = sorted(self.cfglist, key=lambda d: self._portkey(d, Ncol))
-        else:
-            self.cfglist = sorted(self.cfglist, key=lambda d: self.value(d, Ncol))
-        if order == Qt.DescendingOrder:
-            self.cfglist.reverse()
-        self.layoutChanged.emit()
-
-    def applyAddList(self, i, config, current, pfix, d, lst, verb):
-        for ls in lst:
-            if ls in list(config.keys()):
-                try:
-                    a = config[ls]["alias"]
-                    if a == "":
-                        a = config[ls]["id"]
-                    else:
-                        a += " (%s)" % config[ls]["id"]
-                except Exception:
-                    a = config[ls]["id"]
-            else:
-                a = current[ls]["rid"]
-            check = QCheckBox(d)
-            check.setChecked(False)
-            #
-            # We are presenting dead things as options to kill.
-            # Make sure we can have something there!
-            #
-            try:
-                h = current[ls][pfix + "host"]
-            except Exception:
-                h = config[ls]["host"]
-            try:
-                p = current[ls][pfix + "port"]
-            except Exception:
-                p = config[ls]["port"]
-            check.setText("%s %s on %s:%d" % (verb, a, h, p))
-            d.clayout.addWidget(check)
-            i = i + 1
-            d.checks.append(check)
-        return i
-
-    def setDialogState(self, d, v):
-        for c in d.checks:
-            c.setChecked(v)
-
-    # This is called when we are acting as an eventFilter for a dialog from applyVerify.
-    def eventFilter(self, o, e):
-        if (
-            self.dialog is not None
-            and o == self.dialog.sw
-            and e.type() == QEvent.Resize
-        ):
-            self.dialog.setMinimumWidth(
-                self.dialog.sw.minimumSizeHint().width()
-                + self.dialog.sa.verticalScrollBar().width()
-            )
-        return False
-
-    def applyVerify(self, current, config, kill, start, restart):
-        if kill == [] and start == [] and restart == []:
-            QMessageBox.critical(
-                None, "Warning", "Nothing to apply!", QMessageBox.Ok, QMessageBox.Ok
-            )
-            return ([], [], [])
-        d = QDialog()
-        self.dialog = d
-        d.setWindowTitle("Apply Confirmation")
-        d.layout = QVBoxLayout(d)
-        d.mlabel = QLabel(d)
-        d.mlabel.setText("Apply will take the following actions:")
-        d.layout.addWidget(d.mlabel)
-
-        # Create a scroll area with no frame and no horizontal scrollbar
-        d.sa = QScrollArea(d)
-        d.sa.setFrameStyle(QFrame.NoFrame)
-        d.sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        d.sa.setWidgetResizable(True)
-
-        # Create a widget for the scroll area and limit its size.
-        # Resize events for this widget will be sent to us.
-        d.sw = QWidget(d.sa)
-        d.sw.setMaximumHeight(5000)
-        d.sw.installEventFilter(self)
-        d.sa.setWidget(d.sw)
-
-        # Create a layout for the widget in the scroll area.
-        d.clayout = QVBoxLayout(d.sw)
-
-        d.layout.addWidget(d.sa)
-
-        d.checks = []
-        kill_only = [k for k in kill if k not in start]
-        kill_restart = [k for k in kill if k in start]
-        start_only = [s for s in start if s not in kill]
-        k = self.applyAddList(0, config, current, "r", d, kill_only, "KILL")
-        k2 = self.applyAddList(
-            k, config, current, "r", d, kill_restart, "KILL and RESTART"
-        )
-        s = self.applyAddList(k2, config, config, "", d, start_only, "START")
-        r = self.applyAddList(s, config, current, "r", d, restart, "RESTART")
-
-        d.buttonBox = QDialogButtonBox(d)
-        d.buttonBox.setOrientation(Qt.Horizontal)
-        d.buttonBox.setStandardButtons(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-        clear_button = d.buttonBox.addButton("Clear All", QDialogButtonBox.ActionRole)
-        set_button = d.buttonBox.addButton("Set All", QDialogButtonBox.ActionRole)
-        d.layout.addWidget(d.buttonBox)
-        d.buttonBox.accepted.connect(d.accept)
-        d.buttonBox.rejected.connect(d.reject)
-        clear_button.clicked.connect(lambda: self.setDialogState(d, False))
-        set_button.clicked.connect(lambda: self.setDialogState(d, True))
-
-        if d.exec_() == QDialog.Accepted:
-            checks = [c.isChecked() for c in d.checks]
-            kill_only = [kill_only[i] for i in range(len(kill_only)) if checks[i]]
-            kill_restart = [
-                kill_restart[i] for i in range(len(kill_restart)) if checks[k + i]
-            ]
-            start_only = [
-                start_only[i] for i in range(len(start_only)) if checks[k2 + i]
-            ]
-            restart = [restart[i] for i in range(len(restart)) if checks[s + i]]
-            kill = kill_only + kill_restart
-            start = start_only + kill_restart
-            r = (kill, start, restart)
-        else:
-            r = ([], [], [])
-        d.sw.removeEventFilter(self)
-        self.dialog = None
-        return r
-
-    def applyOne(self, index):
-        id = self.cfglist[index.row()]["id"]
-        if not self.validateConfig():
-            QMessageBox.critical(
-                None,
-                "Error",
-                "Configuration has errors, not applied!",
-                QMessageBox.Ok,
-                QMessageBox.Ok,
-            )
-            return
-        if self.doSave():
-            apply_config(self.hutch, self.applyVerify, id)
-
-    def doApply(self):
-        if not self.validateConfig():
-            QMessageBox.critical(
-                None,
-                "Error",
-                "Configuration has errors, not applied!",
-                QMessageBox.Ok,
-                QMessageBox.Ok,
-            )
-            return
-        if self.doSave():
-            apply_config(self.hutch, self.applyVerify)
-
-    def doSave(self):
-        if not self.validateConfig():
-            QMessageBox.critical(
-                None,
-                "Error",
-                "Configuration has errors, not saved!",
-                QMessageBox.Ok,
-                QMessageBox.Ok,
-            )
-            return False
-        # Do we want to check it in!?
-        d = self.commit_dialog
-        d.setWindowTitle("Commit %s" % self.hutch)
-        d.ui.commentEdit.setPlainText("")
-        while True:
-            d.exec_()
-            if d.result == QDialogButtonBox.Cancel:
-                return False
-            if d.result == QDialogButtonBox.No:
-                comment = None
-                break
-            comment = str(d.ui.commentEdit.toPlainText())
-            if comment != "":
-                break
-            QMessageBox.critical(
-                None,
-                "Error",
-                "Must have a comment for commit for %s" % self.hutch,
-                QMessageBox.Ok,
-                QMessageBox.Ok,
-            )
-        try:
-            file = tempfile.NamedTemporaryFile(
-                mode="w", dir=utils.TMP_DIR, delete=False
-            )
-            write_config(self.hutch, self.hosts, self.cfglist, self.vdict, file)
-        except Exception as exc:
-            logger.error(f"Error writing config: {exc}")
-            logger.debug("Error writing config", exc_info=True)
-            QMessageBox.critical(
-                None,
-                "Error",
-                "Failed to write configuration for %s" % self.hutch,
-                QMessageBox.Ok,
-                QMessageBox.Ok,
-            )
-            try:
-                os.unlink(file.name)  # Clean up!
-            except Exception:
-                pass
-            return False
-        for entry in self.cfglist:
-            #
-            # IOC names are special.  If we just reprocess the file, we will have both
-            # the old *and* the new names!  So we have to change the names here.
-            #
-            try:
-                entry["id"] = entry["newid"].strip()
-                del entry["newid"]
-            except Exception:
-                pass
-            try:
-                del entry["details"]
-            except Exception:
-                pass
-        if comment is not None:
-            try:
-                utils.commit_config(self.hutch, comment, self.userIO)
-            except Exception as exc:
-                logger.info(f"Error committing config file: {exc}")
-                logger.debug("Error committing config file", exc_info=True)
-
-        return True
-
-    def doRevert(self):
-        for entry in self.cfglist:
-            for f in self.newfield:
-                try:
-                    if f is not None:
-                        del entry[f]
-                except Exception:
-                    pass
-        self.poll_thread.mtime = None  # Force a re-read!
-        self.dataChanged.emit(
-            self.index(0, 0), self.index(len(self.cfglist), len(self.headerdata) - 1)
-        )
-
-    def inConfig(self, index):
-        entry = self.cfglist[index.row()]
-        return entry["cfgstat"] != utils.CONFIG_DELETED
-
-    def notSynched(self, index):
-        entry = self.cfglist[index.row()]
-        return (
-            entry["dir"] != entry["rdir"]
-            or entry["host"] != entry["rhost"]
-            or entry["port"] != entry["rport"]
-            or entry["id"] != entry["rid"]
-        )
-
-    def isChanged(self, index):
-        entry = self.cfglist[index.row()]
-        keys = list(entry.keys())
-        try:
-            if entry["cfgstat"] == utils.CONFIG_DELETED:
-                return True
-        except Exception:
-            pass
-        return (
-            "newhost" in keys
-            or "newport" in keys
-            or "newdir" in keys
-            or "newid" in keys
-            or "newdisable" in keys
-        )
-
-    def isHard(self, index):
-        entry = self.cfglist[index.row()]
-        return entry["hard"]
-
-    def needsApply(self, index):
-        entry = self.cfglist[index.row()]
-        try:
-            if entry["disable"] != entry["newdisable"]:
-                return True
-        except Exception:
-            pass
-        if entry["disable"]:
-            return entry["status"] == utils.STATUS_RUNNING
-        else:
-            if entry["status"] != utils.STATUS_RUNNING:
-                return True
-            try:
-                if entry["newhost"] != entry["rhost"]:
-                    return True
-            except Exception:
-                if entry["host"] != entry["rhost"]:
-                    return True
-            try:
-                if entry["newport"] != entry["rport"]:
-                    return True
-            except Exception:
-                if entry["port"] != entry["rport"]:
-                    return True
-            try:
-                if entry["newdir"] != entry["rdir"]:
-                    return True
-            except Exception:
-                if entry["dir"] != entry["rdir"]:
-                    return True
-            try:
-                if entry["newid"] != entry["rid"]:
-                    return True
-            except Exception:
-                if entry["id"] != entry["rid"]:
-                    return True
-            return False
-
-    def revertIOC(self, index):
-        entry = self.cfglist[index.row()]
-        if entry["cfgstat"] == utils.CONFIG_DELETED:
-            entry["cfgstat"] = utils.CONFIG_NORMAL
-        for f in self.newfield:
-            try:
-                if f is not None:
-                    del entry[f]
-            except Exception:
-                pass
-        self.dataChanged.emit(
-            self.index(index.row(), 0),
-            self.index(index.row(), len(self.headerdata) - 1),
-        )
-
-    def deleteIOC(self, index):
-        entry = self.cfglist[index.row()]
-        entry["cfgstat"] = utils.CONFIG_DELETED
-        if entry["status"] == utils.STATUS_RUNNING:
-            self.dataChanged.emit(
-                self.index(index.row(), 0),
-                self.index(index.row(), len(self.headerdata) - 1),
-            )
-        else:
-            self.cfglist = (
-                self.cfglist[0 : index.row()] + self.cfglist[index.row() + 1 :]
-            )
-            self.sort(self.last_sort[0], self.last_sort[1])
-
-    def setFromRunning(self, index):
-        entry = self.cfglist[index.row()]
-        for f in ["id", "dir", "host", "port"]:
-            if entry[f] != entry["r" + f]:
-                entry["new" + f] = entry["r" + f]
-        entry["cfgstat"] = utils.CONFIG_ADDED
-        self.dataChanged.emit(
-            self.index(index.row(), 0),
-            self.index(index.row(), len(self.headerdata) - 1),
-        )
-
-    def addExisting(self, index):
-        entry = self.cfglist[index.row()]
-        entry["cfgstat"] = utils.CONFIG_ADDED
-        self.dataChanged.emit(
-            self.index(index.row(), 0),
-            self.index(index.row(), len(self.headerdata) - 1),
-        )
-
-    def editDetails(self, index):
-        entry = self.cfglist[index.row()]
-        try:
-            details = entry["details"]
-        except Exception:
-            # Remember what was in the configuration file!
-            details = ["", 0, ""]
-            try:
-                details[0] = entry["cmd"]
-            except Exception:
-                pass
-            try:
-                details[1] = entry["delay"]
-            except Exception:
-                pass
-            try:
-                details[2] = entry["flags"]
-            except Exception:
-                pass
-            entry["details"] = details
-        self.details_dialog.setWindowTitle("Edit Details - %s" % entry["id"])
-        try:
-            self.details_dialog.ui.aliasEdit.setText(entry["newalias"])
-        except Exception:
-            self.details_dialog.ui.aliasEdit.setText(entry["alias"])
-        try:
-            self.details_dialog.ui.cmdEdit.setText(entry["cmd"])
-        except Exception:
-            self.details_dialog.ui.cmdEdit.setText("")
-        try:
-            self.details_dialog.ui.delayEdit.setText(str(entry["delay"]))
-        except Exception:
-            self.details_dialog.ui.delayEdit.setText("")
-        try:
-            self.details_dialog.ui.flagCheckBox.setChecked("u" in entry["flags"])
-        except Exception:
-            self.details_dialog.ui.flagCheckBox.setChecked(False)
-        if self.details_dialog.exec_() == QDialog.Accepted:
-            if entry["hard"]:
-                newcmd = ""
-                newdelay = 0
-                newflags = ""
-            else:
-                newcmd = str(self.details_dialog.ui.cmdEdit.text())
-                if newcmd == "":
-                    try:
-                        del entry["cmd"]
-                    except Exception:
-                        pass
-                else:
-                    entry["cmd"] = newcmd
-
-                if (
-                    "cmd" in list(entry.keys())
-                    and self.details_dialog.ui.flagCheckBox.isChecked()
-                ):
-                    newflags = "u"
-                    entry["flags"] = "u"
-                else:
-                    newflags = ""
-                    try:
-                        del entry["flags"]
-                    except Exception:
-                        pass
-
-                try:
-                    newdelay = int(self.details_dialog.ui.delayEdit.text())
-                except Exception:
-                    newdelay = 0
-                if newdelay == 0:
-                    try:
-                        del entry["delay"]
-                    except Exception:
-                        pass
-                else:
-                    entry["delay"] = newdelay
-
-            alias = str(self.details_dialog.ui.aliasEdit.text())
-            if alias != entry["alias"]:
-                entry["newalias"] = alias
-            else:
-                try:
-                    del entry["newalias"]
-                except Exception:
-                    pass
-
-            if details != [newcmd, newdelay, newflags]:
-                # We're changed, so flag this with a fake ID change!
-                if "newid" not in list(entry.keys()):
-                    entry["newid"] = entry["id"] + " "
-            else:
-                # We're not changed, so remove any fake ID change!
-                if (
-                    "newid" in list(entry.keys())
-                    and entry["newid"] == entry["id"] + " "
-                ):
-                    del entry["newid"]
-
-    def addIOC(self, id, alias, host, port, dir):
-        if int(port) == -1:
-            dir = get_hard_ioc_dir_for_display(id)
-            host = id
-            try:
-                base = get_base_name(id)
-            except Exception:
-                base = ""
-            cfg = {
-                "id": id,
-                "host": id,
-                "port": -1,
-                "dir": dir,
-                "status": utils.STATUS_INIT,
-                "base": base,
-                "stattime": 0,
-                "cfgstat": utils.CONFIG_ADDED,
-                "disable": False,
-                "history": [],
-                "rid": id,
-                "rhost": id,
-                "rport": -1,
-                "rdir": dir,
-                "pdir": "",
-                "newstyle": False,
-                "alias": alias,
-                "hard": True,
-            }
-        else:
-            dir = normalize_path(dir, id)
-            try:
-                pname = get_parent(dir, id)
-            except Exception:
-                pname = ""
-            cfg = {
-                "id": id,
-                "host": host,
-                "port": int(port),
-                "dir": dir,
-                "status": utils.STATUS_INIT,
-                "stattime": 0,
-                "cfgstat": utils.CONFIG_ADDED,
-                "disable": False,
-                "history": [],
-                "rid": id,
-                "rhost": host,
-                "rport": int(port),
-                "rdir": dir,
-                "pdir": pname,
-                "newstyle": True,
-                "alias": alias,
-                "hard": False,
-            }
-        if host not in self.hosts:
-            self.hosts.append(host)
-            self.hosts.sort()
-        self.cfglist.append(cfg)
-        self.sort(self.last_sort[0], self.last_sort[1])
-
-    # index is either an IOC name or an index!
-    def connectIOC(self, index):
-        if isinstance(index, QModelIndex):
-            entry = self.cfglist[index.row()]
-        else:
-            entry = None
-            for line in self.cfglist:
-                if line["id"] == index:
-                    entry = line
-                    break
-            if entry is not None:
-                return
-        #
-        # Sigh.  Because we want to do authentication, we have a version of kerberos on
-        # our path, but unfortunately it doesn't play nice with the library that telnet
-        # uses!  Therefore, we have to get rid of LD_LIBRARY_PATH here.
-        #
-        try:
-            if entry["hard"]:
-                for line in netconfig(entry["id"])["console port dn"].split(","):
-                    if line[:7] == "cn=port":
-                        port = 2000 + int(line[7:])
-                    if line[:7] == "cn=digi":
-                        host = line[3:]
-                    if line[:5] == "cn=ts":
-                        host = line[3:]
-            else:
-                host = entry["host"]
-                port = entry["port"]
-            self.runCommand(
-                None,
-                entry["id"],
-                "unsetenv LD_LIBRARY_PATH ; telnet %s %s" % (host, port),
-            )
+            undo_delete = self.delete_iocs.remove(ioc_name)
         except KeyError:
-            logger.error(
-                "Dict key error while setting up telnet interface for: %s", entry
-            )
-        except Exception:
-            logger.error("Unspecified error while setting up telnet interface")
-            logger.debug("Telnet setup error", exc_info=True)
+            undo_delete = None
+        if undo_add is not None:
+            self._emit_added_changed()
+        elif undo_edit is not None or undo_delete is not None:
+            self._emit_row_changed(row=row)
 
-    def viewlogIOC(self, index):
-        if isinstance(index, QModelIndex):
-            id = self.cfglist[index.row()]["id"]
-        else:
-            id = str(index)
-        try:
-            self.runCommand(
-                "128x30",
-                id,
-                "tail -1000lf `ls -t " + (utils.LOGBASE % id) + "* |head -1`",
-            )
-        except Exception as exc:
-            logger.error(f"Error while trying to view log file: {exc}")
-            logger.debug("Error while trying to view log file", exc_info=True)
-
-    # index is either an IOC name or an index!
-    def rebootIOC(self, index):
-        if isinstance(index, QModelIndex):
-            entry = self.cfglist[index.row()]
-        else:
-            entry = None
-            for line in self.cfglist:
-                if line["id"] == index:
-                    entry = line
-                    break
-            if entry is None:
-                return
-        if entry["hard"]:
-            try:
-                restart_hioc(entry["id"])
-            except Exception:
-                QMessageBox.critical(
-                    None,
-                    "Error",
-                    "Failed to restart hard IOC %s!" % entry["id"],
-                    QMessageBox.Ok,
-                    QMessageBox.Ok,
-                )
-        else:
-            if not restart_proc(entry["host"], entry["port"]):
-                QMessageBox.critical(
-                    None,
-                    "Error",
-                    "Failed to restart IOC %s!" % entry["id"],
-                    QMessageBox.Ok,
-                    QMessageBox.Ok,
-                )
-
-    def rebootServer(self, index):
-        if isinstance(index, QModelIndex):
-            entry = self.cfglist[index.row()]
-        else:
-            entry = None
-            for line in self.cfglist:
-                if line["id"] == index:
-                    entry = line
-                    break
-            if entry is None:
-                return
-        if entry["hard"]:
-            try:
-                reboot_hioc(entry["id"])
-            except Exception:
-                QMessageBox.critical(
-                    None,
-                    "Error",
-                    "Failed to reboot hard IOC %s!" % entry["id"],
-                    QMessageBox.Ok,
-                    QMessageBox.Ok,
-                )
-            return
-        host = entry["host"]
-        d = QDialog()
-        d.setWindowTitle("Reboot Server " + host)
-        d.layout = QVBoxLayout(d)
-        ihost = host + "-ipmi"
-        nc = netconfig(ihost)
-        try:
-            nc["name"]
-        except Exception:
-            label = QLabel(d)
-            label.setText("Cannot find IPMI address for host %s!" % host)
-            d.layout.addWidget(label)
-            d.buttonBox = QDialogButtonBox(d)
-            d.buttonBox.setOrientation(Qt.Horizontal)
-            d.buttonBox.setStandardButtons(QDialogButtonBox.Ok)
-            d.layout.addWidget(d.buttonBox)
-            d.buttonBox.accepted.connect(d.accept)
-            d.exec_()
-            return
-        llist = []
-        label = QLabel(d)
-        label.setText(
-            "Rebooting " + host + " will temporarily stop the following IOCs:"
+    def _emit_all_changed(self):
+        """Helper for causing a full table update."""
+        self.dataChanged.emit(
+            self.index(0, 0), self.index(self.rowCount() - 1, self.columnCount() - 1)
         )
-        d.layout.addWidget(label)
-        llist.append(label)
-        for line in self.cfglist:
-            if line["host"] == host:
-                label = QLabel(d)
-                if line["alias"] != "":
-                    label.setText("        " + line["alias"] + " (" + line["id"] + ")")
-                else:
-                    label.setText("        " + line["id"])
-                d.layout.addWidget(label)
-                llist.append(label)
-        label = QLabel(d)
-        label.setText("Proceed?")
-        d.layout.addWidget(label)
-        llist.append(label)
-        d.buttonBox = QDialogButtonBox(d)
-        d.buttonBox.setOrientation(Qt.Horizontal)
-        d.buttonBox.setStandardButtons(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-        d.layout.addWidget(d.buttonBox)
-        d.buttonBox.accepted.connect(d.accept)
-        d.buttonBox.rejected.connect(d.reject)
-        if d.exec_() == QDialog.Accepted:
-            if not reboot_server(ihost):
-                QMessageBox.critical(
-                    None,
-                    "Error",
-                    "Failed to reboot host %s!" % ihost,
-                    QMessageBox.Ok,
-                    QMessageBox.Ok,
-                )
 
-    def cleanupChildren(self):
-        for p in self.children:
-            try:
-                p.kill()
-            except Exception:
-                pass
+    def _emit_added_changed(self):
+        """Helper for causing an update of only the added IOCs."""
+        added_iocs_row = len(self.config.procs)
+        idx1 = self.index(added_iocs_row, 0)
+        idx2 = self.index(self.rowCount() - 1, self.columnCount() - 1)
+        self.dataChanged.emit(idx1, idx2)
 
-    def doSaveVersions(self):
-        for i in range(len(self.cfglist)):
-            self.saveVersion(i)
-
-    # index is either an integer or an index!
-    def saveVersion(self, index):
-        if isinstance(index, QModelIndex):
-            entry = self.cfglist[index.row()]
-        else:
-            entry = self.cfglist[index]
-        try:
-            dir = entry[self.newfield[VERSION]]
-        except Exception:
-            dir = entry[self.field[VERSION]]
-        try:
-            h = entry["history"]
-            if dir in h:
-                h.remove(dir)
-            h[:0] = [dir]
-            if len(h) > 5:
-                h = h[0:5]
-        except Exception:
-            h = [dir]
-        entry["history"] = h
-
-    #
-    # Generate a history list.  In order:
-    #    New configuration setting
-    #    Current configuration setting
-    #    Current running setting
-    #    Others in the history list.
-    #
-    def history(self, row):
-        entry = self.cfglist[row]
-        x = [entry["dir"]]
-        try:
-            x[:0] = [entry["newdir"]]
-        except Exception:
-            pass
-        try:
-            i = entry["rdir"]
-            if i not in x:
-                x[len(x) :] = [i]
-        except Exception:
-            pass
-        try:
-            h = entry["history"]
-            for i in h:
-                if i not in x:
-                    x[len(x) :] = [i]
-        except Exception:
-            pass
-        return x
-
-    def getID(self, row):
-        return self.cfglist[row]["id"]
-
-    def validateConfig(self):
-        for i in range(len(self.cfglist)):
-            h = self.value(self.cfglist[i], HOST)
-            p = self.value(self.cfglist[i], PORT)
-            for j in range(i + 1, len(self.cfglist)):
-                h2 = self.value(self.cfglist[j], HOST)
-                p2 = self.value(self.cfglist[j], PORT)
-                if h == h2 and p == p2:
-                    return False
-        #
-        # Anything else we want to check here?!?
-        #
-        return True
-
-    def getVar(self, v):
-        try:
-            return self.vdict[v]
-        except Exception:
-            return None
-
-    def findPV(self, name):
-        line = []
-        try:
-            regexp = re.compile(name)
-        except Exception:
-            return "Bad regular expression!"
-        for entry in self.cfglist:
-            try:
-                ll = find_pv(regexp, entry["id"])
-            except Exception:
-                continue
-            for r in ll:
-                if r == name:  # One exact match, forget the rest!
-                    return [(r, entry["id"], entry["alias"])]
-                else:
-                    line.append((r, entry["id"], entry["alias"]))
-        return line
-
-    def selectPort(self, host, lowport, highport):
-        for port in range(lowport, highport):
-            hit = False
-            for entry in self.cfglist:
-                if self.value(entry, HOST) == host and self.value(entry, PORT) == port:
-                    hit = True
-                    break
-            if not hit:
-                return port
-        return None
-
-
-class StatusPollThread(threading.Thread):
-    """
-    A thread running a loop to continually check the status of configured IOCs.
-
-    This updates data in the model that is used for the "Status" column.
-
-    Parameters
-    ----------
-    model : IOCTableModel
-        The model we need to update.
-    config : Config
-        The config object that represents the hutch's iocmanager config.
-    interval : float
-        How often to check the status in seconds.
-    """
-
-    def __init__(self, model: IOCTableModel, interval: float, config: Config):
-        threading.Thread.__init__(self)
-        self.model = model
-        self.hutch = model.hutch
-        self.mtime = None
-        self.interval = interval
-        self.rmtime = {}
-        self.daemon = True
-        self.dialog = None
-        self.host_os = host_os
-
-    def run(self):
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            while True:
-                start_time = time.monotonic()
-                futures = []
-
-                try:
-                    config = read_config(self.hutch)
-                except Exception:
-                    ...
-                else:
-                    self.host_os = get_host_os(config.hosts)
-                    self.rmtime = {}  # Force a re-read!
-                    self.model.configuration(config)
-
-                result = read_status_dir(self.hutch)
-                for line in result:
-                    futures.append(executor.submit(self.check_one_file_status, line))
-
-                for line in self.model.cfglist:
-                    futures.append(executor.submit(self.check_one_config_status, line))
-
-                for p in self.model.children:
-                    futures.append(executor.submit(self.poll_one_child, p))
-
-                for fut in futures:
-                    fut.result()
-                duration = time.monotonic() - start_time
-                if duration < self.interval:
-                    time.sleep(self.interval + 1 - duration)
-
-    def check_one_file_status(self, line):
-        rdir = line["rdir"]
-        line.update(check_status(line["rhost"], line["rport"], line["rid"]))
-        line["stattime"] = time.time()
-        if line["rdir"] == "/tmp":
-            line["rdir"] = rdir
-        else:
-            line["newstyle"] = False
-        self.model.running(line)
-
-    def check_one_config_status(self, line):
-        if line["stattime"] + self.interval > time.time():
-            return
-        if line["hard"]:
-            s = {"pid": -1, "autorestart": False}
-            try:
-                pv = psp.Pv.Pv(line["base"] + ":HEARTBEAT")
-                pv.connect(1.0)
-                pv.disconnect()
-                s["status"] = utils.STATUS_RUNNING
-            except Exception:
-                s["status"] = utils.STATUS_SHUTDOWN
-            s["rid"] = line["id"]
-            s["rdir"] = line["dir"]
-        else:
-            s = check_status(line["host"], line["port"], line["id"])
-        s["stattime"] = time.time()
-        s["rhost"] = line["host"]
-        s["rport"] = line["port"]
-        if line["newstyle"]:
-            if s["rdir"] == "/tmp":
-                del s["rdir"]
-            else:
-                s["newstyle"] = False  # We've switched from new to old?!?
-        self.model.running(s)
-
-    def poll_one_child(self, p):
-        if p.poll() is not None:
-            self.model.children.remove(p)
+    def _emit_row_changed(self, row: int):
+        """Helper for updating a single row."""
+        idx1 = self.index(row, 0)
+        idx2 = self.index(row, self.columnCount() - 1)
+        self.dataChanged.emit(idx1, idx2)

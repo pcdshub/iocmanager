@@ -77,6 +77,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         self.hutch = hutch
         self.authdialog = authdialog(self)
         self.model = table_model.IOCTableModel(hutch)
+        # TODO https://doc.qt.io/archives/qt-5.15/qsortfilterproxymodel.html#details
         self.utimer = QtCore.QTimer()
         self.delegate = IOCTableDelegate(hutch)
         self.ui.actionApply.triggered.connect(self.doApply)
