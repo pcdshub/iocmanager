@@ -9,7 +9,7 @@ if [ -z "${SCRIPTROOT}" ]; then
     export SCRIPTROOT
 fi
 if [ -z "${IOCMAN_PY_BIN}" ]; then
-    export IOCMAN_PY_BIN=/cds/group/pcds/conda/py312/envs/pcds-6.0.0/bin
+    export IOCMAN_PY_BIN=/cds/group/pcds/pyps/conda/py312/envs/pcds-6.0.1/bin
 fi
 if [ -z "${PYPS_ROOT}" ]; then
     export PYPS_ROOT=/cds/group/pcds/pyps
