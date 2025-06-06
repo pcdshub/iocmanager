@@ -235,8 +235,9 @@ class IOCTableModel(QAbstractTableModel):
         Removes pending configuration edits.
 
         Call this after saving the config file.
-        Note that this doesn't ask for a model update, intentionally.
-        We'll update on the next poll.
+        Note that this doesn't ask for a model update, intentionally,
+        since that would cause the pending changes to disappear.
+        We'll update on the next poll, including the now-saved changes.
         """
         self.add_iocs.clear()
         self.edit_iocs.clear()
