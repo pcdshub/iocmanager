@@ -1,0 +1,97 @@
+#!/usr/bin/bash
+if [ $# -eq 0 ];
+    then
+    echo Usage: find_pv pv_name [pv_name2 ...]
+    echo This script will search for each specified EPICS PV in:
+    echo "  /reg/d/iocData/ioc*/iocInfo/IOC.pvlist"
+    echo ""
+    echo Then it looks for the linux host or hard IOC hostname in:
+    echo "  /reg/d/iocCommon/hosts/ioc*/startup.cmd"
+    echo "  /reg/d/iocCommon/hioc/ioc*/startup.cmd"
+    echo "If no host is found, the IOC will not autoboot after a power cycle!"
+    echo ""
+    echo Finally it looks for the boot directory in:
+    echo "  /reg/d/iocCommon/{hioc,sioc}/<ioc-name>/startup.cmd"
+    echo ""
+    echo "Hard IOC boot directories are shown with the nfs mount name."
+    echo "Typically this is /iocs mounting /reg/g/pcds/package/epics/ioc"
+    exit 1;
+fi
+
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+cd "${THIS_DIR}/.." || exit
+source "${THIS_DIR}"/default_env
+
+for pv in "$@";
+  do
+  echo PV: "$pv"
+  ioc_list=$(grep -E -l -e "$pv" "${IOC_DATA}"/ioc*/iocInfo/IOC.pvlist | cut -d / -f5)
+  for ioc in $ioc_list;
+    do
+    echo "  IOC: $ioc"
+
+			# Look for IOC PV root
+    ioc_pv=$(grep -E UPTIME "${IOC_DATA}"/"$ioc"/iocInfo/IOC.pvlist | sed -e "s/:UPTIME.*//")
+    if (( ${#ioc_pv} == 0 ));
+	then
+	echo "  IOC_PV: Not found!"
+    else
+	echo "  IOC_PV: $ioc_pv"
+    fi
+
+			# Look for linux hosts
+    host_list=$(grep -E -l -e "$ioc" "${IOC_COMMON}"/hosts/ioc*/startup.cmd | cut -d / -f6)
+    for h in $host_list;
+      do
+      echo "  HOST: $h"
+    done
+
+    if [ -f "${IOC_COMMON}"/sioc/"$ioc"/startup.cmd ];
+	then
+				# Look for soft IOC boot directories
+	boot_list=$(grep -E -w -e "^cd" "${IOC_COMMON}"/sioc/"$ioc"/startup.cmd | awk '{ print $2}')
+	if (( ${#boot_list} ));
+	    then
+	    echo "  STARTUP: ${IOC_COMMON}/sioc/$ioc/startup.cmd"
+	    for d in $boot_list;
+	      do
+	      echo "  BOOT_DIR: $d"
+	    done
+	fi
+    fi
+
+			# Look for hard ioc
+    hioc_list=$(grep -E -l -e "$ioc" "${IOC_COMMON}"/hioc/ioc*/startup.cmd | cut -d / -f6)
+    if (( ${#hioc_list} ));
+	then
+	for hioc in $hioc_list;
+	  do
+	  echo "  HIOC: $hioc"
+	  echo "  STARTUP: ${IOC_COMMON}/hioc/$hioc/startup.cmd"
+	  boot_list=$(grep -E -w -e "^chdir" "${IOC_COMMON}"/hioc/"$hioc"/startup.cmd | cut -d \" -f2)
+	  for d in $boot_list;
+	    do
+	    echo "  BOOT_DIR: $d"
+	  done
+	done
+    fi
+
+    if (( ${#host_list} == 0 && ${#hioc_list} == 0 ));
+	then
+	echo "  HOST: Not found!"
+	echo "  HIOC: Not found!"
+    fi
+
+			# Show boot directory for this PV
+    if (( ${#boot_list} == 0 ));
+	then
+	echo "  BOOT_DIR: Not found!"
+    fi
+
+                        # Look for IocManager Configs
+    echo "  IocManager Configs:"
+    "${THIS_DIR}"/find_ioc --name "$ioc"
+
+
+  done
+done

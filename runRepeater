@@ -1,3 +1,0 @@
-#!/bin/sh
-source /reg/g/pcds/setup/epicsenv-7.0.2-2.0.sh
-exec `which caRepeater`
