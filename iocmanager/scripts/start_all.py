@@ -17,6 +17,6 @@ if __name__ == "__main__":
         if ioc.host == host and not ioc.disable:
             start_proc(cfg, ioc, True)
             try:
-                time.sleep(ioc["delay"])
+                time.sleep(ioc.delay)
             except Exception:
                 pass

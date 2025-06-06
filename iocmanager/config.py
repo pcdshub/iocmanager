@@ -72,6 +72,9 @@ class IOCProc:
     history : list[str], optional
         Past known good versions of the IOC. This can be used to allow
         a system owner to quickly revert the IOC to a known, working version.
+    delay : int, optional
+        Time to sleep in seconds after starting this IOC before starting the
+        next IOC during start_all (at server boot).
     parent : str, automatic
         The IOC that supplies the executable for this one, if this IOC
         is a templated IOC.
@@ -92,6 +95,7 @@ class IOCProc:
     disable: bool = False
     cmd: str = ""
     history: list[str] = field(default_factory=list)
+    delay: int = 0
     parent: str = ""
     hard: bool = False
 
@@ -246,6 +250,7 @@ def read_config(cfgname: str) -> Config:
                 disable=procmgr_cfg.get("disable", False),
                 hard=procmgr_cfg.get("hard", False),
                 cmd=procmgr_cfg.get("cmd", ""),
+                delay=procmgr_cfg.get("delay", 0),
                 history=procmgr_cfg.get("history", []),
             )
         )
@@ -322,6 +327,8 @@ def _cfg_file_lines(config: Config) -> list[str]:
                 + ", ".join(["'" + path + "'" for path in ioc.history])
                 + "]"
             )
+        if ioc.delay:
+            extra += f", delay: {ioc.delay}"
         if ioc.cmd:
             extra += f", cmd: '{ioc.cmd}'"
         lines.append(
