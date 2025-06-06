@@ -190,6 +190,7 @@ class IOCTableModel(QAbstractTableModel):
 
     def __init__(self, config: Config, hutch: str, parent: ParentWidget = None):
         super().__init__(parent)
+        self.config = config
         self.hutch = hutch
         self.details_dialog = DetailsDialog(parent)
         self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
@@ -203,8 +204,6 @@ class IOCTableModel(QAbstractTableModel):
         self.status_live: dict[str, IOCStatusLive] = {}
         self.status_files: dict[str, IOCStatusFile] = {}
         self.host_os: dict[str, str] = {}
-        # Note: this sets self.config
-        self.update_from_config_file(config)
 
     # Main external business logic
     def get_next_config(self) -> Config:
@@ -260,8 +259,14 @@ class IOCTableModel(QAbstractTableModel):
         include the user's edits.
         """
         ioc_name = self.get_ioc_row_map()[row]
-        return self.edit_iocs.get(
-            ioc_name, self.add_iocs.get(ioc_name, self.config.procs[ioc_name])
+        for source in (self.edit_iocs, self.add_iocs, self.config.procs):
+            try:
+                return source[ioc_name]
+            except KeyError:
+                ...
+        # This is not a valid codepath, but let's be paranoid
+        raise RuntimeError(
+            f"Found {ioc_name} at row {row} but no data associated with it."
         )
 
     def get_ioc_row_map(self) -> list[str]:
@@ -710,7 +715,6 @@ class IOCTableModel(QAbstractTableModel):
         # It should be faster to tell most everything to update than to pick cells
         # Technically we could skip the status columns but it's ok
         self._emit_all_changed()
-        self.sort(self.last_sort[0], self.last_sort[1])
 
     def update_from_status_file(self, status_file: IOCStatusFile):
         """
