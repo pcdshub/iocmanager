@@ -108,7 +108,7 @@ class GraphicUserInterface(QtWidgets.QMainWindow):
         self.currentIOC = None
         self.currentBase = None
         self.pvlist = []
-        self.model.startPoll()
+        self.model.start_poll_thread()
         self.unauthenticate()
 
     def closeEvent(self, event):

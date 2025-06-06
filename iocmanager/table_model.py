@@ -8,19 +8,18 @@ See https://doc.qt.io/qt-5/qabstracttablemodel.html#details
 """
 
 import concurrent.futures
+import itertools
 import logging
 import os
 import re
-import shutil
-import subprocess
 import tempfile
 import threading
 import time
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 
 import psp
 from qtpy.QtCore import QAbstractTableModel, QEvent, QModelIndex, Qt, QVariant
-from qtpy.QtGui import QBrush, QColor
+from qtpy.QtGui import QBrush
 from qtpy.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -34,11 +33,25 @@ from qtpy.QtWidgets import (
 )
 
 from . import commit_ui, details_ui
-from .config import Config, get_host_os, read_config, read_status_dir, write_config
+from .config import (
+    Config,
+    IOCProc,
+    IOCStatusFile,
+    get_host_os,
+    read_config,
+    read_status_dir,
+    write_config,
+)
 from .epics_paths import get_parent, normalize_path
 from .hioc_tools import get_hard_ioc_dir_for_display, reboot_hioc, restart_hioc
 from .ioc_info import find_pv, get_base_name
-from .procserv_tools import apply_config, check_status, restart_proc
+from .procserv_tools import (
+    IOCStatusLive,
+    ProcServStatus,
+    apply_config,
+    check_status,
+    restart_proc,
+)
 from .server_tools import netconfig, reboot_server
 from .type_hints import ParentWidget
 
@@ -47,7 +60,7 @@ logger = logging.getLogger(__name__)
 
 class TableColumn(IntEnum):
     """
-    Options and indices for table headers
+    Options and indices for table columns
     """
 
     IOCNAME = 0
@@ -60,6 +73,26 @@ class TableColumn(IntEnum):
     VERSION = 7
     PARENT = 8
     EXTRA = 9
+
+
+table_headers = {
+    TableColumn.IOCNAME: "IOC Name",
+    TableColumn.ID: "IOC ID",
+    TableColumn.STATE: "State",
+    TableColumn.STATUS: "Status",
+    TableColumn.HOST: "Host",
+    TableColumn.OSVER: "OS",
+    TableColumn.PORT: "PORT",
+    TableColumn.VERSION: "Version",
+    TableColumn.PARENT: "Parent",
+    TableColumn.EXTRA: "Information",
+}
+
+
+class StateOption(StrEnum):
+    OFF = "Off"
+    PROD = "Prod"
+    DEV = "Dev"
 
 
 class CommitOption(IntEnum):
@@ -132,6 +165,24 @@ class IOCTableModel(QAbstractTableModel):
     configuration. It also inspects the statuses of running processes
     to show them to the user.
 
+    Notes on QAbstractTableModel
+    (https://doc.qt.io/archives/qt-5.15/qabstracttablemodel.html#subclassing)
+
+    Always required:
+    - rowCount(self, parent: QModelIndex) -> int
+    - columnCount(self, parent: QModelIndex) -> int
+    - data(self, index: QModelIndex, role: int) -> QVariant
+
+    Recommended:
+    - headerData(self, section: int, orientation: Orientation, role: int) -> QVariant
+
+    Editable required:
+    - setData(self, index: QModelIndex, value: QVariant, role: int) -> bool
+    - flags(self, index: QModelIndex) -> ItemFlags
+
+    The optional insertRows, etc. are not required here because we don't care to
+    insert additional empty rows or columns.
+
     Parameters
     ----------
     config : Config
@@ -142,134 +193,420 @@ class IOCTableModel(QAbstractTableModel):
 
     def __init__(self, config: Config, parent: ParentWidget = None):
         super().__init__(parent)
-        self.config = config
         self.details_dialog = DetailsDialog(parent)
         self.commit_dialog = CommitDialog(parent)
         self.poll_thread = StatusPollThread(
             model=self, interval=5.0, config=self.config
         )
+        # Track last sort to reapply sorting after changing the IOC list
+        self.last_sort: tuple[int, Qt.SortOrder] = (0, Qt.DescendingOrder)
+        # Note: this sets self.config
+        self.update_from_config_file(config)
+        # Local changes (not applied yet)
+        self.add_iocs: dict[str, IOCProc] = {}
+        self.edit_iocs: dict[str, IOCProc] = {}
+        self.delete_iocs: list[str] = []
+        # Live info
+        self.status_live: dict[str, IOCStatusLive] = {}
+        self.status_files: dict[str, IOCStatusLive] = {}
+        self.host_os: dict[str, str] = {}
 
-        self.headerdata = [
-            "IOC Name",
-            "IOC ID",
-            "State",
-            "Status",
-            "Host",
-            "OS",
-            "Port",
-            "Version",
-            "Parent",
-            "Information",
-        ]
-        self.field = [
-            "id",
-            "id",
-            "disable",
-            None,
-            "host",
-            None,
-            "port",
-            "dir",
-            "pdir",
-            None,
-        ]
-        self.newfield = [
-            "newid",
-            "newid",
-            "newdisable",
-            None,
-            "newhost",
-            None,
-            "newport",
-            "newdir",
-            None,
-            None,
-        ]
-        self.lastsort = (0, Qt.DescendingOrder)
+    # Basic helpers for implementing the QAbstractTableModel API
+    def get_ioc_proc(self, row: int) -> IOCProc:
+        """Define the row -> proc mapping for the table."""
+        return (list(self.config.procs.values()) + list(self.add_iocs.values()))[row]
 
-    def runCommand(self, geo, id, cmd):
-        if os.path.exists("/usr/libexec/gnome-terminal-server"):
-            appid = self.myuid % self.nextid
-            self.nextid += 1
-            x = subprocess.Popen(
-                ["/usr/libexec/gnome-terminal-server", "--app-id", appid]
-            )
-            time.sleep(1)
-            self.children.append(x)
-            cmdlist = ["gnome-terminal", "--app-id", appid]
+    # Implement QAbstractTableModel API
+    def rowCount(self, parent: QModelIndex | None = None) -> int:
+        """
+        Returns the number of rows in the table.
+
+        Note that for table models, it is typical for parent to be unused.
+        It's included for compatibility with the base class.
+
+        https://doc.qt.io/archives/qt-5.15/qabstractitemmodel.html#rowCount
+        """
+        return len(self.config.procs) + len(self.add_iocs)
+
+    def columnCount(self, parent: QModelIndex | None = None) -> int:
+        """
+        Returns the number of columns in the table.
+
+        Note that for table models, it is typical for parent to be unused.
+        It's included for compatibility with the base class.
+
+        https://doc.qt.io/archives/qt-5.15/qabstractitemmodel.html#columnCount
+        """
+        return len(TableColumn)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> QVariant:
+        """
+        Returns one element of stored data corresponding to one table cell.
+
+        Fans out to a number of helper functions depending on which column and role
+        we're getting data for.
+
+        Note: must return an empty/invalid QVariant if there is not a valid value
+        to return.
+
+        https://doc.qt.io/archives/qt-5.15/qabstractitemmodel.html#data
+        """
+        if not index.isValid() or index.row() >= self.rowCount():
+            # Invalid or off the table
+            return QVariant()
+        ioc_proc = self.get_ioc_proc(index.row())
+        column = index.column()
+        match role:
+            case Qt.DisplayRole | Qt.EditRole:
+                try:
+                    return QVariant(
+                        self.get_display_text(ioc_proc=ioc_proc, column=column)
+                    )
+                except (KeyError, ValueError):
+                    return QVariant()
+            case Qt.ForegroundRole:
+                return QVariant(
+                    QBrush(self.get_foreground_color(ioc_proc=ioc_proc, column=column))
+                )
+            case Qt.BackgroundRole:
+                return QVariant(
+                    QBrush(self.get_background_color(ioc_proc=ioc_proc, column=column))
+                )
+            case _:
+                # Unsupported role
+                return QVariant()
+
+    def get_display_text(self, ioc_proc: IOCProc, column: int) -> str:
+        """Get text data for displaying and editing in the table."""
+        match column:
+            case TableColumn.IOCNAME:
+                return ioc_proc.alias or ioc_proc.name
+            case TableColumn.ID:
+                return ioc_proc.name
+            case TableColumn.STATE:
+                if ioc_proc.disable:
+                    return StateOption.OFF
+                elif ioc_proc.path.startswith("ioc/") or ioc_proc.path.endswith(
+                    "/camrecord"
+                ):
+                    return StateOption.PROD
+                else:
+                    return StateOption.DEV
+            case TableColumn.STATUS:
+                return self.status_live[ioc_proc.name].status
+            case TableColumn.HOST:
+                return ioc_proc.host
+            case TableColumn.OSVER:
+                return self.host_os[ioc_proc.host]
+            case TableColumn.PORT:
+                return str(ioc_proc.port)
+            case TableColumn.VERSION:
+                return ioc_proc.path
+            case TableColumn.PARENT:
+                return ioc_proc.parent
+            case TableColumn.EXTRA:
+                if ioc_proc.hard:
+                    return "HARD IOC"
+                # Goal: summarize differences between configured and running
+                status_file = self.status_files[ioc_proc.name]
+                text_parts = []
+                if ioc_proc.path != status_file.path:
+                    text_parts.append(f"{status_file.path}")
+                if (
+                    ioc_proc.host != status_file.host
+                    or ioc_proc.port != status_file.port
+                ):
+                    text_parts.append(f"on {status_file.host}:{status_file.port}")
+                if text_parts:
+                    text_parts.insert(0, "Live:")
+                    return " ".join(text_parts)
+                return ""
+            case _:
+                raise ValueError(f"Invalid column {column}")
+
+    def get_foreground_color(self, ioc_proc: IOCProc, column: int) -> Qt.GlobalColor:
+        """Get the text color for a cell in the table"""
+        # Universal handling for pending deletion
+        if ioc_proc.name in self.delete_iocs:
+            return Qt.red
+        # Specific handling for modified (blue) and other
+        match column:
+            case TableColumn.IOCNAME:
+                # Check modified
+                try:
+                    if self.edit_iocs[ioc_proc.name].alias != ioc_proc.alias:
+                        return Qt.blue
+                except KeyError:
+                    ...
+            case TableColumn.ID:
+                # User can't modify this, keep as default
+                ...
+            case TableColumn.STATE:
+                # Check modified
+                try:
+                    if self.edit_iocs[ioc_proc.name].disable != ioc_proc.disable:
+                        return Qt.blue
+                except KeyError:
+                    ...
+            case TableColumn.STATUS:
+                # Read-only field, pick black or white for contrast with background
+                bg_color = self.get_background_color(ioc_proc=ioc_proc, column=column)
+                if bg_color in (Qt.blue, Qt.red):
+                    return Qt.white
+            case TableColumn.HOST:
+                # Check modified
+                try:
+                    if self.edit_iocs[ioc_proc.name].host != ioc_proc.host:
+                        return Qt.blue
+                except KeyError:
+                    ...
+            case TableColumn.OSVER:
+                # User can't modify this, keep as default
+                ...
+            case TableColumn.PORT:
+                # Check modified
+                try:
+                    if self.edit_iocs[ioc_proc.name].port != ioc_proc.port:
+                        return Qt.blue
+                except KeyError:
+                    ...
+            case TableColumn.VERSION:
+                # Check modified
+                try:
+                    if self.edit_iocs[ioc_proc.name].path != ioc_proc.path:
+                        return Qt.blue
+                except KeyError:
+                    ...
+            case TableColumn.PARENT:
+                # User can't modify this, keep as default
+                ...
+            case TableColumn.EXTRA:
+                # User can't modify this, keep as default
+                ...
+            case _:
+                raise ValueError(f"Invalid column {column}")
+        # Default
+        return Qt.black
+
+    def get_background_color(self, ioc_proc: IOCProc, column: int) -> Qt.GlobalColor:
+        """Get the background color for a cell in the table."""
+        # In general, stay default
+        # In a few specific cases put special colors up
+        match column:
+            case TableColumn.IOCNAME:
+                ...
+            case TableColumn.ID:
+                ...
+            case TableColumn.STATE:
+                # Be annoying with yellow if the IOC is in dev mode
+                if (
+                    self.get_display_text(ioc_proc=ioc_proc, column=column)
+                    == StateOption.DEV
+                ):
+                    return Qt.yellow
+            case TableColumn.STATUS:
+                status = self.status_live[ioc_proc.name]
+                # Yellow has priority and means reality != configured (host, port, path)
+                if (
+                    ioc_proc.host != status.host
+                    or ioc_proc.port != status.port
+                    or ioc_proc.path != status.path
+                ):
+                    return Qt.yellow
+                # Green is what we want to see (reality matches config)
+                if (status.status == ProcServStatus.RUNNING) ^ ioc_proc.disable:
+                    return Qt.green
+                # Blue is host down while being enabled, would otherwise be red
+                if status.status == ProcServStatus.DOWN and not ioc_proc.disable:
+                    return Qt.blue
+                # Red is the other bad cases
+                return Qt.red
+            case TableColumn.HOST:
+                ...
+            case TableColumn.OSVER:
+                ...
+            case TableColumn.PORT:
+                # Port conflicts are bad! Red bad!
+                for other_proc in itertools.chain(
+                    self.config.procs.values(), self.add_iocs.values()
+                ):
+                    if ioc_proc == other_proc:
+                        continue
+                    if (
+                        ioc_proc.host == other_proc.host
+                        and ioc_proc.port == other_proc.port
+                    ):
+                        return Qt.red
+            case TableColumn.VERSION:
+                ...
+            case TableColumn.PARENT:
+                ...
+            case TableColumn.EXTRA:
+                ...
+            case _:
+                raise ValueError(f"Invalid column {column}")
+        # Default
+        return Qt.white
+
+    def headerData(
+        self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole
+    ) -> QVariant:
+        """
+        Returns data for the header contents.
+
+        https://doc.qt.io/archives/qt-5.15/qabstractitemmodel.html#headerData
+        """
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            return QVariant(table_headers[TableColumn(section)])
+        # We only have text and only on the horizontal headers, the rest should be invalid
+        return QVariant()
+
+    def setData(
+        self, index: QModelIndex, value: QVariant, role: int = Qt.EditRole
+    ) -> bool:
+        """
+        Sets the role data for the item at index to value.
+
+        Returns true if successful; otherwise returns false.
+
+        The dataChanged() signal should be emitted if the data was successfully set.
+
+        https://doc.qt.io/archives/qt-5.15/qabstractitemmodel.html#setData
+        """
+        if role != Qt.EditRole or not index.isValid() or index.row() >= self.rowCount():
+            return False
+
+        raw_value = value.value()
+        ioc_proc = self.get_ioc_proc(index.row())
+
+        # We mostly need to do type handling based on the column
+        # Some columns could never be meaningfully written to
+        # Others could be written to even though they are technically read-only
+        # in the context of the gui application.
+        match index.column():
+            case TableColumn.IOCNAME:
+                ioc_proc.alias = str(raw_value)
+            case TableColumn.ID:
+                ioc_proc.name = str(raw_value)
+            case TableColumn.STATE:
+                ioc_proc.disable = not bool(raw_value)
+            case TableColumn.STATUS:
+                return False
+            case TableColumn.HOST:
+                ioc_proc.host = str(raw_value)
+            case TableColumn.OSVER:
+                return False
+            case TableColumn.PORT:
+                ioc_proc.port = int(raw_value)
+            case TableColumn.VERSION:
+                ioc_proc.path = str(raw_value)
+            case TableColumn.PARENT:
+                return False
+            case TableColumn.EXTRA:
+                return False
+            case _:
+                raise ValueError(f"Invalid column {index.column()}")
+        # Write succeeded!
+        self.dataChanged.emit(index, index)
+        return True
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlags:
+        """
+        Returns the item flags for the given index.
+
+        This tells qt whether a cell is selectable, editable, etc.
+
+        https://doc.qt.io/archives/qt-5.15/qabstractitemmodel.html#flags
+        https://doc.qt.io/archives/qt-5.15/qt.html#ItemFlag-enum
+        """
+        ioc_proc = self.get_ioc_proc(row=index.row())
+
+        if ioc_proc.hard:
+            # Hard IOCs are never editable
+            edit_flag = Qt.NoItemFlags
         else:
-            cmdlist = ["gnome-terminal", "--disable-factory"]
+            edit_flag = Qt.ItemIsEditable
 
-        if shutil.which("gnome-terminal") is None:
-            # For non-gnome os like rocky9
-            cmdlist = ["xterm", "-bg", "black", "-fg", "white", "--hold"]
-            if geo is not None:
-                cmdlist += ["-geometry", geo]
-            cmdlist += ["-title", id, "-e", "/bin/csh", "-c", cmd]
-        else:
-            if geo is not None:
-                cmdlist.append("--geometry=%s" % geo)
-            cmdlist += ["-t", id, "--", "/bin/csh", "-c", cmd]
-        x = subprocess.Popen(cmdlist)
-        self.children.append(x)
+        match index.column():
+            case TableColumn.IOCNAME:
+                return Qt.ItemIsEnabled | Qt.ItemIsSelectable
+            case TableColumn.ID:
+                return Qt.ItemIsEnabled | Qt.ItemIsSelectable
+            case TableColumn.STATE:
+                return Qt.ItemIsEnabled | Qt.ItemIsSelectable | edit_flag
+            case TableColumn.STATUS:
+                return Qt.ItemIsEnabled | Qt.NoItemFlags
+            case TableColumn.HOST:
+                return Qt.ItemIsEnabled | edit_flag
+            case TableColumn.OSVER:
+                return Qt.ItemIsEnabled | Qt.NoItemFlags
+            case TableColumn.PORT:
+                return Qt.ItemIsEnabled | edit_flag
+            case TableColumn.VERSION:
+                return Qt.ItemIsEnabled | edit_flag
+            case TableColumn.PARENT:
+                return Qt.ItemIsEnabled | Qt.NoItemFlags
+            case TableColumn.EXTRA:
+                return Qt.ItemIsEnabled | Qt.NoItemFlags
+            case _:
+                raise ValueError(f"Invalid column {index.column()}")
 
-    def startPoll(self):
+    # Methods for updating the data using our dataclasses
+    def start_poll_thread(self):
+        """Public API to start checking IOC statuses in the background."""
         self.poll_thread.start()
 
-    def findid(self, id, line=None):
-        if line is None:
-            line = self.cfglist
-        for i in range(len(line)):
-            if id == line[i]["id"]:
-                return i
-        return None
+    def update_from_config_file(self, config: Config):
+        """
+        Update the GUI when the config file changes, e.g. from other users.
 
-    def findhostport(self, h, p, ln):
-        for i in range(len(ln)):
-            if h == ln[i]["host"] and p == ln[i]["port"]:
-                return i
-        return None
+        The config file contains information about:
+        - Each IOC's intended launch host, port, and other settings
+        - The configured hosts
 
-    def configuration(self, cfglist, hostlist, vdict):
-        # Process a new configuration file!
-        self.vdict = vdict
-        try:
-            utils.COMMITHOST = self.vdict["COMMITHOST"]
-        except Exception:
-            pass
-        cfgonly = []
-        ouronly = []
-        both = []
-        for i in range(len(cfglist)):
-            j = self.findid(cfglist[i]["id"], self.cfglist)
-            if j is not None:
-                both.append((i, j))
-            else:
-                cfgonly.append(i)
-        for i in range(len(self.cfglist)):
-            j = self.findid(self.cfglist[i]["id"], cfglist)
-            if j is None:
-                ouronly[:0] = [i]
+        The StatusPollThread calls this function cyclically with an up-to-date Config.
 
-        for i, j in both:
-            del cfglist[i]["newstyle"]
-            self.cfglist[j].update(cfglist[i])
+        Parameters
+        ----------
+        config : Config
+            The config object that represents the hutch's iocmanager config.
+        """
+        self.config = config
+        # todo emit which fields have changed for the model
+        self.sort(self.last_sort[0], self.last_sort[1])
 
-        for i in cfgonly:
-            cfglist[i]["status"] = utils.STATUS_INIT
-            cfglist[i]["stattime"] = 0
-            self.cfglist.append(cfglist[i])
+    def update_from_status_file(self, status_file: IOCStatusFile):
+        """
+        Update the GUI from information in a status file.
 
-        # Note: this list is reverse sorted by construction!
-        for i in ouronly:
-            if self.cfglist[i]["cfgstat"] != utils.CONFIG_ADDED:
-                self.cfglist = self.cfglist[0:i] + self.cfglist[i + 1 :]
+        Status files are generated on IOC boot and contain information about
+        the IOC's pid, host, port, and version at the time of last boot.
 
-        self.sort(self.lastsort[0], self.lastsort[1])
+        The StatusPollThread calls this function cyclically with up-to-date
+        status files.
 
-        # Just append the new hostlist, duplicates and all, then go fix it up!
-        self.hosts[-1:] = hostlist
-        self.addUsedHosts()
+        Parameters
+        ----------
+        status_file : IOCStatusFile
+            Boot-time information about an IOC
+        """
+        ...
+
+    def update_from_live_ioc(self, status_live: IOCStatusLive):
+        """
+        Update the GUI from information inspected from a live IOC.
+
+        This is typically gathered by using diagnostic tools like
+        ping and telnet and contains information like whether or not
+        the IOC is running, in addition to the same boot-time information
+        found in the status files.
+
+        Parameters
+        ----------
+        status_live : IOCStatusLive
+            Live-inspected information about an IOC
+        """
+        ...
 
     def running(self, d):
         # Process a new status dictionary!
@@ -303,7 +640,7 @@ class IOCTableModel(QAbstractTableModel):
                         )
             else:
                 self.cfglist = self.cfglist[0:i] + self.cfglist[i + 1 :]
-                self.sort(self.lastsort[0], self.lastsort[1])
+                self.sort(self.last_sort[0], self.last_sort[1])
             return
         elif d["status"] == utils.STATUS_RUNNING:
             d["id"] = d["rid"]
@@ -315,67 +652,7 @@ class IOCTableModel(QAbstractTableModel):
             d["cfgstat"] = utils.CONFIG_DELETED
             d["alias"] = ""
             self.cfglist.append(d)
-            self.sort(self.lastsort[0], self.lastsort[1])
-
-    #
-    # IOCNAME can be selected.
-    # STATE can be selected.  If not hard, it can also be checked.
-    # HOST, PORT, and VERSION can be edited if not hard.
-    # STATUS, OSVER, and EXTRA are only enabled.
-    #
-    def flags(self, index):
-        c = index.column()
-        try:
-            if self.cfglist[index.row()]["hard"]:
-                editable = Qt.NoItemFlags
-            else:
-                editable = Qt.ItemIsEditable
-        except Exception:
-            return Qt.NoItemFlags
-        if c == IOCNAME or c == ID:
-            return Qt.ItemIsEnabled | Qt.ItemIsSelectable
-        elif c == STATE:
-            return Qt.ItemIsEnabled | Qt.ItemIsSelectable | editable
-        elif c == STATUS or c == EXTRA or c == OSVER:
-            return Qt.ItemIsEnabled
-        else:
-            return Qt.ItemIsEnabled | editable
-
-    def setData(self, index, val, role=Qt.EditRole):
-        if isinstance(val, QVariant):
-            val = val.value()
-        try:
-            entry = self.cfglist[index.row()]
-        except Exception:
-            return False
-        c = index.column()
-        if c == STATE:
-            entry["newdisable"] = val == 0
-            if entry["newdisable"] == entry["disable"]:
-                del entry["newdisable"]
-            self.dataChanged.emit(index, index)
-            return True
-        elif c == PORT:
-            entry["newport"] = val
-            if entry["newport"] == entry["port"]:
-                del entry["newport"]
-            self.dataChanged.emit(index, index)
-            return True
-        else:
-            entry[self.newfield[c]] = val
-            if entry[self.newfield[c]] == entry[self.field[c]]:
-                del entry[self.newfield[c]]
-            self.dataChanged.emit(index, index)
-            if c == IOCNAME or c == ID:
-                # Two columns might have the same information!
-                self.dataChanged.emit(index, index)
-            return True
-
-    def rowCount(self, parent):
-        return len(self.cfglist)
-
-    def columnCount(self, parent):
-        return len(self.headerdata)
+            self.sort(self.last_sort[0], self.last_sort[1])
 
     def value(self, entry, c, display=True):
         if c == STATUS:
@@ -431,123 +708,6 @@ class IOCTableModel(QAbstractTableModel):
                 print(entry)
                 return ""
 
-    def data(self, index, role=Qt.DisplayRole):
-        if not index.isValid() or index.row() >= len(self.cfglist):
-            return QVariant()
-        elif role == Qt.DisplayRole or role == Qt.EditRole:
-            return QVariant(
-                self.value(
-                    self.cfglist[index.row()], index.column(), role == Qt.DisplayRole
-                )
-            )
-        elif role == Qt.ForegroundRole:
-            c = index.column()
-            entry = self.cfglist[index.row()]
-            if c == STATUS:
-                entry = self.cfglist[index.row()]
-                if entry["disable"]:
-                    if (
-                        entry["status"] != utils.STATUS_RUNNING
-                        or entry["host"] != entry["rhost"]
-                        or entry["port"] != entry["rport"]
-                        or entry["dir"] != entry["rdir"]
-                        or entry["id"] != entry["rid"]
-                    ):
-                        return QVariant(QBrush(Qt.black))
-                    else:
-                        return QVariant(QBrush(Qt.white))
-                else:
-                    if entry["status"] != utils.STATUS_RUNNING:
-                        return QVariant(QBrush(Qt.white))
-                    else:
-                        return QVariant(QBrush(Qt.black))
-            if entry["cfgstat"] == utils.CONFIG_DELETED:
-                return QVariant(QBrush(Qt.red))
-            try:
-                if c == IOCNAME and entry["newalias"] != entry["alias"]:
-                    return QVariant(QBrush(Qt.blue))
-            except Exception:
-                pass
-            try:
-                if c == STATE and entry["newdisable"] != entry["disable"]:
-                    return QVariant(QBrush(Qt.blue))
-            except Exception:
-                pass
-            try:
-                if entry[self.newfield[c]] != entry[self.field[c]]:
-                    return QVariant(QBrush(Qt.blue))
-                else:
-                    del entry[self.newfield[c]]
-                    return QVariant()
-            except Exception:
-                return QVariant()
-        elif role == Qt.BackgroundRole:
-            c = index.column()
-            if c == STATUS:
-                entry = self.cfglist[index.row()]
-                if entry["disable"]:
-                    if entry["status"] == utils.STATUS_RUNNING:
-                        if (
-                            entry["host"] != entry["rhost"]
-                            or entry["port"] != entry["rport"]
-                            or entry["dir"] != entry["rdir"]
-                            or entry["id"] != entry["rid"]
-                        ):
-                            return QVariant(QBrush(Qt.yellow))
-                        else:
-                            return QVariant(QBrush(Qt.red))
-                    else:
-                        return QVariant(QBrush(Qt.green))
-                else:
-                    if entry["status"] != utils.STATUS_RUNNING:
-                        if entry["status"] == utils.STATUS_DOWN:
-                            return QVariant(QBrush(Qt.blue))
-                        else:
-                            return QVariant(QBrush(Qt.red))
-                    if (
-                        entry["host"] != entry["rhost"]
-                        or entry["port"] != entry["rport"]
-                        or entry["dir"] != entry["rdir"]
-                        or entry["id"] != entry["rid"]
-                    ):
-                        return QVariant(QBrush(Qt.yellow))
-                    else:
-                        return QVariant(QBrush(Qt.green))
-            elif c == PORT:
-                r = index.row()
-                if self.cfglist[r]["hard"]:
-                    return QVariant(QBrush(QColor(224, 224, 224)))  # Light gray
-                h = self.value(self.cfglist[r], HOST)
-                p = self.value(self.cfglist[r], PORT)
-                for i in range(len(self.cfglist)):
-                    if i == r:
-                        continue
-                    h2 = self.value(self.cfglist[i], HOST)
-                    p2 = self.value(self.cfglist[i], PORT)
-                    if h == h2 and p == p2:
-                        return QVariant(QBrush(Qt.red))
-                return QVariant()
-            elif c == STATE:
-                v = self.value(
-                    self.cfglist[index.row()], index.column(), role == Qt.DisplayRole
-                )
-                if v == "Dev":
-                    # MCB - Add a check and make this red if a hutch is in production!
-                    return QVariant(QBrush(Qt.yellow))
-                else:
-                    return QVariant()
-            else:
-                return QVariant()
-        elif role == Qt.CheckStateRole:
-            return QVariant()
-        else:
-            return QVariant()
-
-    def headerData(self, col, orientation, role):
-        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            return QVariant(self.headerdata[col])
-        return QVariant()
-
     def _portkey(self, d, Ncol):
         v = self.value(d, Ncol)
         if v == "":
@@ -556,7 +716,7 @@ class IOCTableModel(QAbstractTableModel):
             return int(v)
 
     def sort(self, Ncol, order):
-        self.lastsort = (Ncol, order)
+        self.last_sort = (Ncol, order)
         self.layoutAboutToBeChanged.emit()
         if Ncol == PORT:
             self.cfglist = sorted(self.cfglist, key=lambda d: self._portkey(d, Ncol))
@@ -901,7 +1061,7 @@ class IOCTableModel(QAbstractTableModel):
             self.cfglist = (
                 self.cfglist[0 : index.row()] + self.cfglist[index.row() + 1 :]
             )
-            self.sort(self.lastsort[0], self.lastsort[1])
+            self.sort(self.last_sort[0], self.last_sort[1])
 
     def setFromRunning(self, index):
         entry = self.cfglist[index.row()]
@@ -1077,7 +1237,7 @@ class IOCTableModel(QAbstractTableModel):
             self.hosts.append(host)
             self.hosts.sort()
         self.cfglist.append(cfg)
-        self.sort(self.lastsort[0], self.lastsort[1])
+        self.sort(self.last_sort[0], self.last_sort[1])
 
     # index is either an IOC name or an index!
     def connectIOC(self, index):
