@@ -29,25 +29,60 @@ def model() -> IOCTableModel:
     return IOCTableModel(config=config, hutch="pytest")
 
 
-def test_get_ioc_row_map(model: IOCTableModel, qapp: QApplication):
+def test_get_next_config_and_reset_edits(model: IOCTableModel, qapp: QApplication):
     """
-    model.get_ioc_row_map should return a list of each ioc name
+    model.get_next_config should return a Config object given the table data.
 
-    The index of each name is the corresponding table row.
+    This object should be the same as the most recent file config but with
+    pending edits from the table applied on top of it.
+
+    model.reset_edits should discard all the pending edits.
+    It's convenient to test these together.
     """
-    starting_map = [f"ioc{num}" for num in range(10)]
-    assert model.get_ioc_row_map() == starting_map
+    # Add three IOCs to the config
     for num in range(3):
         model.add_ioc(
-            ioc_proc=IOCProc(
+            IOCProc(
                 name=f"added{num}",
                 port=40001 + num,
-                host="host",
-                path=f"ioc/some/path/{num}",
+                host="blarg",
+                path=f"ioc/some/blarg/{num}",
             )
         )
-    ext_map = [f"added{num}" for num in range(3)]
-    assert model.get_ioc_row_map() == starting_map + ext_map
+    # Modify an original config and a new config
+    # Row 0 = ioc0
+    model.setData(model.index(0, TableColumn.PORT), QVariant(31001))
+    # Row 11 = added1
+    model.setData(model.index(11, TableColumn.PORT), QVariant(41002))
+    # Delete an original config and a new config
+    # Note: pending deletion does not remove the row from the table!
+    # Row 1 = ioc1
+    model.delete_ioc(row=1)
+    # Row 12 = added2
+    model.delete_ioc(row=12)
+    # Get the next config
+    next_config = model.get_next_config()
+    # All deleted IOCs should be gone, all non-deleted iocs should stay
+    all_iocs = [f"ioc{num}" for num in range(10)] + [f"added{num}" for num in range(3)]
+    deleted_iocs = ["ioc1", "added2"]
+    for ioc_name in all_iocs:
+        if ioc_name in deleted_iocs:
+            assert ioc_name not in next_config.procs
+        else:
+            assert ioc_name in next_config.procs
+    # All modified IOCs should be in their final states
+    assert next_config.procs["ioc0"].port == 31001
+    assert next_config.procs["added1"].port == 41002
+    # Drop the modifications
+    model.reset_edits()
+    reset_config = model.get_next_config()
+    # Now, only the based iocn iocs should exist
+    for ioc_name in (f"ioc{num}" for num in range(10)):
+        assert ioc_name in reset_config.procs
+    for ioc_name in (f"added{num}" for num in range(3)):
+        assert ioc_name not in reset_config.procs
+    # The edit to ioc0 should be reverted
+    assert reset_config.procs["ioc0"].port == 30001
 
 
 def test_get_ioc_proc(model: IOCTableModel, qapp: QApplication):
@@ -75,6 +110,27 @@ def test_get_ioc_proc(model: IOCTableModel, qapp: QApplication):
     assert model.get_ioc_proc(row=2).port == 50000
     # Check our added IOC
     assert model.get_ioc_proc(row=10).name == "added"
+
+
+def test_get_ioc_row_map(model: IOCTableModel, qapp: QApplication):
+    """
+    model.get_ioc_row_map should return a list of each ioc name
+
+    The index of each name is the corresponding table row.
+    """
+    starting_map = [f"ioc{num}" for num in range(10)]
+    assert model.get_ioc_row_map() == starting_map
+    for num in range(3):
+        model.add_ioc(
+            ioc_proc=IOCProc(
+                name=f"added{num}",
+                port=40001 + num,
+                host="host",
+                path=f"ioc/some/path/{num}",
+            )
+        )
+    ext_map = [f"added{num}" for num in range(3)]
+    assert model.get_ioc_row_map() == starting_map + ext_map
 
 
 def test_get_live_info(model: IOCTableModel, qapp: QApplication):
