@@ -10,7 +10,7 @@ from ..procserv_tools import (
     IOCStatusLive,
     ProcServStatus,
 )
-from ..table_model import IOCTableModel, TableColumn
+from ..table_model import IOCTableModel, StateOption, TableColumn
 
 
 @pytest.fixture(scope="function")
@@ -280,3 +280,122 @@ def test_data(
     We'll test the subfunctions more thoroughly elsewhere.
     """
     assert model.data(index=model.index(row, col), role=role) == expected
+
+
+@pytest.mark.parametrize(
+    "ioc_name,column,expected",
+    (
+        # Base cases: what it should for a basic fake ioc
+        ("ioc0", TableColumn.IOCNAME, "ioc0"),
+        ("ioc0", TableColumn.ID, "ioc0"),
+        ("ioc0", TableColumn.STATE, StateOption.PROD),
+        ("ioc0", TableColumn.STATUS, ProcServStatus.INIT),
+        ("ioc0", TableColumn.HOST, "host"),
+        ("ioc0", TableColumn.PORT, "30001"),
+        ("ioc0", TableColumn.VERSION, "ioc/some/path/0"),
+        ("ioc0", TableColumn.PARENT, ""),
+        ("ioc0", TableColumn.EXTRA, ""),
+        # IOCNAME could also be an alias
+        ("alias_ioc", TableColumn.IOCNAME, "BEST IOC EVER"),
+        ("alias_ioc", TableColumn.ID, "alias_ioc"),
+        # STATE can also be OFF or DEV
+        ("disa_ioc", TableColumn.STATE, StateOption.OFF),
+        ("dev_ioc", TableColumn.STATE, StateOption.DEV),
+        # OSVER could exist if there's an entry for it
+        ("os_ioc", TableColumn.OSVER, "local_os"),
+        # PARENT can have information in it
+        ("child_ioc", TableColumn.PARENT, "parent_ioc"),
+        # EXTRA can be HARD IOC or a description of live IOC discrepancies
+        ("hard_ioc", TableColumn.EXTRA, "HARD IOC"),
+        ("rogue_ioc", TableColumn.EXTRA, "Live: /bad/path on badhost:50000"),
+    ),
+)
+def test_get_display_text(
+    ioc_name: str, column: int, expected: str, model: IOCTableModel, qapp: QApplication
+):
+    """
+    model.get_display_text should get the str we want to display for the ioc's column.
+
+    We'll set up a table that should have a variant from each possible code path,
+    then we'll use parameterize to switch through them.
+    """
+    model.add_ioc(
+        IOCProc(
+            name="alias_ioc",
+            port=40001,
+            host="host",
+            path="/some/path",
+            alias="BEST IOC EVER",
+        )
+    )
+    model.add_ioc(
+        IOCProc(
+            name="disa_ioc",
+            port=40002,
+            host="host",
+            path="/another/path",
+            disable=True,
+        )
+    )
+    model.add_ioc(
+        IOCProc(
+            name="dev_ioc",
+            port=40003,
+            host="host",
+            # Absolute paths outside of ioc dir are dev
+            path="/yet/another/path",
+        )
+    )
+    model.add_ioc(
+        IOCProc(
+            name="os_ioc",
+            port=40004,
+            host="known_os_host",
+            # Absolute paths outside of ioc dir are dev
+            path="/operating/systems",
+        )
+    )
+    model.host_os["known_os_host"] = "local_os"
+    child_ioc = IOCProc(
+        name="child_ioc",
+        port=40005,
+        host="host",
+        path="child/path",
+    )
+    # Override automatic parent finding
+    child_ioc.parent = "parent_ioc"
+    model.add_ioc(child_ioc)
+    model.add_ioc(
+        IOCProc(
+            name="hard_ioc",
+            port=30001,
+            host="hard_ioc",
+            path="/such/path/wow",
+        )
+    )
+    model.add_ioc(
+        IOCProc(
+            name="rogue_ioc",
+            port=40006,
+            host="host",
+            path="ioc/normal/path",
+        )
+    )
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="rogue_ioc",
+            port=50000,
+            host="badhost",
+            path="/bad/path",
+            pid=420,
+            status=ProcServStatus.RUNNING,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+
+    # Now that we've set up, let's check the case from params
+    config = model.get_next_config()
+    assert (
+        model.get_display_text(ioc_proc=config.procs[ioc_name], column=column)
+        == expected
+    )
