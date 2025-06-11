@@ -397,6 +397,10 @@ class IOCTableModel(QAbstractTableModel):
                     return "HARD IOC"
                 # Goal: summarize differences between configured and running
                 status_live = self.get_live_info(ioc_name=ioc_proc.name)
+                if not all((status_live.path, status_live.host, status_live.port)):
+                    # Exit now if any of the status info is e.g. 0, empty str
+                    # This means we don't know where the IOC is running
+                    return ""
                 text_parts = []
                 if ioc_proc.path != status_live.path:
                     text_parts.append(f"{status_live.path}")
