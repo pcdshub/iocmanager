@@ -1028,3 +1028,45 @@ def test_update_from_status_file(model: IOCTableModel, qapp: QApplication):
     assert data_emits[0][0].column() == TableColumn.EXTRA
     assert data_emits[0][1].row() == 0
     assert data_emits[0][1].column() == TableColumn.EXTRA
+
+
+def test_update_from_live_ioc(model: IOCTableModel, qapp: QApplication):
+    """
+    model.update_from_live_ioc should introduce a new IOC live status to the model.
+
+    This is expected to impact the "status" and "extra" columns.
+    """
+    data_emits: list[tuple[QModelIndex, QModelIndex]] = []
+
+    def save_data_emit(index1: QModelIndex, index2: QModelIndex):
+        data_emits.append((index1, index2))
+
+    model.dataChanged.connect(save_data_emit)
+    dummy_status_live = IOCStatusLive(
+        name="ioc0",
+        port=30001,
+        host="host",
+        path="ioc/some/path/0",
+        pid=0,
+        status=ProcServStatus.RUNNING,
+        autorestart_mode=AutoRestartMode.ON,
+    )
+
+    model.update_from_live_ioc(status_live=dummy_status_live)
+    assert model.status_live["ioc0"] == dummy_status_live
+    assert len(data_emits) == 2
+
+    # Same file again = no change
+    model.update_from_live_ioc(status_live=dummy_status_live)
+    assert model.status_live["ioc0"] == dummy_status_live
+    assert len(data_emits) == 2
+
+    # Should emit ioc0's extra's status and extra columns
+    assert data_emits[0][0].row() == 0
+    assert data_emits[0][0].column() == TableColumn.STATUS
+    assert data_emits[0][1].row() == 0
+    assert data_emits[0][1].column() == TableColumn.STATUS
+    assert data_emits[1][0].row() == 0
+    assert data_emits[1][0].column() == TableColumn.EXTRA
+    assert data_emits[1][1].row() == 0
+    assert data_emits[1][1].column() == TableColumn.EXTRA
