@@ -539,7 +539,10 @@ class IOCTableModel(QAbstractTableModel):
         https://doc.qt.io/archives/qt-5.15/qabstractitemmodel.html#headerData
         """
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            return QVariant(table_headers[TableColumn(section)])
+            try:
+                return QVariant(table_headers[TableColumn(section)])
+            except (KeyError, ValueError):
+                logger.debug(f"Invalid table section {section}")
         # We only have text and only on the horizontal headers,
         # the rest should be invalid
         return QVariant()

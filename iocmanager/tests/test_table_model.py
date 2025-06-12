@@ -10,7 +10,7 @@ from ..procserv_tools import (
     IOCStatusLive,
     ProcServStatus,
 )
-from ..table_model import IOCTableModel, StateOption, TableColumn
+from ..table_model import IOCTableModel, StateOption, TableColumn, table_headers
 
 
 @pytest.fixture(scope="function")
@@ -681,3 +681,56 @@ def test_get_background_color(
         model.get_background_color(ioc_proc=config.procs[ioc_name], column=column)
         == expected
     )
+
+
+@pytest.mark.parametrize(
+    "column,orientation,expected",
+    (
+        (
+            TableColumn.IOCNAME,
+            Qt.Horizontal,
+            QVariant(table_headers[TableColumn.IOCNAME]),
+        ),
+        (TableColumn.ID, Qt.Horizontal, QVariant(table_headers[TableColumn.ID])),
+        (TableColumn.STATE, Qt.Horizontal, QVariant(table_headers[TableColumn.STATE])),
+        (
+            TableColumn.STATUS,
+            Qt.Horizontal,
+            QVariant(table_headers[TableColumn.STATUS]),
+        ),
+        (TableColumn.HOST, Qt.Horizontal, QVariant(table_headers[TableColumn.HOST])),
+        (TableColumn.OSVER, Qt.Horizontal, QVariant(table_headers[TableColumn.OSVER])),
+        (TableColumn.PORT, Qt.Horizontal, QVariant(table_headers[TableColumn.PORT])),
+        (
+            TableColumn.VERSION,
+            Qt.Horizontal,
+            QVariant(table_headers[TableColumn.VERSION]),
+        ),
+        (
+            TableColumn.PARENT,
+            Qt.Horizontal,
+            QVariant(table_headers[TableColumn.PARENT]),
+        ),
+        (TableColumn.EXTRA, Qt.Horizontal, QVariant(table_headers[TableColumn.EXTRA])),
+        (TableColumn.IOCNAME, Qt.Vertical, QVariant()),
+        (-1, Qt.Horizontal, QVariant()),
+        (100, Qt.Horizontal, QVariant()),
+    ),
+)
+def test_header_data(
+    column: int,
+    orientation: Qt.Orientation,
+    expected: QVariant,
+    model: IOCTableModel,
+    qapp: QApplication,
+):
+    """
+    model.headerData should return the text in a column.
+
+    For the horizontal header within our range it should return
+    QVariants that contain text.
+
+    For invalid values or values outside the table it should
+    return an empty QVariant()
+    """
+    assert model.headerData(section=column, orientation=orientation) == expected
