@@ -544,3 +544,140 @@ def test_get_foreground_color(
     except KeyError:
         ioc_proc = model.config.procs[ioc_name]
     assert model.get_foreground_color(ioc_proc=ioc_proc, column=column) == expected
+
+
+@pytest.mark.parametrize(
+    "ioc_name,column,expected",
+    (
+        # Base cases: white bg, except blue status
+        ("ioc0", TableColumn.IOCNAME, Qt.white),
+        ("ioc0", TableColumn.ID, Qt.white),
+        ("ioc0", TableColumn.STATE, Qt.white),
+        ("ioc0", TableColumn.STATUS, Qt.blue),
+        ("ioc0", TableColumn.HOST, Qt.white),
+        ("ioc0", TableColumn.OSVER, Qt.white),
+        ("ioc0", TableColumn.PORT, Qt.white),
+        ("ioc0", TableColumn.VERSION, Qt.white),
+        ("ioc0", TableColumn.PARENT, Qt.white),
+        ("ioc0", TableColumn.EXTRA, Qt.white),
+        # Dev mode state is yellow
+        ("ioc1", TableColumn.STATE, Qt.yellow),
+        # Status green if running and enabled
+        ("ioc2", TableColumn.STATUS, Qt.green),
+        # Status green if shutdown and disabled
+        ("ioc3", TableColumn.STATUS, Qt.green),
+        # Status red if running and disabled
+        ("ioc4", TableColumn.STATUS, Qt.red),
+        # Status red if shutdown and enabled
+        ("ioc5", TableColumn.STATUS, Qt.red),
+        # Status yellow with some conflict
+        ("ioc6", TableColumn.STATUS, Qt.yellow),
+        # Status red with some other error
+        ("ioc7", TableColumn.STATUS, Qt.red),
+        # Port conflict -> red BG
+        ("ioc8", TableColumn.PORT, Qt.red),
+    ),
+)
+def test_get_background_color(
+    ioc_name: str,
+    column: int,
+    expected: Qt.GlobalColor,
+    model: IOCTableModel,
+    qapp: QApplication,
+):
+    """
+    model.get_background_color should get the background color for a cell.
+
+    Most of these are white, except for a few situations to highlight:
+    - STATE column can be yellow if we're in DEV mode
+    - STATUS can be blue, yellow, green, or red depending on the live IOC's status
+    - PORT can be highlighted red if it conflicts with another host/port combination
+    """
+    # Put one IOC in dev mode for STATE -> yellow
+    model.setData(
+        index=model.index(1, TableColumn.VERSION), value=QVariant("/some/dev/folder")
+    )
+    # Status starts at blue
+    # Set up green, yellow, and red status examples
+    # Green: running and enabled
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="ioc2",
+            port=30003,
+            host="host",
+            path="ioc/some/path/2",
+            pid=0,
+            status=ProcServStatus.RUNNING,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+    # Green: shutdown and disabled
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="ioc3",
+            port=30004,
+            host="host",
+            path="ioc/some/path/3",
+            pid=0,
+            status=ProcServStatus.SHUTDOWN,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+    model.setData(index=model.index(3, TableColumn.STATE), value=QVariant(False))
+    # Red: running and disabled
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="ioc4",
+            port=30005,
+            host="host",
+            path="ioc/some/path/4",
+            pid=0,
+            status=ProcServStatus.RUNNING,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+    model.setData(index=model.index(4, TableColumn.STATE), value=QVariant(False))
+    # Red: shutdown and enabled
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="ioc5",
+            port=30006,
+            host="host",
+            path="ioc/some/path/5",
+            pid=0,
+            status=ProcServStatus.SHUTDOWN,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+    # Yellow: info conflict
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="ioc6",
+            port=40007,
+            host="host",
+            path="ioc/some/path/6",
+            pid=0,
+            status=ProcServStatus.RUNNING,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+    # Red: errors
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="ioc7",
+            port=30008,
+            host="host",
+            path="ioc/some/path/7",
+            pid=0,
+            status=ProcServStatus.ERROR,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+    # Create a port conflict
+    model.setData(index=model.index(9, TableColumn.PORT), value=QVariant(30009))
+    # Check this test case
+    config = model.get_next_config()
+    assert (
+        model.get_background_color(ioc_proc=config.procs[ioc_name], column=column)
+        == expected
+    )
