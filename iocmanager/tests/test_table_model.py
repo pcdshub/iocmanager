@@ -1,5 +1,8 @@
+import dataclasses
+from typing import Any
+
 import pytest
-from qtpy.QtCore import Qt, QVariant
+from qtpy.QtCore import QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
 from qtpy.QtWidgets import QApplication
 
@@ -734,3 +737,77 @@ def test_header_data(
     return an empty QVariant()
     """
     assert model.headerData(section=column, orientation=orientation) == expected
+
+
+@pytest.mark.parametrize(
+    "column,value,exp_attr,exp_value",
+    (
+        (TableColumn.IOCNAME, "Cool Alias", "alias", "Cool Alias"),
+        (TableColumn.ID, "new_name", "", ""),
+        (TableColumn.STATE, False, "disable", True),
+        (TableColumn.STATUS, "SHUTDOWN", "", ""),
+        (TableColumn.HOST, "new_host", "host", "new_host"),
+        (TableColumn.OSVER, "rocky9", "", ""),
+        (TableColumn.PORT, "40001", "port", 40001),
+        (TableColumn.VERSION, "new_version", "path", "new_version"),
+        (TableColumn.PARENT, "new_parent", "", ""),
+        (TableColumn.EXTRA, "new_extra", "", ""),
+        (-1, "asdf", "", ""),
+        (100, "asdf", "", ""),
+    ),
+)
+def test_set_data(
+    column: int,
+    value: Any,
+    exp_attr: str,
+    exp_value: Any,
+    model: IOCTableModel,
+    qapp: QApplication,
+):
+    """
+    model.setData should stage an edit to the configuration.
+
+    Any value sent to this function should have an expected attribute change
+    on the underlying configuration.
+
+    Returns `True` when write succeeded, and `False` otherwise.
+    Needs to emit `dataChanged` when the write succeeds.
+
+    For parameterization, exp_attr = "" signifies an expected failed set_data
+    (which should not change anything about the config!)
+    """
+    data_emits: list[tuple[QModelIndex, QModelIndex]] = []
+
+    def save_data_emit(index1: QModelIndex, index2: QModelIndex):
+        data_emits.append((index1, index2))
+
+    model.dataChanged.connect(save_data_emit)
+    old_config = model.get_next_config()
+    old_proc = old_config.procs["ioc0"]
+    success = model.setData(index=model.index(0, column), value=QVariant(value))
+    if exp_attr:
+        # Return value
+        assert success
+        # dataChanged emits
+        assert len(data_emits) == 1
+        assert data_emits[0][0].row() == 0
+        assert data_emits[0][1].row() == 0
+        assert data_emits[0][0].column() == column
+        assert data_emits[0][1].column() == column
+    else:
+        assert not success
+        assert not data_emits
+    # effects on the config
+    new_config = model.get_next_config()
+    new_proc = new_config.procs["ioc0"]
+    has_checked_attr = False
+    for attr in dataclasses.asdict(new_proc):
+        if attr == exp_attr:
+            assert getattr(new_proc, attr) == exp_value
+            has_checked_attr = True
+        else:
+            assert getattr(new_proc, attr) == getattr(old_proc, attr)
+    if exp_attr:
+        assert has_checked_attr
+    else:
+        assert not has_checked_attr

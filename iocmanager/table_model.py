@@ -574,7 +574,7 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.IOCNAME:
                 new_proc.alias = str(raw_value)
             case TableColumn.ID:
-                new_proc.name = str(raw_value)
+                return False
             case TableColumn.STATE:
                 new_proc.disable = not bool(raw_value)
             case TableColumn.STATUS:
@@ -592,7 +592,8 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.EXTRA:
                 return False
             case _:
-                raise ValueError(f"Invalid column {index.column()}")
+                logger.debug(f"Invalid column {index.column()}")
+                return False
         # Write succeeded!
         self.edit_iocs[new_proc.name] = new_proc
         self.dataChanged.emit(index, index)
