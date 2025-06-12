@@ -1022,3 +1022,9 @@ def test_update_from_status_file(model: IOCTableModel, qapp: QApplication):
     model.update_from_status_file(status_file=dummy_status_file)
     assert model.status_files["ioc0"] == dummy_status_file
     assert len(data_emits) == 1
+
+    # Should emit ioc0's extra's column
+    assert data_emits[0][0].row() == 0
+    assert data_emits[0][0].column() == TableColumn.EXTRA
+    assert data_emits[0][1].row() == 0
+    assert data_emits[0][1].column() == TableColumn.EXTRA
