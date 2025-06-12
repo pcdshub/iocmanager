@@ -17,7 +17,6 @@ TODO: e.g. IOCs that have status files but are not in config
 """
 
 import concurrent.futures
-import itertools
 import logging
 import threading
 import time
@@ -439,10 +438,8 @@ class IOCTableModel(QAbstractTableModel):
                 if ioc_proc.disable != file_proc.disable:
                     return Qt.blue
             case TableColumn.STATUS:
-                # Read-only field, pick black or white for contrast with background
-                bg_color = self.get_background_color(ioc_proc=ioc_proc, column=column)
-                if bg_color in (Qt.blue, Qt.red):
-                    return Qt.white
+                # Read-only field, can have different backgrounds
+                ...
             case TableColumn.HOST:
                 # Check modified
                 if ioc_proc.host != file_proc.host:
@@ -451,7 +448,7 @@ class IOCTableModel(QAbstractTableModel):
                 # User can't modify this, keep as default
                 ...
             case TableColumn.PORT:
-                # Check modified
+                # Check modified (note the background could be red here)
                 if ioc_proc.port != file_proc.port:
                     return Qt.blue
             case TableColumn.VERSION:
@@ -466,7 +463,10 @@ class IOCTableModel(QAbstractTableModel):
                 ...
             case _:
                 raise ValueError(f"Invalid column {column}")
-        # Default
+        # Default, contrast with background
+        bg_color = self.get_background_color(ioc_proc=ioc_proc, column=column)
+        if bg_color in (Qt.blue, Qt.red):
+            return Qt.white
         return Qt.black
 
     def get_background_color(self, ioc_proc: IOCProc, column: int) -> Qt.GlobalColor:
@@ -487,6 +487,12 @@ class IOCTableModel(QAbstractTableModel):
                     return Qt.yellow
             case TableColumn.STATUS:
                 status = self.get_live_info(ioc_name=ioc_proc.name)
+                # Blue is init, or host down while being enabled
+                # Would otherwise be yellow or red
+                if status.status == ProcServStatus.INIT or (
+                    status.status == ProcServStatus.DOWN and not ioc_proc.disable
+                ):
+                    return Qt.blue
                 # Yellow has priority and means reality != configured (host, port, path)
                 if (
                     ioc_proc.host != status.host
@@ -497,9 +503,6 @@ class IOCTableModel(QAbstractTableModel):
                 # Green is what we want to see (reality matches config)
                 if (status.status == ProcServStatus.RUNNING) ^ ioc_proc.disable:
                     return Qt.green
-                # Blue is host down while being enabled, would otherwise be red
-                if status.status == ProcServStatus.DOWN and not ioc_proc.disable:
-                    return Qt.blue
                 # Red is the other bad cases
                 return Qt.red
             case TableColumn.HOST:
@@ -508,9 +511,7 @@ class IOCTableModel(QAbstractTableModel):
                 ...
             case TableColumn.PORT:
                 # Port conflicts are bad! Red bad!
-                for other_proc in itertools.chain(
-                    self.config.procs.values(), self.add_iocs.values()
-                ):
+                for other_proc in self.get_next_config().procs.values():
                     if ioc_proc == other_proc:
                         continue
                     if (

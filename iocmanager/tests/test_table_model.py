@@ -399,3 +399,148 @@ def test_get_display_text(
         model.get_display_text(ioc_proc=config.procs[ioc_name], column=column)
         == expected
     )
+
+
+@pytest.mark.parametrize(
+    "ioc_name,column,expected",
+    (
+        # Base cases: black text, except status INIT is blue bg white text
+        ("ioc0", TableColumn.IOCNAME, Qt.black),
+        ("ioc0", TableColumn.ID, Qt.black),
+        ("ioc0", TableColumn.STATE, Qt.black),
+        ("ioc0", TableColumn.STATUS, Qt.white),
+        ("ioc0", TableColumn.HOST, Qt.black),
+        ("ioc0", TableColumn.OSVER, Qt.black),
+        ("ioc0", TableColumn.PORT, Qt.black),
+        ("ioc0", TableColumn.VERSION, Qt.black),
+        ("ioc0", TableColumn.PARENT, Qt.black),
+        ("ioc0", TableColumn.EXTRA, Qt.black),
+        # Modified fields are blue
+        ("ioc1", TableColumn.IOCNAME, Qt.blue),
+        ("ioc1", TableColumn.ID, Qt.black),
+        ("ioc1", TableColumn.STATE, Qt.blue),
+        ("ioc1", TableColumn.STATUS, Qt.white),
+        ("ioc1", TableColumn.HOST, Qt.blue),
+        ("ioc1", TableColumn.OSVER, Qt.black),
+        ("ioc1", TableColumn.PORT, Qt.blue),
+        ("ioc1", TableColumn.VERSION, Qt.blue),
+        ("ioc1", TableColumn.PARENT, Qt.black),
+        ("ioc1", TableColumn.EXTRA, Qt.black),
+        # Deleted IOC is red
+        ("ioc2", TableColumn.IOCNAME, Qt.red),
+        ("ioc2", TableColumn.ID, Qt.red),
+        ("ioc2", TableColumn.STATE, Qt.red),
+        ("ioc2", TableColumn.STATUS, Qt.red),
+        ("ioc2", TableColumn.HOST, Qt.red),
+        ("ioc2", TableColumn.OSVER, Qt.red),
+        ("ioc2", TableColumn.PORT, Qt.red),
+        ("ioc2", TableColumn.VERSION, Qt.red),
+        ("ioc2", TableColumn.PARENT, Qt.red),
+        ("ioc2", TableColumn.EXTRA, Qt.red),
+        # Added IOC is all blue
+        ("added", TableColumn.IOCNAME, Qt.blue),
+        ("added", TableColumn.ID, Qt.blue),
+        ("added", TableColumn.STATE, Qt.blue),
+        ("added", TableColumn.STATUS, Qt.blue),
+        ("added", TableColumn.HOST, Qt.blue),
+        ("added", TableColumn.OSVER, Qt.blue),
+        ("added", TableColumn.PORT, Qt.blue),
+        ("added", TableColumn.VERSION, Qt.blue),
+        ("added", TableColumn.PARENT, Qt.blue),
+        ("added", TableColumn.EXTRA, Qt.blue),
+        # Port conflict -> red BG = white text (or blue if modified)
+        ("ioc3", TableColumn.PORT, Qt.white),
+        ("ioc4", TableColumn.PORT, Qt.blue),
+        # Edited to dev mode -> black in state
+        ("ioc5", TableColumn.STATE, Qt.black),
+        # Yellow status bg -> black text
+        ("ioc6", TableColumn.STATUS, Qt.black),
+        # Green status bg -> black text
+        ("ioc7", TableColumn.STATUS, Qt.black),
+        # Red status bg -> white text
+        ("ioc8", TableColumn.STATUS, Qt.white),
+    ),
+)
+def test_get_foreground_color(
+    ioc_name: str,
+    column: int,
+    expected: Qt.GlobalColor,
+    model: IOCTableModel,
+    qapp: QApplication,
+):
+    """
+    model.get_foreground_color should get the text color of a cell.
+
+    This is almost always black for black text, except:
+    - Modified editable fields should be blue
+    - Added IOCs should have all their text blue
+    - Deleted IOCs should have all their text red
+
+    In addition, we'll change black text to white on colored
+    backgrounds such as blue or red.
+    """
+    # Modify one of each modifiable field
+    model.setData(model.index(1, TableColumn.IOCNAME), QVariant("IOC ALIAS"))
+    model.setData(model.index(1, TableColumn.STATE), QVariant(False))
+    model.setData(model.index(1, TableColumn.HOST), QVariant("newhost"))
+    model.setData(model.index(1, TableColumn.PORT), QVariant(40001))
+    model.setData(model.index(1, TableColumn.VERSION), QVariant("/new/version"))
+    # Delete an IOC
+    model.delete_ioc(2)
+    # Add an IOC
+    model.add_ioc(
+        ioc_proc=IOCProc(
+            name="added",
+            port=40001,
+            host="asdf",
+            path="asdf",
+        )
+    )
+    # Create a port conflict
+    model.setData(model.index(4, TableColumn.PORT), QVariant(30004))
+    # Edit dev variant
+    model.setData(model.index(5, TableColumn.VERSION), QVariant("/epics-dev/stuff"))
+    # Set one of each status bg color variant
+    # Yellow bg -> host, port, or path changed
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="ioc6",
+            port=30007,
+            host="different_host",
+            path="/some/other/path",
+            pid=0,
+            status=ProcServStatus.RUNNING,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+    # Green bg -> running, consistent values
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="ioc7",
+            port=30008,
+            host="host",
+            path="ioc/some/path/7",
+            pid=0,
+            status=ProcServStatus.RUNNING,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+    # Red bg -> Error, etc.
+    model.update_from_live_ioc(
+        status_live=IOCStatusLive(
+            name="ioc8",
+            port=30009,
+            host="host",
+            path="ioc/some/path/8",
+            pid=0,
+            status=ProcServStatus.ERROR,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+    )
+    # Check this test case
+    config = model.get_next_config()
+    try:
+        ioc_proc = config.procs[ioc_name]
+    except KeyError:
+        ioc_proc = model.config.procs[ioc_name]
+    assert model.get_foreground_color(ioc_proc=ioc_proc, column=column) == expected
