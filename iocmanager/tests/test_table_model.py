@@ -951,3 +951,43 @@ def test_poll(
         model.stop_poll_thread()
         model.poll_thread.join(timeout=1.0)
     assert not model.poll_thread.is_alive()
+
+
+def test_update_from_config_file(model: IOCTableModel, qapp: QApplication):
+    """
+    model.update_from_config_file should introduce a new config file to the model.
+
+    If the new config file is newer than the most recently read config file,
+    we'll use it as our new base truth config.
+
+    If we store a new config, we'll emit dataChanged across the entire valid
+    range of the table.
+    """
+    data_emits: list[tuple[QModelIndex, QModelIndex]] = []
+
+    def save_data_emit(index1: QModelIndex, index2: QModelIndex):
+        data_emits.append((index1, index2))
+
+    model.dataChanged.connect(save_data_emit)
+
+    original_config = model.config
+
+    # Update using our exact existing config. Nothing should happen!
+    model.update_from_config_file(config=model.config)
+    assert not data_emits
+    assert model.config == original_config
+    # Update using some bogus config from the past. Nothing should happen!
+    model.update_from_config_file(config=Config(path="bogus!", mtime=0))
+    assert not data_emits
+    assert model.config == original_config
+    # Update using a newer config. It should be accepted!
+    new_config = deepcopy(model.config)
+    new_config.commithost = "psbuild-lmao"
+    new_config.mtime = time.time()
+    model.update_from_config_file(config=new_config)
+    assert model.config == new_config
+    assert data_emits
+    assert data_emits[0][0].row() == 0
+    assert data_emits[0][0].column() == 0
+    assert data_emits[0][1].row() == model.rowCount() - 1
+    assert data_emits[0][1].column() == model.columnCount() - 1
