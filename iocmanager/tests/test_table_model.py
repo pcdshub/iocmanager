@@ -1,4 +1,6 @@
 import dataclasses
+import time
+from copy import deepcopy
 from typing import Any
 
 import pytest
@@ -6,6 +8,7 @@ from qtpy.QtCore import QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
 from qtpy.QtWidgets import QApplication
 
+from .. import table_model
 from ..config import Config, IOCProc
 from ..procserv_tools import (
     AutoRestartMode,
@@ -869,3 +872,82 @@ def test_flags(
         )
     )
     assert model.flags(index=model.index(row, column)) == expected
+
+
+def test_poll(
+    model: IOCTableModel, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
+):
+    """
+    The model's polling loop should get updated information.
+
+    We'll monkeypatch a few things to keep this manageable:
+    - read_config to return a local config object we manage
+    - get_host_os to return a fake host/os mapping
+    - check_status to return some canned fake live statuses
+    - read_status_dir to return some canned fake status files
+    """
+    fake_config = deepcopy(model.config)
+    fake_config.commithost = "psbuild-lmao"
+    fake_config.mtime = time.time()
+    fake_host_os = "rocky9"
+    fake_live_status = ProcServStatus.RUNNING
+
+    def read_config_patch(*args, **kwargs) -> Config:
+        return fake_config
+
+    def get_host_os_patch(hosts_list: list[str]) -> dict[str, str]:
+        return dict.fromkeys(hosts_list, fake_host_os)
+
+    def check_status_patch(host: str, port: int, name: str) -> IOCStatusLive:
+        return IOCStatusLive(
+            name=name,
+            port=port,
+            host=host,
+            path="ioc/path",
+            pid=0,
+            status=fake_live_status,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+
+    def read_status_dir_patch(cfg: str) -> list[IOCStatusFile]:
+        return [
+            IOCStatusFile(
+                name=proc.name, port=proc.port, host=proc.host, path=proc.path, pid=0
+            )
+            for proc in fake_config.procs.values()
+        ]
+
+    monkeypatch.setattr(table_model, "read_config", read_config_patch)
+    monkeypatch.setattr(table_model, "get_host_os", get_host_os_patch)
+    monkeypatch.setattr(table_model, "check_status", check_status_patch)
+    monkeypatch.setattr(table_model, "read_status_dir", read_status_dir_patch)
+
+    assert model.config.commithost != "psbuild-lmao"
+    assert not model.host_os
+    assert not model.status_files
+    assert not model.status_live
+
+    def assert_poll_works():
+        assert model.config.commithost == "psbuild-lmao"
+        for val in model.host_os.values():
+            assert val == fake_host_os
+        for name, status_file in model.status_files.items():
+            assert name == status_file.name
+        for name, live_status in model.status_live.items():
+            assert name == live_status.name
+            assert live_status.status == fake_live_status
+        assert model.poll_thread.is_alive()
+
+    model.poll_interval = 0.1
+    model.start_poll_thread()
+    time.sleep(0.2)
+    try:
+        assert_poll_works()
+        fake_host_os = "rhel7"
+        fake_live_status = ProcServStatus.SHUTDOWN
+        time.sleep(0.2)
+        assert_poll_works()
+    finally:
+        model.stop_poll_thread()
+        model.poll_thread.join(timeout=1.0)
+    assert not model.poll_thread.is_alive()

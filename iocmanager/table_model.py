@@ -203,6 +203,8 @@ class IOCTableModel(QAbstractTableModel):
         self.status_live: dict[str, IOCStatusLive] = {}
         self.status_files: dict[str, IOCStatusFile] = {}
         self.host_os: dict[str, str] = {}
+        self.poll_interval = 10.0
+        self.poll_stop_ev = threading.Event()
 
     # Main external business logic
     def get_next_config(self) -> Config:
@@ -648,7 +650,11 @@ class IOCTableModel(QAbstractTableModel):
     # Methods for updating the data using our dataclasses
     def start_poll_thread(self):
         """Public API to start checking IOC statuses in the background."""
+        self.poll_stop_ev.clear()
         self.poll_thread.start()
+
+    def stop_poll_thread(self):
+        self.poll_stop_ev.set()
 
     def _poll_loop(self):
         """
@@ -659,14 +665,16 @@ class IOCTableModel(QAbstractTableModel):
         - status directory
         - check ioc statuses e.g. via ping, telnet from info in the above
         """
-        interval = 10
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            while True:
+            stopped = False
+            while not stopped:
                 start_time = time.monotonic()
                 self._inner_poll(executor=executor)
                 duration = time.monotonic() - start_time
-                if duration < interval:
-                    time.sleep(interval - duration)
+                if duration < self.poll_interval:
+                    stopped = self.poll_stop_ev.wait(self.poll_interval - duration)
+                else:
+                    stopped = self.poll_stop_ev.is_set()
 
     def _inner_poll(self, executor: concurrent.futures.ThreadPoolExecutor):
         """
