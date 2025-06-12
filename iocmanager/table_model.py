@@ -608,6 +608,9 @@ class IOCTableModel(QAbstractTableModel):
         https://doc.qt.io/archives/qt-5.15/qabstractitemmodel.html#flags
         https://doc.qt.io/archives/qt-5.15/qt.html#ItemFlag-enum
         """
+        if not index.isValid() or index.row() >= self.rowCount():
+            logger.debug("Invalid index")
+            return Qt.NoItemFlags | Qt.NoItemFlags
         ioc_proc = self.get_ioc_proc(row=index.row())
 
         if ioc_proc.hard:
@@ -639,7 +642,8 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.EXTRA:
                 return Qt.ItemIsEnabled | Qt.NoItemFlags
             case _:
-                raise ValueError(f"Invalid column {index.column()}")
+                logger.debug(f"Invalid column {index.column()}")
+                return Qt.NoItemFlags | Qt.NoItemFlags
 
     # Methods for updating the data using our dataclasses
     def start_poll_thread(self):

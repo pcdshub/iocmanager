@@ -811,3 +811,61 @@ def test_set_data(
         assert has_checked_attr
     else:
         assert not has_checked_attr
+
+
+@pytest.mark.parametrize(
+    "row,column,expected",
+    (
+        (0, TableColumn.IOCNAME, Qt.ItemIsEnabled | Qt.ItemIsSelectable),
+        (0, TableColumn.ID, Qt.ItemIsEnabled | Qt.ItemIsSelectable),
+        (
+            0,
+            TableColumn.STATE,
+            Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable,
+        ),
+        (0, TableColumn.STATUS, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (0, TableColumn.HOST, Qt.ItemIsEnabled | Qt.ItemIsEditable),
+        (0, TableColumn.OSVER, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (0, TableColumn.PORT, Qt.ItemIsEnabled | Qt.ItemIsEditable),
+        (0, TableColumn.VERSION, Qt.ItemIsEnabled | Qt.ItemIsEditable),
+        (0, TableColumn.PARENT, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (0, TableColumn.EXTRA, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (10, TableColumn.IOCNAME, Qt.ItemIsEnabled | Qt.ItemIsSelectable),
+        (10, TableColumn.ID, Qt.ItemIsEnabled | Qt.ItemIsSelectable),
+        (10, TableColumn.STATE, Qt.ItemIsEnabled | Qt.ItemIsSelectable),
+        (10, TableColumn.STATUS, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (10, TableColumn.HOST, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (10, TableColumn.OSVER, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (10, TableColumn.PORT, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (10, TableColumn.VERSION, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (10, TableColumn.PARENT, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (10, TableColumn.EXTRA, Qt.ItemIsEnabled | Qt.NoItemFlags),
+        (-1, TableColumn.IOCNAME, Qt.NoItemFlags | Qt.NoItemFlags),
+        (100, TableColumn.IOCNAME, Qt.NoItemFlags | Qt.NoItemFlags),
+        (0, -1, Qt.NoItemFlags | Qt.NoItemFlags),
+        (0, 100, Qt.NoItemFlags | Qt.NoItemFlags),
+    ),
+)
+def test_flags(
+    row: int,
+    column: int,
+    expected: Qt.ItemFlags,
+    model: IOCTableModel,
+    qapp: QApplication,
+):
+    """
+    model.flags should return the intended click behavior of the cell.
+
+    This will be an integer whose bits represent which behavior options
+    are on or off.
+    """
+    # Row 10
+    model.add_ioc(
+        ioc_proc=IOCProc(
+            name="some_hioc",
+            port=40001,
+            host="some_hioc",
+            path="ioc/some/path",
+        )
+    )
+    assert model.flags(index=model.index(row, column)) == expected
