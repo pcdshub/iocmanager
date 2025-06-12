@@ -991,3 +991,34 @@ def test_update_from_config_file(model: IOCTableModel, qapp: QApplication):
     assert data_emits[0][0].column() == 0
     assert data_emits[0][1].row() == model.rowCount() - 1
     assert data_emits[0][1].column() == model.columnCount() - 1
+
+
+def test_update_from_status_file(model: IOCTableModel, qapp: QApplication):
+    """
+    model.update_from_status_file should introduce a new status file to the model.
+
+    The corresponding extras column should get a dataChanged emit just in case
+    the status file introduces a host/port discrepency.
+    """
+    data_emits: list[tuple[QModelIndex, QModelIndex]] = []
+
+    def save_data_emit(index1: QModelIndex, index2: QModelIndex):
+        data_emits.append((index1, index2))
+
+    model.dataChanged.connect(save_data_emit)
+    dummy_status_file = IOCStatusFile(
+        name="ioc0",
+        port=30001,
+        host="host",
+        path="ioc/some/path/0",
+        pid=0,
+    )
+
+    model.update_from_status_file(status_file=dummy_status_file)
+    assert model.status_files["ioc0"] == dummy_status_file
+    assert len(data_emits) == 1
+
+    # Same file again = no change
+    model.update_from_status_file(status_file=dummy_status_file)
+    assert model.status_files["ioc0"] == dummy_status_file
+    assert len(data_emits) == 1
