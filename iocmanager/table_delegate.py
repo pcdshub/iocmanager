@@ -7,9 +7,10 @@ columns in the central QTableView of the GUI.
 See https://doc.qt.io/qt-5/qstyleditemdelegate.html#details
 """
 
+import logging
 import os
 
-from qtpy.QtCore import QModelIndex, QSize, QUrl, QVariant
+from qtpy.QtCore import QAbstractItemModel, QModelIndex, QSize, QUrl, QVariant
 from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
@@ -29,6 +30,7 @@ from .table_model import IOCTableModel, TableColumn
 from .type_hints import ParentWidget
 
 STATECOMBOLIST = ["Off", "Dev/Prod"]
+logger = logging.getLogger(__name__)
 
 
 class HostnameDialog(QDialog):
@@ -158,7 +160,7 @@ class IOCTableDelegate(QStyledItemDelegate):
                 ...
 
     def setModelData(
-        self, editor: QWidget | QComboBox, model: IOCTableModel, index: QModelIndex
+        self, editor: QWidget, model: QAbstractItemModel, index: QModelIndex
     ):
         """
         Gets data from the editor widget and stores in the model.
@@ -223,19 +225,23 @@ class IOCTableDelegate(QStyledItemDelegate):
                     sidebar_urls.append(env_paths.EPICS_DEV_TOP)
                     dlg.setSidebarUrls([QUrl("file://" + url) for url in sidebar_urls])
 
-                    dialog_layout: QGridLayout = dlg.layout()
-                    tmp = QLabel()
-                    tmp.setText("Parent")
-                    dialog_layout.addWidget(tmp, 4, 0)
-                    parentgui = QLineEdit()
-                    parentgui.setReadOnly(True)
-                    dialog_layout.addWidget(parentgui, 4, 1)
+                    dialog_layout = dlg.layout()
+                    if isinstance(dialog_layout, QGridLayout):
+                        # Guard against breaking changes upstream
+                        tmp = QLabel()
+                        tmp.setText("Parent")
+                        dialog_layout.addWidget(tmp, 4, 0)
+                        parentgui = QLineEdit()
+                        parentgui.setReadOnly(True)
+                        dialog_layout.addWidget(parentgui, 4, 1)
 
-                    def fn(dirname):
-                        self.set_ioc_parent(parentgui, ioc_name, dirname)
+                        def fn(dirname):
+                            self.set_ioc_parent(parentgui, ioc_name, dirname)
 
-                    dlg.directoryEntered.connect(fn)
-                    dlg.currentChanged.connect(fn)
+                        dlg.directoryEntered.connect(fn)
+                        dlg.currentChanged.connect(fn)
+                    else:
+                        logger.error("Qt API changed, QFileDialog not QGridLayout")
 
                     if dlg.exec_() == QDialog.Rejected:
                         editor.setCurrentIndex(0)
