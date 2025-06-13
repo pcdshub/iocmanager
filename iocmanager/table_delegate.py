@@ -9,11 +9,12 @@ See https://doc.qt.io/qt-5/qstyleditemdelegate.html#details
 
 import os
 
-from qtpy.QtCore import QModelIndex, QSize, Qt, QUrl, QVariant
+from qtpy.QtCore import QModelIndex, QSize, QUrl, QVariant
 from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
+    QGridLayout,
     QLabel,
     QLineEdit,
     QStyledItemDelegate,
@@ -21,12 +22,12 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from . import hostname_ui, table_model, utils
+from . import hostname_ui
+from .env_paths import env_paths
 from .epics_paths import get_parent, normalize_path
-from .table_model import IOCTableModel
+from .table_model import IOCTableModel, TableColumn
 from .type_hints import ParentWidget
 
-STATELIST = ["Off", "Dev", "Prod"]
 STATECOMBOLIST = ["Off", "Dev/Prod"]
 
 
@@ -46,173 +47,210 @@ class HostnameDialog(QDialog):
 
 
 class IOCTableDelegate(QStyledItemDelegate):
-    def __init__(self, hutch: str, parent: ParentWidget = None):
+    """
+    QStyledItemDelegate that helps us show and edit the IOCTableModel.
+
+    Does not reimplement paint (we only use text data), but we do need to implement
+    many of the other functions.
+
+    Also skips updateEditorGeometry (the default is fine)
+
+    Notes on QStyledItemDelegate
+    (https://doc.qt.io/archives/qt-5.15/qstyleditemdelegate.html#subclassing-qstyleditemdelegate)
+
+    - sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize
+    - createEditor(
+          self, parent: QWidget, option: QStyleOptionViewItem, index: QModelIndex
+      ) -> QWidget
+    - setEditorData(self, editor: QWidget, index: QModelIndex) -> None
+    - setModelData(
+          self, editor: QWidget, model: QAbstractItemModel, index: QModelIndex
+      ) -> None
+    """
+
+    def __init__(self, hutch: str, model: IOCTableModel, parent: ParentWidget = None):
         super().__init__(parent)
         self.hutch = hutch
-        self.boxsize = None
+        self.model = model
         self.hostdialog = HostnameDialog(parent)
+
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        """
+        Returns the size needed by the delegate to display the item.
+
+        This simply resizes the host column's width to a number that is much wider
+        than most normal hostnames. This fixed width probably helps the GUI
+        keep a consistent sizing.
+
+        https://doc.qt.io/qt-5/qstyleditemdelegate.html#sizeHint
+        """
+        if index.column() == TableColumn.HOST:
+            return QSize(150, 25)
+        else:
+            return super().sizeHint(option, index)
 
     def createEditor(
         self, parent: QWidget, option: QStyleOptionViewItem, index: QModelIndex
-    ):
-        """https://doc.qt.io/qt-5/qstyleditemdelegate.html#createEditor"""
+    ) -> QWidget:
+        """
+        Returns the widget used to edit the item specified by index for editing.
+
+        For some columns we'll edit via combobox, for others we'll fallback to the
+        default in-line text edit behavior.
+
+        https://doc.qt.io/qt-5/qstyleditemdelegate.html#createEditor
+        """
         col = index.column()
-        if (
-            col == table_model.HOST
-            or col == table_model.VERSION
-            or col == table_model.STATE
-        ):
+        if col in (TableColumn.STATE, TableColumn.HOST, TableColumn.VERSION):
             editor = QComboBox(parent)
             editor.setAutoFillBackground(True)
-            editor.currentIndexChanged.connect(lambda n: self.do_commit(n, editor))
-            if col == table_model.HOST:
-                items = index.model().hosts
-            elif col == table_model.VERSION:
-                items = index.model().history(index.row())
-            else:
+            editor.activated.connect(lambda _: self.commitData.emit(editor))
+            if col == TableColumn.STATE:
                 items = STATECOMBOLIST
+            elif col == TableColumn.HOST:
+                items = self.model.get_next_config().hosts
+            elif col == TableColumn.VERSION:
+                ioc_proc = self.model.get_ioc_proc(row=index.row())
+                items = [ioc_proc.path]
+                items.extend(path for path in ioc_proc.history if path != ioc_proc.path)
+            else:
+                raise RuntimeError("Invalid codepath")
             for item in items:
                 editor.addItem(item)
-            editor.lastitem = editor.count()
-            if col == table_model.HOST:
+            if col == TableColumn.HOST:
                 editor.addItem("New Host")
-                if self.boxsize is None:
-                    self.boxsize = QSize(150, 25)
-            elif col == table_model.VERSION:
+            elif col == TableColumn.VERSION:
                 editor.addItem("New Version")
             # STATE doesn't need another entry!
             return editor
         else:
-            return QStyledItemDelegate.createEditor(self, parent, option, index)
+            return super().createEditor(parent, option, index)
 
     def setEditorData(self, editor: QWidget | QComboBox, index: QModelIndex):
-        """https://doc.qt.io/qt-5/qstyleditemdelegate.html#setEditorData"""
-        col = index.column()
-        if col == table_model.HOST:
-            value = index.model().data(index, Qt.EditRole).value()
-            try:
-                idx = index.model().hosts.index(value)
-                editor.setCurrentIndex(idx)
-            except Exception:
-                editor.setCurrentIndex(editor.lastitem)
-        elif col == table_model.VERSION:
-            # We don't have anything to do here.  It is created pointing to 0
-            # (the newest setting)
-            # And after setModelData, it is pointing to what we just added.
-            pass
-        elif col == table_model.STATE:
-            value = index.model().data(index, Qt.EditRole).value()
-            try:
-                idx = STATELIST.index(value)
-                if idx >= len(STATECOMBOLIST):
-                    idx = len(STATECOMBOLIST) - 1
-                editor.setCurrentIndex(idx)
-            except Exception:
-                editor.setCurrentIndex(editor.lastitem)
-        else:
-            QStyledItemDelegate.setEditorData(self, editor, index)
+        """
+        Sets the data to be displayed and edited by the editor.
+
+        For the comboboxes, this will set the starting index to match
+        the stored value.
+        For others this will use the default behavior.
+
+        https://doc.qt.io/qt-5/qstyleditemdelegate.html#setEditorData
+        """
+        if not isinstance(editor, QComboBox):
+            return super().setEditorData(editor, index)
+
+        match index.column():
+            case TableColumn.STATE:
+                # Coerce off -> off and both dev and prod to dev/prod
+                if self.model.data(index).value() == "Off":
+                    editor.setCurrentIndex(0)
+                else:
+                    editor.setCurrentIndex(1)
+            case TableColumn.HOST:
+                # Default last item (New Host)
+                editor.setCurrentIndex(editor.count() - 1)
+                # If there's a match, match it (otherwise this is a no-op)
+                editor.setCurrentText(str(self.model.data(index).value()))
+            case TableColumn.VERSION:
+                # We don't have anything to do here.  It is created pointing to 0
+                # (the newest setting)
+                # And after setModelData, it is pointing to what we just added.
+                ...
 
     def setModelData(
         self, editor: QWidget | QComboBox, model: IOCTableModel, index: QModelIndex
     ):
-        """https://doc.qt.io/qt-5/qstyleditemdelegate.html#setModelData"""
-        col = index.column()
-        if col == table_model.HOST:
-            idx = editor.currentIndex()
-            if idx == editor.lastitem:
-                # Pick a new hostname!
-                if self.hostdialog.exec_() == QDialog.Accepted:
-                    value = self.hostdialog.ui.hostname.text()
-                    if value not in model.hosts:
-                        model.hosts.append(value)
-                        model.hosts.sort()
-                        for i in range(len(model.hosts)):
-                            editor.setItemText(i, model.hosts[i])
-                        editor.lastitem = editor.count()
-                        editor.addItem("New Host")
-                    editor.setCurrentIndex(model.hosts.index(value))
-                    model.setData(index, QVariant(value), Qt.EditRole)
+        """
+        Gets data from the editor widget and stores in the model.
+
+        https://doc.qt.io/qt-5/qstyleditemdelegate.html#setModelData
+        """
+        if not isinstance(editor, QComboBox):
+            return super().setEditorData(editor, index)
+
+        idx = editor.currentIndex()
+
+        match index.column():
+            case TableColumn.STATE:
+                model.setData(index, QVariant(idx))
+            case TableColumn.HOST:
+                if idx == editor.count() - 1:
+                    # Pick a new hostname!
+                    if self.hostdialog.exec_() == QDialog.Accepted:
+                        value = self.hostdialog.ui.hostname.text()
+                        model.setData(index, QVariant(value))
+                    else:
+                        # Revert the widget, else it stays on "new"
+                        self.setEditorData(editor, index)
                 else:
-                    self.setEditorData(editor, index)  # Restore the original value!
-            else:
-                model.setData(index, QVariant(str(editor.currentText())), Qt.EditRole)
-        elif col == table_model.VERSION:
-            idx = editor.currentIndex()
-            if idx == editor.lastitem:
-                # Pick a new directory!
-                r = str(editor.itemText(0))
-                if r[0] != "/" and r[0:3] != "../":
+                    model.setData(index, QVariant(editor.currentText()))
+            case TableColumn.VERSION:
+                if idx == editor.count() - 1:
+                    # Pick a new directory!
+                    current_version = editor.itemText(0)
+                    full_path_candidate = os.path.join(
+                        env_paths.EPICS_SITE_TOP, current_version
+                    )
+                    if os.path.exists(full_path_candidate):
+                        current_version = full_path_candidate
+
+                    ioc_name = str(
+                        model.data(
+                            index=model.index(index.row(), TableColumn.ID)
+                        ).value()
+                    )
+                    parent = self.parent()
+                    if not isinstance(parent, QWidget):
+                        parent = None
+                    dlg = QFileDialog(
+                        parent, f"New Version for {ioc_name}", current_version
+                    )
+                    dlg.setFileMode(QFileDialog.Directory)
+                    dlg.setOptions(
+                        QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog
+                    )
+
+                    sidebar_urls = [current_version]
+                    home_dir = os.getenv("HOME")
+                    if home_dir is not None:
+                        sidebar_urls.append(home_dir)
+                    sidebar_urls.append(
+                        os.path.join(env_paths.EPICS_SITE_TOP, "ioc", "self.hutch")
+                    )
+                    sidebar_urls.append(
+                        os.path.join(env_paths.EPICS_SITE_TOP, "ioc", "common")
+                    )
+                    sidebar_urls.append(env_paths.EPICS_DEV_TOP)
+                    dlg.setSidebarUrls([QUrl("file://" + url) for url in sidebar_urls])
+
+                    dialog_layout: QGridLayout = dlg.layout()
+                    tmp = QLabel()
+                    tmp.setText("Parent")
+                    dialog_layout.addWidget(tmp, 4, 0)
+                    parentgui = QLineEdit()
+                    parentgui.setReadOnly(True)
+                    dialog_layout.addWidget(parentgui, 4, 1)
+
+                    def fn(dirname):
+                        self.set_ioc_parent(parentgui, ioc_name, dirname)
+
+                    dlg.directoryEntered.connect(fn)
+                    dlg.currentChanged.connect(fn)
+
+                    if dlg.exec_() == QDialog.Rejected:
+                        editor.setCurrentIndex(0)
+                        return
                     try:
-                        r = utils.EPICS_SITE_TOP + r[: r.rindex("/")]
+                        directory = str(dlg.selectedFiles()[0])
+                        directory = normalize_path(directory, ioc_name)
                     except Exception:
-                        print("Error picking new directory!")
-                row = index.row()
-                idm = model.getID(row)
-                dlg = QFileDialog(self.parent(), "New Version for %s" % idm, r)
-                dlg.setFileMode(QFileDialog.Directory)
-                dlg.setOptions(
-                    QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog
-                )
-                dlg.setSidebarUrls(
-                    [
-                        QUrl("file://" + r),
-                        QUrl("file://" + os.getenv("HOME")),
-                        QUrl("file://" + utils.EPICS_SITE_TOP + "ioc/" + self.hutch),
-                        QUrl("file://" + utils.EPICS_SITE_TOP + "ioc/common"),
-                        QUrl("file://" + utils.EPICS_DEV_TOP),
-                    ]
-                )
-                dialog_layout = dlg.layout()
-                tmp = QLabel()
-                tmp.setText("Parent")
-                dialog_layout.addWidget(tmp, 4, 0)
-                parentgui = QLineEdit()
-                parentgui.setReadOnly(True)
-                dialog_layout.addWidget(parentgui, 4, 1)
-
-                def fn(dirname):
-                    self.set_ioc_parent(parentgui, idm, dirname)
-
-                dlg.directoryEntered.connect(fn)
-                dlg.currentChanged.connect(fn)
-
-                if dlg.exec_() == QDialog.Rejected:
-                    editor.setCurrentIndex(0)
-                    return
-                try:
-                    directory = str(dlg.selectedFiles()[0])
-                    directory = normalize_path(directory, idm)
-                except Exception:
-                    return
-                editor.setItemText(editor.lastitem, directory)
-                editor.addItem("New Version")
-                editor.lastitem += 1
-                model.setData(index, QVariant(directory), Qt.EditRole)
-            else:
-                model.setData(index, QVariant(str(editor.currentText())), Qt.EditRole)
-        elif col == table_model.STATE:
-            idx = editor.currentIndex()
-            model.setData(index, QVariant(idx), Qt.EditRole)
-        else:
-            QStyledItemDelegate.setModelData(self, editor, model, index)
-
-    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex):
-        """https://doc.qt.io/qt-5/qstyleditemdelegate.html#sizeHint"""
-        col = index.column()
-        if col == table_model.HOST:
-            if self.boxsize is None:
-                result = QSize(150, 25)
-            else:
-                result = self.boxsize
-        else:
-            result = QStyledItemDelegate.sizeHint(self, option, index)
-        return result
-
-    def do_commit(self, _, editor: QComboBox):
-        """https://doc.qt.io/qt-5/qabstractitemdelegate.html#commitData"""
-        self.commitData.emit(editor)
+                        return
+                    model.setData(index, QVariant(directory))
+                else:
+                    model.setData(index, QVariant(editor.currentText()))
 
     def set_ioc_parent(self, gui: QLineEdit, ioc: str, directory: str):
+        """Slot to update the "parent" value in the new version selection dialog."""
         if directory != "":
             try:
                 pname = get_parent(directory, ioc)
