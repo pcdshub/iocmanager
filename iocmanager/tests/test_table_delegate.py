@@ -26,34 +26,42 @@ def test_size_hint(column: int, delegate: IOCTableDelegate, qapp: QApplication):
 
 
 @pytest.mark.parametrize(
-    "row,column,expected_options",
+    "row,column,expected_options,expected_index",
     (
-        (0, TableColumn.IOCNAME, ()),
-        (0, TableColumn.ID, ()),
-        (0, TableColumn.STATUS, ()),
-        (0, TableColumn.OSVER, ()),
-        (0, TableColumn.PORT, ()),
-        (0, TableColumn.PARENT, ()),
-        (0, TableColumn.EXTRA, ()),
-        (1, TableColumn.STATE, ("Off", "Dev/Prod")),
-        (2, TableColumn.STATE, ("Off", "Dev/Prod")),
-        (1, TableColumn.HOST, ("host", "host2", "New Host")),
-        (2, TableColumn.HOST, ("host", "host2", "New Host")),
-        (1, TableColumn.VERSION, ("ioc/some/path/1", "New Version")),
-        (2, TableColumn.VERSION, ("ioc/some/path/2", "old/version", "New Version")),
+        (0, TableColumn.IOCNAME, (), 0),
+        (0, TableColumn.ID, (), 0),
+        (0, TableColumn.STATUS, (), 0),
+        (0, TableColumn.OSVER, (), 0),
+        (0, TableColumn.PORT, (), 0),
+        (0, TableColumn.PARENT, (), 0),
+        (0, TableColumn.EXTRA, (), 0),
+        (1, TableColumn.STATE, ("Off", "Dev/Prod"), 0),
+        (2, TableColumn.STATE, ("Off", "Dev/Prod"), 1),
+        (1, TableColumn.HOST, ("host", "host2", "New Host"), 0),
+        (2, TableColumn.HOST, ("host", "host2", "New Host"), 1),
+        (1, TableColumn.VERSION, ("ioc/some/path/1", "New Version"), 0),
+        (2, TableColumn.VERSION, ("ioc/some/path/2", "old/version", "New Version"), 0),
     ),
 )
-def test_create_editor(
+def test_create_and_set_editor(
     row: int,
     column: int,
     expected_options: tuple[str, ...],
+    expected_index: int,
     delegate: IOCTableDelegate,
     qtbot: QtBot,
 ):
     """
-    createEditor has non-default behavior for STATE, HOST, and VERSION.
+    This tests both createEditor and setEditorData.
 
-    Each of these should create a suitable combobox with the correct options.
+    createEditor can be tested independendently but setEditorData only
+    makes sense in the context of na existing editor widget, so it makes
+    sense to combine the tests.
+
+    We have non-default behavior for STATE, HOST, and VERSION.
+
+    Each of these should create a suitable combobox with the correct options,
+    and when we set the data the starting index should match our data source.
 
     The others should return a default QWidget, but we won't inspect what it is
     (it might slightly change in a new qt version but we shouldn't care).
@@ -74,16 +82,24 @@ def test_create_editor(
 
     parent = QWidget()
     qtbot.add_widget(parent)
+    index = delegate.model.index(row, column)
     widget = delegate.createEditor(
         parent=parent,
         option=QStyleOptionViewItem(),
-        index=delegate.model.index(row, column),
+        index=index,
     )
 
     match column:
         case TableColumn.STATE | TableColumn.HOST | TableColumn.VERSION:
             assert isinstance(widget, QComboBox)
-            for index, text in enumerate(expected_options):
-                assert widget.itemText(index) == text
+            for idx, text in enumerate(expected_options):
+                assert widget.itemText(idx) == text
         case _:
             assert isinstance(widget, QWidget)
+
+    delegate.setEditorData(editor=widget, index=index)
+
+    match column:
+        case TableColumn.STATE | TableColumn.HOST | TableColumn.VERSION:
+            assert isinstance(widget, QComboBox)
+            assert widget.currentIndex() == expected_index
