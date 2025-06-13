@@ -1073,7 +1073,7 @@ def test_update_from_live_ioc(model: IOCTableModel, qapp: QApplication):
 
 
 @pytest.mark.parametrize("user_accept", (True, False))
-def test_edit_details_accepted(
+def test_edit_details(
     user_accept: bool,
     model: IOCTableModel,
     qapp: QApplication,
