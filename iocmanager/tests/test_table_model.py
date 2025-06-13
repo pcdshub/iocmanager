@@ -1193,3 +1193,35 @@ def test_delete_ioc(model: IOCTableModel, qapp: QApplication):
     assert data_emits[0][0].column() == 0
     assert data_emits[0][1].row() == 0
     assert data_emits[0][1].column() == model.columnCount() - 1
+
+
+def test_revert_ioc(model: IOCTableModel, qapp: QApplication):
+    """
+    model.revert_ioc should undo all pending changes.
+
+    No matter what we do, revert_ioc should bring us back to the
+    original config.
+    """
+    original_config = model.get_next_config()
+
+    def assert_not_changed():
+        assert model.get_next_config() == original_config
+        assert not model.add_iocs
+        assert not model.edit_iocs
+        assert not model.delete_iocs
+        assert model.rowCount() == 10
+
+    assert_not_changed()
+    model.add_ioc(
+        ioc_proc=IOCProc(name="added", port=40001, host="host", path="some/path")
+    )
+    model.revert_ioc(10)
+    assert_not_changed()
+    model.delete_ioc(0)
+    model.revert_ioc(0)
+    assert_not_changed()
+    assert model.setData(
+        index=model.index(1, TableColumn.IOCNAME), value=QVariant("Alias")
+    )
+    model.revert_ioc(1)
+    assert_not_changed()
