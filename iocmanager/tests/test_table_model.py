@@ -1122,3 +1122,49 @@ def test_edit_details(
         assert ioc_proc.cmd == ""
         assert ioc_proc.delay == 0
         assert not data_emits
+
+
+def test_add_ioc(model: IOCTableModel, qapp: QApplication):
+    """
+    model.add_ioc should add a pending IOC, adding a new row to the table.
+    """
+    data_emits: list[tuple[QModelIndex, QModelIndex]] = []
+
+    def save_data_emit(index1: QModelIndex, index2: QModelIndex):
+        data_emits.append((index1, index2))
+
+    model.dataChanged.connect(save_data_emit)
+
+    assert model.rowCount() == 10
+    model.add_ioc(
+        ioc_proc=IOCProc(
+            name="added1",
+            port=40001,
+            host="host",
+            path="/some/other/path",
+        )
+    )
+    assert model.rowCount() == 11
+    assert len(data_emits) == 1
+    assert data_emits[0][0].row() == 10
+    assert data_emits[0][0].column() == 0
+    assert data_emits[0][1].row() == 10
+    assert data_emits[0][1].column() == model.columnCount() - 1
+    model.add_ioc(
+        ioc_proc=IOCProc(
+            name="added2",
+            port=40002,
+            host="host",
+            path="/some/other/path",
+        )
+    )
+    assert model.rowCount() == 12
+    assert len(data_emits) == 2
+    assert data_emits[1][0].row() == 10
+    assert data_emits[1][0].column() == 0
+    assert data_emits[1][1].row() == 11
+    assert data_emits[1][1].column() == model.columnCount() - 1
+
+    new_config = model.get_next_config()
+    assert "added1" in new_config.procs
+    assert "added2" in new_config.procs
