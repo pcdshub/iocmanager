@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from qtpy.QtCore import QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
-from qtpy.QtWidgets import QApplication
+from qtpy.QtWidgets import QApplication, QDialog
 
 from .. import table_model
 from ..config import Config, IOCProc
@@ -1070,3 +1070,45 @@ def test_update_from_live_ioc(model: IOCTableModel, qapp: QApplication):
     assert data_emits[1][0].column() == TableColumn.EXTRA
     assert data_emits[1][1].row() == 0
     assert data_emits[1][1].column() == TableColumn.EXTRA
+
+
+@pytest.mark.parametrize("user_accept", (True, False))
+def test_edit_details_accepted(
+    user_accept: bool,
+    model: IOCTableModel,
+    qapp: QApplication,
+):
+    """
+    model.edit_details opens the details dialog.
+
+    This dialog has widgets for changing the alias, cmd, and delay parameters.
+    If the user sets values in those widgets and accepts the gui, then
+    the IOC should get the corresponding pending edit.
+    """
+
+    def fake_exec() -> QDialog.DialogCode:
+        """Replace exec_ to simulate user edits."""
+        model.details_dialog.ui.aliasEdit.setText("New Alias")
+        model.details_dialog.ui.cmdEdit.setText("new_cmd.sh")
+        model.details_dialog.ui.delayEdit.setValue(10)
+        if user_accept:
+            return QDialog.Accepted
+        else:
+            return QDialog.Rejected
+
+    # Instance override doesn't need monkeypatch fixture
+    model.details_dialog.exec_ = fake_exec
+
+    # Edited from row 0, column 0 (ioc0)
+    model.edit_details(index=model.index(0, 0))
+    new_config = model.get_next_config()
+    ioc_proc = new_config.procs["ioc0"]
+
+    if user_accept:
+        assert ioc_proc.alias == "New Alias"
+        assert ioc_proc.cmd == "new_cmd.sh"
+        assert ioc_proc.delay == 10
+    else:
+        assert ioc_proc.alias == ""
+        assert ioc_proc.cmd == ""
+        assert ioc_proc.delay == 0
