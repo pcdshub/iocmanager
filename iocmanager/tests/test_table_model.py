@@ -1085,6 +1085,12 @@ def test_edit_details_accepted(
     If the user sets values in those widgets and accepts the gui, then
     the IOC should get the corresponding pending edit.
     """
+    data_emits: list[tuple[QModelIndex, QModelIndex]] = []
+
+    def save_data_emit(index1: QModelIndex, index2: QModelIndex):
+        data_emits.append((index1, index2))
+
+    model.dataChanged.connect(save_data_emit)
 
     def fake_exec() -> QDialog.DialogCode:
         """Replace exec_ to simulate user edits."""
@@ -1108,7 +1114,11 @@ def test_edit_details_accepted(
         assert ioc_proc.alias == "New Alias"
         assert ioc_proc.cmd == "new_cmd.sh"
         assert ioc_proc.delay == 10
+        assert len(data_emits) == 1
+        assert data_emits[0][0].row() == 0
+        assert data_emits[0][0].column() == TableColumn.IOCNAME
     else:
         assert ioc_proc.alias == ""
         assert ioc_proc.cmd == ""
         assert ioc_proc.delay == 0
+        assert not data_emits
