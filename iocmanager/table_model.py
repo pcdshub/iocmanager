@@ -223,11 +223,11 @@ class IOCTableModel(QAbstractTableModel):
         """
         config = deepcopy(self.config)
         for ioc_proc in self.add_iocs.values():
-            config.add_proc(ioc_proc)
-        for ioc_name, ioc_proc in self.edit_iocs.items():
-            config.procs[ioc_name] = ioc_proc
+            config.add_proc(proc=ioc_proc)
+        for ioc_proc in self.edit_iocs.values():
+            config.update_proc(proc=ioc_proc)
         for ioc_name in self.delete_iocs:
-            del config.procs[ioc_name]
+            config.delete_proc(ioc_name=ioc_name)
         return config
 
     def reset_edits(self):

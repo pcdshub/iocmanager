@@ -23,6 +23,22 @@ from ..config import (
 from . import CFG_FOLDER
 
 
+def test_basic_operations():
+    config = Config(path="")
+    assert not config.hosts
+    ioc_proc = IOCProc(name="ioc_name", port=30001, host="host", path="/ioc/path")
+    config.add_proc(proc=ioc_proc)
+    assert "ioc_name" in config.procs
+    assert config.hosts == ["host"]
+    ioc_proc.host = "jost"
+    config.update_proc(proc=ioc_proc)
+    assert "ioc_name" in config.procs
+    assert config.hosts == ["host", "jost"]
+    config.delete_proc("ioc_name")
+    assert "ioc_name" not in config.procs
+    assert not config.procs
+
+
 @pytest.mark.parametrize(
     "cfg", (str(CFG_FOLDER / "pytest" / "iocmanager.cfg"), "pytest")
 )

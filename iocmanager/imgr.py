@@ -665,6 +665,8 @@ def _write_apply(config: Config, ioc_name: str, hutch: str):
 
     Pulled out for ease of testing.
     """
+    # Ensure everything is up-to-date
+    config.update_proc(config.procs[ioc_name])
     write_config(cfgname=hutch, config=config)
     apply_config(cfg=hutch, verify=None, ioc=ioc_name)
 

@@ -19,22 +19,6 @@ from ..procserv_tools import (
 from ..table_model import IOCTableModel, StateOption, TableColumn, table_headers
 
 
-@pytest.fixture(scope="function")
-def model() -> IOCTableModel:
-    """Basic re-usable model with starting data for use in test suite."""
-    config = Config(path="")
-    for num in range(10):
-        config.add_proc(
-            IOCProc(
-                name=f"ioc{num}",
-                port=30001 + num,
-                host="host",
-                path=f"ioc/some/path/{num}",
-            )
-        )
-    return IOCTableModel(config=config, hutch="pytest")
-
-
 def test_get_next_config_and_reset_edits(model: IOCTableModel, qapp: QApplication):
     """
     model.get_next_config should return a Config object given the table data.

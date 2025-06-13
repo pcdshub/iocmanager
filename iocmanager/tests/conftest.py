@@ -10,8 +10,11 @@ from typing import Iterator
 
 import pytest
 
-from iocmanager.env_paths import env_paths
-from iocmanager.procserv_tools import BASEPORT, AutoRestartMode
+from ..config import Config
+from ..env_paths import env_paths
+from ..procserv_tools import BASEPORT, AutoRestartMode, IOCProc
+from ..table_delegate import IOCTableDelegate
+from ..table_model import IOCTableModel
 
 EPICS_HOST_ARCH = os.getenv("EPICS_HOST_ARCH")
 TESTS_PATH = Path(__file__).parent.resolve()
@@ -334,3 +337,25 @@ def pvs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
     yield ["IOC:PYTEST:01:SYSRESET"]
 
     proc.kill()
+
+
+@pytest.fixture(scope="function")
+def model() -> IOCTableModel:
+    """Basic re-usable model with starting data for use in test suite."""
+    config = Config(path="")
+    for num in range(10):
+        config.add_proc(
+            IOCProc(
+                name=f"ioc{num}",
+                port=30001 + num,
+                host="host",
+                path=f"ioc/some/path/{num}",
+            )
+        )
+    return IOCTableModel(config=config, hutch="pytest")
+
+
+@pytest.fixture(scope="function")
+def delegate(model) -> IOCTableDelegate:
+    """Basic re-usable delegate with starting model data for use in test suite."""
+    return IOCTableDelegate(hutch="pytest", model=model)

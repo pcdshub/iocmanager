@@ -149,12 +149,21 @@ class Config:
     mtime: float = 0.0
 
     def add_proc(self, proc: IOCProc) -> None:
+        """Include a new IOC process in the config."""
         if proc.name in self.procs:
             raise ValueError(f"IOC named {proc.name} already exists!")
+        self.update_proc(proc)
+
+    def update_proc(self, proc: IOCProc) -> None:
+        """Update an existing IOC process in the config."""
         self.procs[proc.name] = proc
         if proc.host not in self.hosts:
             self.hosts.append(proc.host)
             self.hosts.sort()
+
+    def delete_proc(self, ioc_name: str) -> None:
+        """Remove an IOC from the config."""
+        del self.procs[ioc_name]
 
     def validate(self) -> bool:
         """
