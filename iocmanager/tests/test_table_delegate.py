@@ -210,3 +210,58 @@ def test_set_model_data(
 
     # Check the result!
     assert get_config_value() == expected_after
+
+
+@pytest.mark.parametrize(
+    "column",
+    (TableColumn.HOST, TableColumn.VERSION),
+)
+def test_set_model_data_reject(
+    column: int,
+    delegate: IOCTableDelegate,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """
+    Check the reject cases from the setModelData dialogs.
+
+    If the user rejects the dialog, we should make no changes.
+    """
+    # Get the original config
+    ioc_proc = delegate.model.get_next_config().procs["ioc0"]
+
+    # Set up auto reject for the dialogs
+    def fake_host_dialog_exec() -> QDialog.DialogCode:
+        return QDialog.Rejected
+
+    delegate.hostdialog.exec_ = fake_host_dialog_exec
+
+    def fake_file_dialog_exec(self) -> QDialog.DialogCode:
+        return QDialog.Rejected
+
+    def fake_file_dialog_files(self) -> list[str]:
+        return ["/new/ver"]
+
+    monkeypatch.setattr(QFileDialog, "exec_", fake_file_dialog_exec)
+    monkeypatch.setattr(QFileDialog, "selectedFiles", fake_file_dialog_files)
+
+    index = delegate.model.index(0, column)
+
+    # Get an editor
+    parent = QWidget()
+    qtbot.add_widget(parent)
+    editor = delegate.createEditor(
+        parent=parent,
+        option=QStyleOptionViewItem(),
+        index=index,
+    )
+    # Select new thing
+    assert isinstance(editor, QComboBox)
+    assert editor.currentIndex() == 0
+    editor.setCurrentIndex(editor.count() - 1)
+
+    # Decline the changes using setModelData
+    delegate.setModelData(editor=editor, model=delegate.model, index=index)
+
+    # Check the result, should be the same as before
+    assert delegate.model.get_next_config().procs["ioc0"] == ioc_proc
