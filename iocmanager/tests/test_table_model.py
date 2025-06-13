@@ -1168,3 +1168,28 @@ def test_add_ioc(model: IOCTableModel, qapp: QApplication):
     new_config = model.get_next_config()
     assert "added1" in new_config.procs
     assert "added2" in new_config.procs
+
+
+def test_delete_ioc(model: IOCTableModel, qapp: QApplication):
+    """
+    model.delete_ioc should pend an IOC for deletion.
+
+    The row should update so we know to change its color in the table.
+    """
+    data_emits: list[tuple[QModelIndex, QModelIndex]] = []
+
+    def save_data_emit(index1: QModelIndex, index2: QModelIndex):
+        data_emits.append((index1, index2))
+
+    model.dataChanged.connect(save_data_emit)
+
+    model.delete_ioc(0)
+
+    assert "ioc0" in model.delete_iocs
+    assert "ioc0" not in model.get_next_config().procs
+
+    assert len(data_emits) == 1
+    assert data_emits[0][0].row() == 0
+    assert data_emits[0][0].column() == 0
+    assert data_emits[0][1].row() == 0
+    assert data_emits[0][1].column() == model.columnCount() - 1
