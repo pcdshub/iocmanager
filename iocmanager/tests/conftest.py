@@ -9,6 +9,7 @@ from telnetlib import Telnet
 from typing import Iterator
 
 import pytest
+from pytestqt.qtbot import QtBot
 
 from ..config import Config
 from ..env_paths import env_paths
@@ -340,7 +341,7 @@ def pvs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
 
 
 @pytest.fixture(scope="function")
-def model() -> IOCTableModel:
+def model(qtbot: QtBot) -> IOCTableModel:
     """Basic re-usable model with starting data for use in test suite."""
     config = Config(path="")
     for num in range(10):
@@ -352,10 +353,14 @@ def model() -> IOCTableModel:
                 path=f"ioc/some/path/{num}",
             )
         )
-    return IOCTableModel(config=config, hutch="pytest")
+    model = IOCTableModel(config=config, hutch="pytest")
+    qtbot.add_widget(model.details_dialog)
+    return model
 
 
 @pytest.fixture(scope="function")
-def delegate(model) -> IOCTableDelegate:
+def delegate(model, qtbot: QtBot) -> IOCTableDelegate:
     """Basic re-usable delegate with starting model data for use in test suite."""
-    return IOCTableDelegate(hutch="pytest", model=model)
+    delegate = IOCTableDelegate(hutch="pytest", model=model)
+    qtbot.add_widget(delegate.hostdialog)
+    return delegate

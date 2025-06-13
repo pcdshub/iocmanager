@@ -10,7 +10,7 @@ See https://doc.qt.io/qt-5/qstyleditemdelegate.html#details
 import logging
 import os
 
-from qtpy.QtCore import QAbstractItemModel, QModelIndex, QSize, QUrl, QVariant
+from qtpy.QtCore import QAbstractItemModel, QModelIndex, QSize, QUrl
 from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
@@ -144,7 +144,7 @@ class IOCTableDelegate(QStyledItemDelegate):
         match index.column():
             case TableColumn.STATE:
                 # Coerce off -> off and both dev and prod to dev/prod
-                if self.model.data(index).value() == "Off":
+                if self.model.data(index) == "Off":
                     editor.setCurrentIndex(0)
                 else:
                     editor.setCurrentIndex(1)
@@ -152,7 +152,7 @@ class IOCTableDelegate(QStyledItemDelegate):
                 # Default last item (New Host)
                 editor.setCurrentIndex(editor.count() - 1)
                 # If there's a match, match it (otherwise this is a no-op)
-                editor.setCurrentText(str(self.model.data(index).value()))
+                editor.setCurrentText(str(self.model.data(index)))
             case TableColumn.VERSION:
                 # We don't have anything to do here.  It is created pointing to 0
                 # (the newest setting)
@@ -168,24 +168,24 @@ class IOCTableDelegate(QStyledItemDelegate):
         https://doc.qt.io/qt-5/qstyleditemdelegate.html#setModelData
         """
         if not isinstance(editor, QComboBox):
-            return super().setEditorData(editor, index)
+            return super().setModelData(editor, model, index)
 
         idx = editor.currentIndex()
 
         match index.column():
             case TableColumn.STATE:
-                model.setData(index, QVariant(idx))
+                model.setData(index, idx)
             case TableColumn.HOST:
                 if idx == editor.count() - 1:
                     # Pick a new hostname!
                     if self.hostdialog.exec_() == QDialog.Accepted:
                         value = self.hostdialog.ui.hostname.text()
-                        model.setData(index, QVariant(value))
+                        model.setData(index, value)
                     else:
                         # Revert the widget, else it stays on "new"
                         self.setEditorData(editor, index)
                 else:
-                    model.setData(index, QVariant(editor.currentText()))
+                    model.setData(index, editor.currentText())
             case TableColumn.VERSION:
                 if idx == editor.count() - 1:
                     # Pick a new directory!
@@ -197,9 +197,7 @@ class IOCTableDelegate(QStyledItemDelegate):
                         current_version = full_path_candidate
 
                     ioc_name = str(
-                        model.data(
-                            index=model.index(index.row(), TableColumn.ID)
-                        ).value()
+                        model.data(index=model.index(index.row(), TableColumn.ID))
                     )
                     parent = self.parent()
                     if not isinstance(parent, QWidget):
@@ -251,9 +249,9 @@ class IOCTableDelegate(QStyledItemDelegate):
                         directory = normalize_path(directory, ioc_name)
                     except Exception:
                         return
-                    model.setData(index, QVariant(directory))
+                    model.setData(index, directory)
                 else:
-                    model.setData(index, QVariant(editor.currentText()))
+                    model.setData(index, editor.currentText())
 
     def set_ioc_parent(self, gui: QLineEdit, ioc: str, directory: str):
         """Slot to update the "parent" value in the new version selection dialog."""

@@ -41,9 +41,9 @@ def test_get_next_config_and_reset_edits(model: IOCTableModel, qapp: QApplicatio
         )
     # Modify an original config and a new config
     # Row 0 = ioc0
-    model.setData(model.index(0, TableColumn.PORT), QVariant(31001))
+    model.setData(model.index(0, TableColumn.PORT), 31001)
     # Row 11 = added1
-    model.setData(model.index(11, TableColumn.PORT), QVariant(41002))
+    model.setData(model.index(11, TableColumn.PORT), 41002)
     # Delete an original config and a new config
     # Note: pending deletion does not remove the row from the table!
     # Row 1 = ioc1
@@ -92,7 +92,7 @@ def test_get_ioc_proc(model: IOCTableModel, qapp: QApplication):
     # Simplest entrypoint for this is to pretend we used the delegate
     # to call setData
     # setData will be tested more thoroughly in test_set_data
-    assert model.setData(index=model.index(2, TableColumn.PORT), value=QVariant(50000))
+    assert model.setData(index=model.index(2, TableColumn.PORT), value=50000)
 
     # Check an unmodified IOC from the starting config
     assert model.get_ioc_proc(row=4).name == "ioc4"
@@ -240,10 +240,10 @@ def test_column_count(model: IOCTableModel, qapp: QApplication):
 @pytest.mark.parametrize(
     "row,col,role,expected",
     (
-        (0, TableColumn.ID, Qt.DisplayRole, QVariant("ioc0")),
-        (1, TableColumn.PORT, Qt.EditRole, QVariant(30002)),
-        (2, TableColumn.HOST, Qt.ForegroundRole, QVariant(QBrush(Qt.black))),
-        (3, TableColumn.VERSION, Qt.BackgroundRole, QVariant(QBrush(Qt.white))),
+        (0, TableColumn.ID, Qt.DisplayRole, "ioc0"),
+        (1, TableColumn.PORT, Qt.EditRole, 30002),
+        (2, TableColumn.HOST, Qt.ForegroundRole, QBrush(Qt.black)),
+        (3, TableColumn.VERSION, Qt.BackgroundRole, QBrush(Qt.white)),
         (4, TableColumn.STATE, Qt.FontRole, QVariant()),
         (5, 100, Qt.DisplayRole, QVariant()),
         (6, -10, Qt.DisplayRole, QVariant()),
@@ -255,7 +255,7 @@ def test_data(
     row: int,
     col: int,
     role: int,
-    expected: QVariant,
+    expected: Any,
     model: IOCTableModel,
     qapp: QApplication,
 ):
@@ -281,7 +281,7 @@ def test_data(
         ("ioc0", TableColumn.STATE, StateOption.PROD),
         ("ioc0", TableColumn.STATUS, ProcServStatus.INIT),
         ("ioc0", TableColumn.HOST, "host"),
-        ("ioc0", TableColumn.PORT, "30001"),
+        ("ioc0", TableColumn.PORT, 30001),
         ("ioc0", TableColumn.VERSION, "ioc/some/path/0"),
         ("ioc0", TableColumn.PARENT, ""),
         ("ioc0", TableColumn.EXTRA, ""),
@@ -300,11 +300,11 @@ def test_data(
         ("rogue_ioc", TableColumn.EXTRA, "Live: /bad/path on badhost:50000"),
     ),
 )
-def test_get_display_text(
+def test_get_display_data(
     ioc_name: str, column: int, expected: str, model: IOCTableModel, qapp: QApplication
 ):
     """
-    model.get_display_text should get the str we want to display for the ioc's column.
+    model.get_display_data should get the data we want to display for the ioc's column.
 
     We'll set up a table that should have a variant from each possible code path,
     then we'll use parameterize to switch through them.
@@ -386,7 +386,7 @@ def test_get_display_text(
     # Now that we've set up, let's check the case from params
     config = model.get_next_config()
     assert (
-        model.get_display_text(ioc_proc=config.procs[ioc_name], column=column)
+        model.get_display_data(ioc_proc=config.procs[ioc_name], column=column)
         == expected
     )
 
@@ -470,11 +470,11 @@ def test_get_foreground_color(
     backgrounds such as blue or red.
     """
     # Modify one of each modifiable field
-    model.setData(model.index(1, TableColumn.IOCNAME), QVariant("IOC ALIAS"))
-    model.setData(model.index(1, TableColumn.STATE), QVariant(False))
-    model.setData(model.index(1, TableColumn.HOST), QVariant("newhost"))
-    model.setData(model.index(1, TableColumn.PORT), QVariant(40001))
-    model.setData(model.index(1, TableColumn.VERSION), QVariant("/new/version"))
+    model.setData(model.index(1, TableColumn.IOCNAME), "IOC ALIAS")
+    model.setData(model.index(1, TableColumn.STATE), False)
+    model.setData(model.index(1, TableColumn.HOST), "newhost")
+    model.setData(model.index(1, TableColumn.PORT), 40001)
+    model.setData(model.index(1, TableColumn.VERSION), "/new/version")
     # Delete an IOC
     model.delete_ioc(2)
     # Add an IOC
@@ -487,9 +487,9 @@ def test_get_foreground_color(
         )
     )
     # Create a port conflict
-    model.setData(model.index(4, TableColumn.PORT), QVariant(30004))
+    model.setData(model.index(4, TableColumn.PORT), 30004)
     # Edit dev variant
-    model.setData(model.index(5, TableColumn.VERSION), QVariant("/epics-dev/stuff"))
+    model.setData(model.index(5, TableColumn.VERSION), "/epics-dev/stuff")
     # Set one of each status bg color variant
     # Yellow bg -> host, port, or path changed
     model.update_from_live_ioc(
@@ -584,9 +584,7 @@ def test_get_background_color(
     - PORT can be highlighted red if it conflicts with another host/port combination
     """
     # Put one IOC in dev mode for STATE -> yellow
-    model.setData(
-        index=model.index(1, TableColumn.VERSION), value=QVariant("/some/dev/folder")
-    )
+    model.setData(index=model.index(1, TableColumn.VERSION), value="/some/dev/folder")
     # Status starts at blue
     # Set up green, yellow, and red status examples
     # Green: running and enabled
@@ -613,7 +611,7 @@ def test_get_background_color(
             autorestart_mode=AutoRestartMode.ON,
         )
     )
-    model.setData(index=model.index(3, TableColumn.STATE), value=QVariant(False))
+    model.setData(index=model.index(3, TableColumn.STATE), value=False)
     # Red: running and disabled
     model.update_from_live_ioc(
         status_live=IOCStatusLive(
@@ -626,7 +624,7 @@ def test_get_background_color(
             autorestart_mode=AutoRestartMode.ON,
         )
     )
-    model.setData(index=model.index(4, TableColumn.STATE), value=QVariant(False))
+    model.setData(index=model.index(4, TableColumn.STATE), value=False)
     # Red: shutdown and enabled
     model.update_from_live_ioc(
         status_live=IOCStatusLive(
@@ -664,7 +662,7 @@ def test_get_background_color(
         )
     )
     # Create a port conflict
-    model.setData(index=model.index(9, TableColumn.PORT), value=QVariant(30009))
+    model.setData(index=model.index(9, TableColumn.PORT), value=30009)
     # Check this test case
     config = model.get_next_config()
     assert (
@@ -679,29 +677,29 @@ def test_get_background_color(
         (
             TableColumn.IOCNAME,
             Qt.Horizontal,
-            QVariant(table_headers[TableColumn.IOCNAME]),
+            table_headers[TableColumn.IOCNAME],
         ),
-        (TableColumn.ID, Qt.Horizontal, QVariant(table_headers[TableColumn.ID])),
-        (TableColumn.STATE, Qt.Horizontal, QVariant(table_headers[TableColumn.STATE])),
+        (TableColumn.ID, Qt.Horizontal, table_headers[TableColumn.ID]),
+        (TableColumn.STATE, Qt.Horizontal, table_headers[TableColumn.STATE]),
         (
             TableColumn.STATUS,
             Qt.Horizontal,
-            QVariant(table_headers[TableColumn.STATUS]),
+            table_headers[TableColumn.STATUS],
         ),
-        (TableColumn.HOST, Qt.Horizontal, QVariant(table_headers[TableColumn.HOST])),
-        (TableColumn.OSVER, Qt.Horizontal, QVariant(table_headers[TableColumn.OSVER])),
-        (TableColumn.PORT, Qt.Horizontal, QVariant(table_headers[TableColumn.PORT])),
+        (TableColumn.HOST, Qt.Horizontal, table_headers[TableColumn.HOST]),
+        (TableColumn.OSVER, Qt.Horizontal, table_headers[TableColumn.OSVER]),
+        (TableColumn.PORT, Qt.Horizontal, table_headers[TableColumn.PORT]),
         (
             TableColumn.VERSION,
             Qt.Horizontal,
-            QVariant(table_headers[TableColumn.VERSION]),
+            table_headers[TableColumn.VERSION],
         ),
         (
             TableColumn.PARENT,
             Qt.Horizontal,
-            QVariant(table_headers[TableColumn.PARENT]),
+            table_headers[TableColumn.PARENT],
         ),
-        (TableColumn.EXTRA, Qt.Horizontal, QVariant(table_headers[TableColumn.EXTRA])),
+        (TableColumn.EXTRA, Qt.Horizontal, table_headers[TableColumn.EXTRA]),
         (TableColumn.IOCNAME, Qt.Vertical, QVariant()),
         (-1, Qt.Horizontal, QVariant()),
         (100, Qt.Horizontal, QVariant()),
@@ -710,15 +708,14 @@ def test_get_background_color(
 def test_header_data(
     column: int,
     orientation: Qt.Orientation,
-    expected: QVariant,
+    expected: Any,
     model: IOCTableModel,
     qapp: QApplication,
 ):
     """
     model.headerData should return the text in a column.
 
-    For the horizontal header within our range it should return
-    QVariants that contain text.
+    For the horizontal header within our range it should return text.
 
     For invalid values or values outside the table it should
     return an empty QVariant()
@@ -771,7 +768,7 @@ def test_set_data(
     model.dataChanged.connect(save_data_emit)
     old_config = model.get_next_config()
     old_proc = old_config.procs["ioc0"]
-    success = model.setData(index=model.index(0, column), value=QVariant(value))
+    success = model.setData(index=model.index(0, column), value=value)
     if exp_attr:
         # Return value
         assert success
@@ -1204,8 +1201,6 @@ def test_revert_ioc(model: IOCTableModel, qapp: QApplication):
     model.delete_ioc(0)
     model.revert_ioc(0)
     assert_not_changed()
-    assert model.setData(
-        index=model.index(1, TableColumn.IOCNAME), value=QVariant("Alias")
-    )
+    assert model.setData(index=model.index(1, TableColumn.IOCNAME), value="Alias")
     model.revert_ioc(1)
     assert_not_changed()

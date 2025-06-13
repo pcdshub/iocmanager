@@ -22,6 +22,7 @@ import threading
 import time
 from copy import deepcopy
 from enum import IntEnum, StrEnum
+from typing import Any
 
 from qtpy.QtCore import QAbstractTableModel, QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
@@ -328,7 +329,7 @@ class IOCTableModel(QAbstractTableModel):
         """
         return len(TableColumn)
 
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> QVariant:
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:
         """
         Returns one element of stored data corresponding to one table cell.
 
@@ -348,25 +349,23 @@ class IOCTableModel(QAbstractTableModel):
         match role:
             case Qt.DisplayRole | Qt.EditRole:
                 try:
-                    return QVariant(
-                        self.get_display_text(ioc_proc=ioc_proc, column=column)
-                    )
+                    return self.get_display_data(ioc_proc=ioc_proc, column=column)
                 except (KeyError, ValueError):
                     return QVariant()
             case Qt.ForegroundRole:
-                return QVariant(
-                    QBrush(self.get_foreground_color(ioc_proc=ioc_proc, column=column))
+                return QBrush(
+                    self.get_foreground_color(ioc_proc=ioc_proc, column=column)
                 )
             case Qt.BackgroundRole:
-                return QVariant(
-                    QBrush(self.get_background_color(ioc_proc=ioc_proc, column=column))
+                return QBrush(
+                    self.get_background_color(ioc_proc=ioc_proc, column=column)
                 )
             case _:
                 # Unsupported role
                 return QVariant()
 
-    def get_display_text(self, ioc_proc: IOCProc, column: int) -> str:
-        """Get text data for displaying and editing in the table."""
+    def get_display_data(self, ioc_proc: IOCProc, column: int) -> str | int:
+        """Get data for displaying and editing in the table."""
         match column:
             case TableColumn.IOCNAME:
                 return ioc_proc.alias or ioc_proc.name
@@ -388,7 +387,7 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.OSVER:
                 return self.host_os[ioc_proc.host]
             case TableColumn.PORT:
-                return str(ioc_proc.port)
+                return ioc_proc.port
             case TableColumn.VERSION:
                 return ioc_proc.path
             case TableColumn.PARENT:
@@ -483,7 +482,7 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.STATE:
                 # Be annoying with yellow if the IOC is in dev mode
                 if (
-                    self.get_display_text(ioc_proc=ioc_proc, column=column)
+                    self.get_display_data(ioc_proc=ioc_proc, column=column)
                     == StateOption.DEV
                 ):
                     return Qt.yellow
@@ -549,9 +548,7 @@ class IOCTableModel(QAbstractTableModel):
         # the rest should be invalid
         return QVariant()
 
-    def setData(
-        self, index: QModelIndex, value: QVariant, role: int = Qt.EditRole
-    ) -> bool:
+    def setData(self, index: QModelIndex, value: Any, role: int = Qt.EditRole) -> bool:
         """
         Sets the role data for the item at index to value.
 
@@ -564,7 +561,6 @@ class IOCTableModel(QAbstractTableModel):
         if role != Qt.EditRole or not index.isValid() or index.row() >= self.rowCount():
             return False
 
-        raw_value = value.value()
         ioc_proc = self.get_ioc_proc(index.row())
         new_proc = deepcopy(ioc_proc)
 
@@ -574,21 +570,21 @@ class IOCTableModel(QAbstractTableModel):
         # in the context of the gui application.
         match index.column():
             case TableColumn.IOCNAME:
-                new_proc.alias = str(raw_value)
+                new_proc.alias = str(value)
             case TableColumn.ID:
                 return False
             case TableColumn.STATE:
-                new_proc.disable = not bool(raw_value)
+                new_proc.disable = not bool(value)
             case TableColumn.STATUS:
                 return False
             case TableColumn.HOST:
-                new_proc.host = str(raw_value)
+                new_proc.host = str(value)
             case TableColumn.OSVER:
                 return False
             case TableColumn.PORT:
-                new_proc.port = int(raw_value)
+                new_proc.port = int(value)
             case TableColumn.VERSION:
-                new_proc.path = str(raw_value)
+                new_proc.path = str(value)
             case TableColumn.PARENT:
                 return False
             case TableColumn.EXTRA:

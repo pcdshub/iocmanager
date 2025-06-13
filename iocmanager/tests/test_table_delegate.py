@@ -1,9 +1,19 @@
 import time
+from typing import Any
 
 import pytest
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QSize
-from qtpy.QtWidgets import QApplication, QComboBox, QStyleOptionViewItem, QWidget
+from qtpy.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QLineEdit,
+    QSpinBox,
+    QStyleOptionViewItem,
+    QWidget,
+)
 
 from ..table_delegate import IOCTableDelegate
 from ..table_model import TableColumn
@@ -103,3 +113,100 @@ def test_create_and_set_editor(
         case TableColumn.STATE | TableColumn.HOST | TableColumn.VERSION:
             assert isinstance(widget, QComboBox)
             assert widget.currentIndex() == expected_index
+
+
+@pytest.mark.parametrize(
+    "column,choice,expected_attr,expected_before,expected_after",
+    (
+        # Port is the only editable field without a custom editor
+        # For the integer we expect a default QSpinBox
+        (TableColumn.PORT, 40001, "port", 30001, 40001),
+        # Select a combobox option other than the default
+        (TableColumn.STATE, 0, "disable", False, True),
+        (TableColumn.HOST, 1, "host", "host", "host2"),
+        (TableColumn.VERSION, 1, "path", "ioc/some/path/0", "/old/ver"),
+        # Select the "new host/version" option
+        (TableColumn.HOST, 2, "host", "host", "new_host"),
+        (TableColumn.VERSION, 2, "path", "ioc/some/path/0", "/new/ver"),
+    ),
+)
+def test_set_model_data(
+    column: int,
+    choice: int | str,
+    expected_attr: str,
+    expected_before: int | str | bool,
+    expected_after: int | str | bool,
+    delegate: IOCTableDelegate,
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """
+    delegate.setModelData should update the model based on the widget value.
+
+    We will check each editable column and pick either a new value or a
+    new combobox index, and make sure the data chain goes all the way through.
+
+    We will hard-code user responses to the dialogs as needed via patching.
+    The dialog overrides assume the user accepts the dialog.
+    Dialog rejections should be tested separately.
+    """
+    # Check the before case
+    # This is a sanity check to make sure we change something
+    assert expected_before != expected_after
+
+    def get_config_value(attr=expected_attr) -> Any:
+        ioc_proc = delegate.model.get_next_config().procs["ioc0"]
+        return getattr(ioc_proc, attr)
+
+    assert get_config_value() == expected_before
+
+    # Make an extra host available (host2)
+    delegate.model.config.hosts.append("host2")
+    assert "host2" in delegate.model.get_next_config().hosts
+
+    # Make an extra version /old/ver available
+    delegate.model.config.procs["ioc0"].history.append("/old/ver")
+    delegate.model.config.update_proc(delegate.model.config.procs["ioc0"])
+    assert get_config_value(attr="history") == ["/old/ver"]
+
+    # Set up auto fill/returns for the dialogs
+    def fake_host_dialog_exec() -> QDialog.DialogCode:
+        delegate.hostdialog.ui.hostname.setText("new_host")
+        return QDialog.Accepted
+
+    delegate.hostdialog.exec_ = fake_host_dialog_exec
+
+    def fake_file_dialog_exec(self) -> QDialog.DialogCode:
+        return QDialog.Accepted
+
+    def fake_file_dialog_files(self) -> list[str]:
+        return ["/new/ver"]
+
+    monkeypatch.setattr(QFileDialog, "exec_", fake_file_dialog_exec)
+    monkeypatch.setattr(QFileDialog, "selectedFiles", fake_file_dialog_files)
+
+    index = delegate.model.index(0, column)
+
+    # Get an editor
+    parent = QWidget()
+    qtbot.add_widget(parent)
+    editor = delegate.createEditor(
+        parent=parent,
+        option=QStyleOptionViewItem(),
+        index=index,
+    )
+    # Manipulate the editor as a user would
+    if isinstance(editor, QLineEdit):
+        editor.setText(str(choice))
+    elif isinstance(editor, QSpinBox):
+        editor.setValue(int(choice))
+    elif isinstance(editor, QComboBox):
+        editor.setCurrentIndex(int(choice))
+    else:
+        raise TypeError(f"Unexpected editor type {type(editor)}")
+
+    # Apply the value using setModelData
+    delegate.setModelData(editor=editor, model=delegate.model, index=index)
+
+    # Check the result!
+    assert get_config_value() == expected_after
