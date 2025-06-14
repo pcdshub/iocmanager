@@ -1,8 +1,13 @@
 #!/bin/bash
-export PSPKG_RELEASE=controls-0.1.9
-source $PSPKG_ROOT/etc/set_env.sh
-pyuic5 -o ioc_ui.py ioc.ui
-pyuic5 -o hostname_ui.py hostname.ui
-pyuic5 -o auth_ui.py auth.ui
-pyuic5 -o details_ui.py details.ui
-pyuic5 -o commit_ui.py commit.ui
+set -e
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+cd "${THIS_DIR}"
+source ./scripts/default_env
+
+echo "Compile with python bin ${IOCMAN_PY_BIN}"
+
+echo "(re-)build .py files from .ui"
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ioc_ui.py ui/ioc.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/hostname_ui.py ui/hostname.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/details_ui.py ui/details.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/commit_ui.py ui/commit.ui
