@@ -26,12 +26,9 @@ from typing import Any
 
 from qtpy.QtCore import QAbstractTableModel, QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
-from qtpy.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-)
+from qtpy.QtWidgets import QDialog
 
-from . import commit_ui, details_ui
+from . import details_ui
 from .config import (
     Config,
     IOCProc,
@@ -88,16 +85,6 @@ class StateOption(StrEnum):
     DEV = "Dev"
 
 
-class CommitOption(IntEnum):
-    """
-    Integer codes for the three results from the CommitDialog.
-    """
-
-    SAVE_AND_COMMIT = 0
-    SAVE_ONLY = 1
-    CANCEL = 2
-
-
 class DetailsDialog(QDialog):
     """
     Load the pyuic-compiled ui/details.ui into a QDialog.
@@ -112,40 +99,6 @@ class DetailsDialog(QDialog):
         super().__init__(parent)
         self.ui = details_ui.Ui_Dialog()
         self.ui.setupUi(self)
-
-
-# TODO migrate CommitDialog to a new module
-# A previous version conflated data model code and save/commit code
-class CommitDialog(QDialog):
-    """
-    Load the pyuic-compiled ui/commit.ui into a QDialog.
-
-    This dialog contains a large QTextEdit that can be used to enter a
-    commit message.
-    It is opened right after a user asks to apply the configuration,
-    and right before we save the file.
-    """
-
-    def __init__(self, parent: ParentWidget = None):
-        super().__init__(parent)
-        self.ui = commit_ui.Ui_Dialog()
-        self.ui.setupUi(self)
-        self.setResult(CommitOption.CANCEL)
-        self.ui.buttonBox.button(QDialogButtonBox.Yes).clicked.connect(self.yes_clicked)
-        self.ui.buttonBox.button(QDialogButtonBox.No).clicked.connect(self.no_clicked)
-        self.ui.buttonBox.button(QDialogButtonBox.Cancel).clicked.connect(
-            self.cancel_clicked
-        )
-
-    def yes_clicked(self):
-        self.setResult(CommitOption.SAVE_AND_COMMIT)
-
-    def no_clicked(self):
-        self.setResult(CommitOption.SAVE_ONLY)
-
-    def cancel_clicked(self):
-        # Technically this is always already set, but it's good to be paranoid
-        self.setResult(CommitOption.CANCEL)
 
 
 class IOCTableModel(QAbstractTableModel):
@@ -231,18 +184,23 @@ class IOCTableModel(QAbstractTableModel):
             config.delete_proc(ioc_name=ioc_name)
         return config
 
-    def reset_edits(self):
+    def reset_edits(self, needs_refresh: bool = False):
         """
         Removes pending configuration edits.
 
-        Call this after saving the config file.
+        Call this after saving the config file, without refreshing.
         Note that this doesn't ask for a model update, intentionally,
         since that would cause the pending changes to disappear.
         We'll update on the next poll, including the now-saved changes.
+
+        Call this with a refresh if the user specifically asked to
+        undo all of their changes.
         """
         self.add_iocs.clear()
         self.edit_iocs.clear()
         self.delete_iocs.clear()
+        if needs_refresh:
+            self._emit_all_changed()
 
     # Basic helpers
     def get_ioc_proc(self, row: int) -> IOCProc:

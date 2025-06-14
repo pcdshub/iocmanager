@@ -5,8 +5,9 @@ import sys
 
 from qtpy import QtWidgets
 
-from .ioc_impl import GraphicUserInterface
+from .gui import IOCMainWindow
 from .log_setup import SPAM_LEVEL
+from .version import version as version_str
 
 parser = argparse.ArgumentParser(
     prog="iocmanager",
@@ -28,9 +29,15 @@ parser.add_argument(
         "-vv shows spammy debug messages."
     ),
 )
+parser.add_argument(
+    "--version", action="store_true", help="Show the version information and exit."
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    if args.version:
+        print(version_str)
+        sys.exit(0)
     if not args.verbose:
         log_level = logging.INFO
     elif args.verbose == 1:
@@ -41,11 +48,12 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
 
     app = QtWidgets.QApplication([""])
-    gui = GraphicUserInterface(app, args.hutch.lower())
+    gui = IOCMainWindow(hutch=args.hutch.lower())
     try:
         gui.show()
         retval = app.exec_()
     except KeyboardInterrupt:
         logger.debug("KeyboardInterrupt", exc_info=True)
-        app.exit(1)
+        retval = 1
+        app.exit(retval)
     sys.exit(retval)

@@ -28,8 +28,10 @@ from .config import (
     write_config,
 )
 from .epics_paths import has_stcmd
+from .hioc_tools import restart_hioc
 from .ioc_info import get_base_name
 from .procserv_tools import ProcServStatus, apply_config, check_status, restart_proc
+from .version import version as version_str
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,7 @@ class ImgrArgs:
     """
 
     # Main arguments
+    version: bool = False
     ioc_name: str = ""
     hutch: str = ""
     verbose: int = 0
@@ -92,6 +95,9 @@ def get_parser() -> tuple[argparse.ArgumentParser, set[str]]:
             "all commands can be prepended with -- and some liberties are "
             "taken to allow various argument permutations. "
         ),
+    )
+    parser.add_argument(
+        "--version", action="store_true", help="Show the version information and exit."
     )
     parser.add_argument(
         "ioc_name",
@@ -654,7 +660,10 @@ def reboot_cmd(config: Config, ioc_name: str, reboot_mode: str):
             caput(base + ":SYSRESET", 1)
         case "hard":
             ioc_proc = get_proc(config=config, ioc_name=ioc_name)
-            restart_proc(ioc_proc.host, ioc_proc.port)
+            if ioc_proc.hard:
+                restart_hioc(ioc_proc.host)
+            else:
+                restart_proc(ioc_proc.host, ioc_proc.port)
         case other:
             raise ValueError(f"Invalid reboot mode {other}, must be soft or hard.")
 
@@ -974,6 +983,9 @@ def main() -> int:
         The shell return code for the cli program.
     """
     imgr_args = parse_args(sys.argv[1:])
+    if imgr_args.version:
+        print(version_str)
+        return 0
     if not imgr_args.verbose:
         logging.basicConfig(level=logging.INFO)
     elif imgr_args.verbose == 1:
