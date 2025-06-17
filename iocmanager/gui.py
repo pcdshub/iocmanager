@@ -3,185 +3,39 @@ The gui module impelements the main window of the iocmanager GUI.
 """
 
 import logging
-import os
-import re
-from enum import IntEnum
+from functools import partial
 
 from pydm.exception import raise_to_operator
 from qtpy.QtCore import (
     QItemSelection,
-    QItemSelectionModel,
     QPoint,
     QSortFilterProxyModel,
     Qt,
-    pyqtSignal,
 )
 from qtpy.QtWidgets import (
     QAbstractItemView,
-    QDialog,
-    QDialogButtonBox,
     QMainWindow,
     QMenu,
     QMessageBox,
-    QTableView,
 )
 
-from . import commit_ui, find_pv_ui, utils
 from .commit import commit_config
 from .config import read_config, write_config
+from .dialog_commit import CommitDialog, CommitOption
+from .dialog_find_pv import FindPVDialog
 from .env_paths import env_paths
-from .epics_paths import get_parent
 from .hioc_tools import reboot_hioc
 from .imgr import ensure_auth, reboot_cmd
-from .ioc_info import find_pv, get_base_name
+from .ioc_info import get_base_name
 from .ioc_ui import Ui_MainWindow
 from .procserv_tools import apply_config
 from .server_tools import netconfig, reboot_server
 from .table_delegate import IOCTableDelegate
 from .table_model import IOCTableModel, TableColumn
 from .terminal import run_in_floating_terminal
-from .type_hints import ParentWidget
 from .version import version as version_str
 
 logger = logging.getLogger(__name__)
-
-
-class CommitOption(IntEnum):
-    """
-    Integer codes for the three results from the CommitDialog.
-    """
-
-    SAVE_AND_COMMIT = 0
-    SAVE_ONLY = 1
-    CANCEL = 2
-
-
-class CommitDialog(QDialog):
-    """
-    Load the pyuic-compiled ui/commit.ui into a QDialog.
-
-    This dialog contains a large QTextEdit that can be used to enter a
-    commit message.
-    It is opened right after a user asks to apply the configuration,
-    and right before we save the file.
-    """
-
-    def __init__(self, hutch: str, parent: ParentWidget = None):
-        super().__init__(parent)
-        self.ui = commit_ui.Ui_Dialog()
-        self.ui.setupUi(self)
-        self.setWindowTitle(f"Commit {hutch}")
-        self.setResult(CommitOption.CANCEL)
-        self.ui.buttonBox.button(QDialogButtonBox.Yes).clicked.connect(self.yes_clicked)
-        self.ui.buttonBox.button(QDialogButtonBox.No).clicked.connect(self.no_clicked)
-        self.ui.buttonBox.button(QDialogButtonBox.Cancel).clicked.connect(
-            self.cancel_clicked
-        )
-
-    def get_comment(self) -> str:
-        return self.ui.commentEdit.toPlainText()
-
-    def reset(self):
-        self.ui.commentEdit.setPlainText("")
-
-    def yes_clicked(self):
-        self.setResult(CommitOption.SAVE_AND_COMMIT)
-
-    def no_clicked(self):
-        self.setResult(CommitOption.SAVE_ONLY)
-
-    def cancel_clicked(self):
-        # Technically this is always already set, but it's good to be paranoid
-        self.setResult(CommitOption.CANCEL)
-
-
-class FindPVDialog(QDialog):
-    """
-    Load the pyuic-compiled ui/find_pv.ui into a QDialog.
-
-    This dialog contains space to place to results from a find_pv operation.
-    """
-
-    process_next = pyqtSignal(int)
-
-    def __init__(
-        self, model: IOCTableModel, view: QTableView, parent: ParentWidget = None
-    ):
-        super().__init__(parent)
-        self.ui = find_pv_ui.Ui_Dialog()
-        self.ui.setupUi(self)
-        self.model = model
-        self.view = view
-        self.config = model.config
-        self.ioc_names = []
-        self.regex_text = ""
-        self.regexp = re.compile("")
-        self.last_ioc_found = ""
-        self.found_count = 0
-        self.process_next.connect(self._process_next_ioc)
-
-    def find_pv_and_exec(self, regex_text: str):
-        """
-        Call this with the user's input to get a result and show it to the user.
-
-        The dialog should open, then find with all the PVs in the config that match
-        the regular expression, then stay open until the user closes it.
-        """
-        self.setWindowTitle(f"Find PV: {regex_text}")
-        self.ui.progress_label.setText("Initializing find_pv...")
-        self.ui.found_pvs.setPlainText("")
-        self.show()
-        self.config = self.model.get_next_config()
-        self.ioc_names = list(self.config.procs)
-        self.regex_text = regex_text
-        self.regexp = re.compile(regex_text)
-        self.last_ioc_found = ""
-        self.found_count = 0
-        self.process_next.emit(0)
-        self.exec_()
-
-    def _process_next_ioc(self, index: int):
-        """Process IOCs one at a time to get an updating display."""
-        try:
-            ioc_name = self.ioc_names[index]
-        except IndexError:
-            self._finish_find_pv()
-            return
-        self.ui.progress_label.setText(
-            f"Checking IOC {index + 1}/{len(self.ioc_names)} ({ioc_name})"
-        )
-        results = []
-        try:
-            results = find_pv(regexp=self.regexp, ioc=ioc_name)
-        except Exception:
-            ...
-        ioc_proc = self.config.procs[ioc_name]
-        for res in results:
-            if ioc_proc.alias:
-                text = f"{res} --> {ioc_name} ({ioc_proc.alias})"
-            else:
-                text = f"{res} --> {ioc_name}"
-            self.ui.found_pvs.appendPlainText(text)
-        if results:
-            self.last_ioc_found = ioc_name
-            self.found_count += len(results)
-        self.process_next.emit(index + 1)
-
-    def _finish_find_pv(self):
-        """Clean up and finalize at the end of find_pv"""
-        self.ui.progress_label.setText("Find PV Results:")
-        if self.found_count == 0:
-            self.ui.found_pvs.setPlainText(
-                f"Searching for '{self.regex_text}' produced no matches."
-            )
-        elif self.found_count == 1:
-            # We can jump to the IOC with that PV
-            selection_model = self.view.selectionModel()
-            idx = self.model.index(
-                self.model.get_ioc_row_map().index(self.last_ioc_found), 0
-            )
-            selection_model.select(idx, QItemSelectionModel.SelectCurrent)
-            self.view.scrollTo(idx, QAbstractItemView.PositionAtCenter)
 
 
 class IOCMainWindow(QMainWindow):
@@ -223,7 +77,7 @@ class IOCMainWindow(QMainWindow):
         # Configuration menu
         self.ui.actionApply.triggered.connect(self.action_write_and_apply_config)
         self.ui.actionSave.triggered.connect(self.action_write_config)
-        self.ui.actionRevert.triggered.connect(self.action_revert)
+        self.ui.actionRevert.triggered.connect(self.action_revert_all)
         # IOC Control menu
         self.ui.actionReboot.triggered.connect(self.action_soft_reboot)
         self.ui.actionHard_Reboot.triggered.connect(self.action_hard_reboot)
@@ -255,7 +109,7 @@ class IOCMainWindow(QMainWindow):
         # Ready to go! Start checking ioc status!
         self.model.start_poll_thread()
 
-    def action_write_and_apply_config(self):
+    def action_write_and_apply_config(self, ioc_name: str | None = None):
         """
         Action when the user clicks "Apply".
 
@@ -266,7 +120,7 @@ class IOCMainWindow(QMainWindow):
         try:
             if not self.action_write_config():
                 return
-            apply_config(cfg=self.hutch)
+            apply_config(cfg=self.hutch, ioc=ioc_name)
         except Exception as exc:
             raise_to_operator(exc)
 
@@ -311,7 +165,7 @@ class IOCMainWindow(QMainWindow):
             raise_to_operator(exc)
             return False
 
-    def action_revert(self):
+    def action_revert_all(self):
         """
         Action when the user clicks "Revert".
 
@@ -578,6 +432,7 @@ class IOCMainWindow(QMainWindow):
           - Schedule this right-clicked row for deletion
           - Only appears if we right-clicked on a row
         - Add Running to Config
+          - TODO Implement this
           - Add this untracked row to the config
           - Only appears if we right-clicked on a row
           - Only appears if the row isn't in the config (but is live)
@@ -605,186 +460,55 @@ class IOCMainWindow(QMainWindow):
         """
         index = self.ui.tableView.indexAt(pos)
         menu = QMenu()
-        menu.addAction("Add New IOC")
+        add_ioc = menu.addAction("Add New IOC")
+        add_ioc.triggered.connect(self.action_add_ioc)
         if index.row() != -1:
-            menu.addAction("Delete IOC")
-            if not self.model.isHard(index):
-                if not self.model.inConfig(index):
-                    menu.addAction("Add Running to Config")
-                if self.model.notSynched(index):
-                    menu.addAction("Set from Running")
-                if self.model.needsApply(index):
-                    menu.addAction("Apply Configuration")
-                menu.addAction("Remember Version")
-            if self.model.isChanged(index):
-                menu.addAction("Revert IOC")
-            menu.addAction("Edit Details")
+            ioc_proc = self.model.get_ioc_proc(row=index.row())
+            del_ioc = menu.addAction("Delete IOC")
+            del_ioc.triggered.connect(partial(self.model.delete_ioc, row=index.row()))
+            if not ioc_proc.hard:
+                # TODO handle IOCs that are running, but not in the config at all
+                # TODO needs to be handled in table_model too
+                # TODO "Add Running to Config"
+                if self.model.get_desync_info(ioc_proc=ioc_proc).has_diff:
+                    set_running = menu.addAction("Set from Running")
+                    set_running.triggered.connect(
+                        partial(self.action_set_from_running, name=ioc_proc.name)
+                    )
+                if self.model.pending_edits(ioc_proc.name):
+                    apply_config = menu.addAction("Apply Configuration")
+                    apply_config.triggered.connect(
+                        partial(
+                            self.action_write_and_apply_config, ioc_name=ioc_proc.name
+                        )
+                    )
+                rem_ver = menu.addAction("Remember Version")
+                rem_ver.triggered.connect(
+                    partial(self.action_remember_one_version, name=ioc_proc.name)
+                )
+            if self.model.pending_edits(ioc_name=ioc_proc.name):
+                rev_ioc = menu.addAction("Revert IOC")
+                rev_ioc.triggered.connect(
+                    partial(self.action_revert_one, row=index.row())
+                )
+            edit_detail = menu.addAction("Edit Details")
+            edit_detail.triggered.connect(
+                partial(self.model.edit_details_dialog, index=index)
+            )
         gpos = self.ui.tableView.viewport().mapToGlobal(pos)
-        selectedItem = menu.exec_(gpos)
-        if selectedItem is not None:
-            txt = selectedItem.text()
-            if txt == "Revert IOC":
-                self.model.revertIOC(index)
-            elif txt == "Delete IOC":
-                self.model.deleteIOC(index)
-            elif txt == "Add New IOC":
-                self.addIOC(index)
-            elif txt == "Set from Running":
-                self.model.setFromRunning(index)
-            elif txt == "Add Running to Config":
-                self.model.addExisting(index)
-            elif txt == "Remember Version":
-                self.model.saveVersion(index)
-            elif txt == "Edit Details":
-                self.model.editDetails(index)
-            elif txt == "Apply Configuration":
-                self.model.applyOne(index)
+        menu.exec_(gpos)
 
-    def setParent(self, gui, iocfn, dir):
-        if dir != "":
-            try:
-                pname = get_parent(dir, iocfn())
-            except Exception:
-                pname = ""
-            gui.setText(pname)
+    def action_add_ioc(self):
+        try:
+            self.model.add_ioc_dialog()
+        except Exception as exc:
+            raise_to_operator(exc)
 
-    def selectPort(self, hostgui, portgui, lowport, highport):
-        host = hostgui.text()
-        if host == "":
-            QtWidgets.QMessageBox.critical(
-                None,
-                "Error",
-                "Need to select a host before automatic port selection!",
-                QtWidgets.QMessageBox.Ok,
-                QtWidgets.QMessageBox.Ok,
-            )
-            return
-        port = self.model.selectPort(host, lowport, highport)
-        if port is None:
-            QtWidgets.QMessageBox.critical(
-                None,
-                "Error",
-                "No port available in range!",
-                QtWidgets.QMessageBox.Ok,
-                QtWidgets.QMessageBox.Ok,
-            )
-            return
-        portgui.setText(str(port))
+    def action_set_from_running(self, name: str):
+        raise NotImplementedError
 
-    def addIOC(self, index):
-        d = QtWidgets.QFileDialog(
-            self, "Add New IOC", utils.EPICS_SITE_TOP + "ioc/" + self.hutch
-        )
-        d.setFileMode(Qt.QFileDialog.Directory)
-        d.setOptions(Qt.QFileDialog.ShowDirsOnly | Qt.QFileDialog.DontUseNativeDialog)
-        d.setSidebarUrls(
-            [
-                QtCore.QUrl("file://" + os.getenv("HOME")),
-                QtCore.QUrl("file://" + utils.EPICS_SITE_TOP + "ioc/" + self.hutch),
-                QtCore.QUrl("file://" + utils.EPICS_SITE_TOP + "ioc/common"),
-                QtCore.QUrl("file://" + utils.EPICS_DEV_TOP),
-            ]
-        )
-        dialog_layout = d.layout()
+    def action_remember_one_version(self, name: str):
+        raise NotImplementedError
 
-        tmp = QtWidgets.QLabel()
-        tmp.setText("IOC Name *+")
-        dialog_layout.addWidget(tmp, 4, 0)
-        namegui = QtWidgets.QLineEdit()
-        dialog_layout.addWidget(namegui, 4, 1)
-
-        tmp = QtWidgets.QLabel()
-        tmp.setText("Alias")
-        dialog_layout.addWidget(tmp, 5, 0)
-        aliasgui = QtWidgets.QLineEdit()
-        dialog_layout.addWidget(aliasgui, 5, 1)
-
-        tmp = QtWidgets.QLabel()
-        tmp.setText("Host *")
-        dialog_layout.addWidget(tmp, 6, 0)
-        hostgui = QtWidgets.QLineEdit()
-        dialog_layout.addWidget(hostgui, 6, 1)
-
-        tmp = QtWidgets.QLabel()
-        tmp.setText("Port (-1 = HARD IOC) *+")
-        dialog_layout.addWidget(tmp, 7, 0)
-        layout = QtWidgets.QHBoxLayout()
-        portgui = QtWidgets.QLineEdit()
-        layout.addWidget(portgui)
-        autoClosed = QtWidgets.QPushButton()
-        autoClosed.setText("Select CLOSED")
-        autoClosed.clicked.connect(
-            lambda: self.selectPort(hostgui, portgui, 30001, 39000)
-        )
-        layout.addWidget(autoClosed)
-        autoOpen = QtWidgets.QPushButton()
-        autoOpen.setText("Select OPEN")
-        autoOpen.clicked.connect(
-            lambda: self.selectPort(hostgui, portgui, 39100, 39200)
-        )
-        layout.addWidget(autoOpen)
-        dialog_layout.addLayout(layout, 7, 1)
-
-        tmp = QtWidgets.QLabel()
-        tmp.setText("Parent")
-        dialog_layout.addWidget(tmp, 8, 0)
-        parentgui = QtWidgets.QLineEdit()
-        parentgui.setReadOnly(True)
-        dialog_layout.addWidget(parentgui, 8, 1)
-
-        tmp = QtWidgets.QLabel()
-        tmp.setText("* = Required Fields for Soft IOCs.")
-        dialog_layout.addWidget(tmp, 9, 0)
-
-        tmp = QtWidgets.QLabel()
-        tmp.setText("+ = Required Fields for Hard IOCs.")
-        dialog_layout.addWidget(tmp, 10, 0)
-
-        def fn(dir):
-            self.setParent(parentgui, namegui.text, dir)
-
-        d.directoryEntered.connect(fn)
-        d.currentChanged.connect(fn)
-
-        while True:
-            if d.exec_() == Qt.QDialog.Rejected:
-                return
-            name = str(namegui.text()).strip()
-            alias = str(aliasgui.text()).strip()
-            host = str(hostgui.text()).strip()
-            port = str(portgui.text()).strip()
-            try:
-                dir = str(d.selectedFiles()[0]).strip()
-            except Exception:
-                dir = ""
-            try:
-                n = int(port)
-            except Exception:
-                QtWidgets.QMessageBox.critical(
-                    None,
-                    "Error",
-                    "Port is not an integer!",
-                    QtWidgets.QMessageBox.Ok,
-                    QtWidgets.QMessageBox.Ok,
-                )
-                continue
-            if name == "" or (n != -1 and (host == "" or port == "" or dir == "")):
-                QtWidgets.QMessageBox.critical(
-                    None,
-                    "Error",
-                    "Failed to set required parameters for new IOC!",
-                    QtWidgets.QMessageBox.Ok,
-                    QtWidgets.QMessageBox.Ok,
-                )
-                continue
-            if self.model.findid(name) is not None:
-                QtWidgets.QMessageBox.critical(
-                    None,
-                    "Error",
-                    "IOC %s already exists!" % name,
-                    QtWidgets.QMessageBox.Ok,
-                    QtWidgets.QMessageBox.Ok,
-                )
-                continue
-            self.model.addIOC(name, alias, host, port, dir)
-            return
+    def action_revert_one(self, row: int):
+        raise NotImplementedError

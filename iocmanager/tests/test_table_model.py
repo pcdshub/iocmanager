@@ -1054,7 +1054,7 @@ def test_update_from_live_ioc(model: IOCTableModel, qapp: QApplication):
 
 
 @pytest.mark.parametrize("user_accept", (True, False))
-def test_edit_details(
+def test_edit_details_dialog(
     user_accept: bool,
     model: IOCTableModel,
     qapp: QApplication,
@@ -1075,19 +1075,19 @@ def test_edit_details(
 
     def fake_exec() -> QDialog.DialogCode:
         """Replace exec_ to simulate user edits."""
-        model.details_dialog.ui.aliasEdit.setText("New Alias")
-        model.details_dialog.ui.cmdEdit.setText("new_cmd.sh")
-        model.details_dialog.ui.delayEdit.setValue(10)
+        model.dialog_details.ui.aliasEdit.setText("New Alias")
+        model.dialog_details.ui.cmdEdit.setText("new_cmd.sh")
+        model.dialog_details.ui.delayEdit.setValue(10)
         if user_accept:
             return QDialog.Accepted
         else:
             return QDialog.Rejected
 
     # Instance override doesn't need monkeypatch fixture
-    model.details_dialog.exec_ = fake_exec
+    model.dialog_details.exec_ = fake_exec
 
     # Edited from row 0, column 0 (ioc0)
-    model.edit_details(index=model.index(0, 0))
+    model.edit_details_dialog(index=model.index(0, 0))
     new_config = model.get_next_config()
     ioc_proc = new_config.procs["ioc0"]
 

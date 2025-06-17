@@ -354,7 +354,7 @@ def model(qtbot: QtBot) -> IOCTableModel:
             )
         )
     model = IOCTableModel(config=config, hutch="pytest")
-    qtbot.add_widget(model.details_dialog)
+    qtbot.add_widget(model.dialog_details)
     return model
 
 

@@ -25,7 +25,7 @@ from qtpy.QtWidgets import (
 
 from . import hostname_ui
 from .env_paths import env_paths
-from .epics_paths import get_parent, normalize_path
+from .epics_paths import get_parent, normalize_path, standard_ioc_paths
 from .table_model import IOCTableModel, TableColumn
 from .type_hints import ParentWidget
 
@@ -210,17 +210,9 @@ class IOCTableDelegate(QStyledItemDelegate):
                         QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog
                     )
 
-                    sidebar_urls = [current_version]
-                    home_dir = os.getenv("HOME")
-                    if home_dir is not None:
-                        sidebar_urls.append(home_dir)
-                    sidebar_urls.append(
-                        os.path.join(env_paths.EPICS_SITE_TOP, "ioc", "self.hutch")
+                    sidebar_urls = [current_version] + standard_ioc_paths(
+                        hutch=self.hutch
                     )
-                    sidebar_urls.append(
-                        os.path.join(env_paths.EPICS_SITE_TOP, "ioc", "common")
-                    )
-                    sidebar_urls.append(env_paths.EPICS_DEV_TOP)
                     dlg.setSidebarUrls([QUrl("file://" + url) for url in sidebar_urls])
 
                     dialog_layout = dlg.layout()

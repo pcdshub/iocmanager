@@ -180,3 +180,17 @@ def epics_readlines(filename: str) -> list[str]:
         filename = os.path.join(env_paths.EPICS_SITE_TOP, filename)
     with open(filename, "r") as fd:
         return fd.readlines()
+
+
+def standard_ioc_paths(hutch: str) -> list[str]:
+    """
+    Return the standard paths to check when looking for IOCs.
+    """
+    result = []
+    home_dir = os.getenv("HOME")
+    if home_dir is not None:
+        result.append(home_dir)
+    result.append(os.path.join(env_paths.EPICS_SITE_TOP, "ioc", hutch))
+    result.append(os.path.join(env_paths.EPICS_SITE_TOP, "ioc", "common"))
+    result.append(env_paths.EPICS_DEV_TOP)
+    return result

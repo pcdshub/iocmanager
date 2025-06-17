@@ -21,14 +21,14 @@ import logging
 import threading
 import time
 from copy import deepcopy
+from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from typing import Any
 
 from qtpy.QtCore import QAbstractTableModel, QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
-from qtpy.QtWidgets import QDialog
+from qtpy.QtWidgets import QDialog, QMessageBox
 
-from . import details_ui
 from .config import (
     Config,
     IOCProc,
@@ -37,6 +37,8 @@ from .config import (
     read_config,
     read_status_dir,
 )
+from .dialog_add_ioc import AddIOCDialog
+from .dialog_edit_details import DetailsDialog
 from .procserv_tools import (
     AutoRestartMode,
     IOCStatusLive,
@@ -65,6 +67,7 @@ class TableColumn(IntEnum):
     EXTRA = 9
 
 
+# Map TableColumn to the desired table header
 table_headers = {
     TableColumn.IOCNAME: "IOC Name",
     TableColumn.ID: "IOC ID",
@@ -80,25 +83,58 @@ table_headers = {
 
 
 class StateOption(StrEnum):
+    """
+    Possible display values for an IOC's "state" column.
+    """
+
     OFF = "Off"
     PROD = "Prod"
     DEV = "Dev"
 
 
-class DetailsDialog(QDialog):
+@dataclass(frozen=True)
+class DesyncInfo:
     """
-    Load the pyuic-compiled ui/details.ui into a QDialog.
+    Used in IOCTableModel.get_desync to summarize IOC desync.
 
-    This dialog contains edit widgets for some of the less common IOC settings,
-    namely, the ones that are not editable in the table using the table delegate.
-    This dialog is launched when someone right-clicks on a table row and clicks
-    on "Edit Details".
+    IOC desync is when the live IOC and the configured IOC do not match.
+    Any non-None value here represents a live value that is different
+    than the configured value.
+
+    The has_diff parameter will be set to True if there is a desync
+    and False if the live IOC matches the configured IOC.
     """
 
-    def __init__(self, parent: ParentWidget = None):
-        super().__init__(parent)
-        self.ui = details_ui.Ui_Dialog()
-        self.ui.setupUi(self)
+    port: int | None = None
+    host: str | None = None
+    path: str | None = None
+    has_diff: bool = False
+
+    @classmethod
+    def from_info[T: DesyncInfo](
+        cls: type[T], ioc_proc: IOCProc, status_live: IOCStatusLive
+    ) -> T:
+        if not all((status_live.path, status_live.host, status_live.port)):
+            # Exit now if any of the status info is e.g. 0, empty str
+            # This means we don't know where the IOC is running
+            return cls()
+        has_diff = False
+        if ioc_proc.port != status_live.port:
+            port = status_live.port
+            has_diff = True
+        else:
+            port = None
+        if ioc_proc.host != status_live.host:
+            host = status_live.host
+            has_diff = True
+        else:
+            host = None
+        if ioc_proc.path != status_live.path:
+            path = status_live.path
+            has_diff = True
+        else:
+            path = None
+        return cls(port=port, host=host, path=path, has_diff=has_diff)
 
 
 class IOCTableModel(QAbstractTableModel):
@@ -145,7 +181,8 @@ class IOCTableModel(QAbstractTableModel):
         super().__init__(parent)
         self.config = config
         self.hutch = hutch
-        self.details_dialog = DetailsDialog(parent)
+        self.dialog_add = AddIOCDialog(hutch=hutch, parent=parent)
+        self.dialog_details = DetailsDialog(parent=parent)
         self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         # Track last sort to reapply sorting after changing the IOC list
         self.last_sort: tuple[int, Qt.SortOrder] = (0, Qt.DescendingOrder)
@@ -354,19 +391,16 @@ class IOCTableModel(QAbstractTableModel):
                 if ioc_proc.hard:
                     return "HARD IOC"
                 # Goal: summarize differences between configured and running
-                status_live = self.get_live_info(ioc_name=ioc_proc.name)
-                if not all((status_live.path, status_live.host, status_live.port)):
-                    # Exit now if any of the status info is e.g. 0, empty str
-                    # This means we don't know where the IOC is running
+                desync_info = self.get_desync_info(ioc_proc=ioc_proc)
+                if not desync_info.has_diff:
                     return ""
                 text_parts = []
-                if ioc_proc.path != status_live.path:
-                    text_parts.append(f"{status_live.path}")
-                if (
-                    ioc_proc.host != status_live.host
-                    or ioc_proc.port != status_live.port
-                ):
-                    text_parts.append(f"on {status_live.host}:{status_live.port}")
+                if desync_info.path is not None:
+                    text_parts.append(desync_info.path)
+                if desync_info.host is not None or desync_info.port is not None:
+                    host = desync_info.host or ioc_proc.host
+                    port = desync_info.port or ioc_proc.port
+                    text_parts.append(f"on {host}:{port}")
                 if text_parts:
                     text_parts.insert(0, "Live:")
                     return " ".join(text_parts)
@@ -746,40 +780,65 @@ class IOCTableModel(QAbstractTableModel):
             self.dataChanged.emit(idx1, idx1)
             self.dataChanged.emit(idx2, idx2)
 
-    # Additional helpers for working with and editing the table
-    def edit_details(self, index: QModelIndex):
+    # User Dialogs
+    def add_ioc_dialog(self):
+        """
+        Open the add ioc dialog to create a new IOC and add it to the table
+        """
+        self.dialog_add.reset()
+
+        while self._add_ioc_dialog_again():
+            ...
+
+    def _add_ioc_dialog_again(self) -> bool:
+        """
+        Subloop of add_ioc_dialog, return True if we should try again.
+        """
+        if self.dialog_add.exec_() != QDialog.Accepted:
+            return False
+        ioc_proc = self.dialog_add.get_ioc_proc()
+        if not ioc_proc.name or (
+            not ioc_proc.hard
+            and (not ioc_proc.host or not ioc_proc.port or not ioc_proc.path)
+        ):
+            QMessageBox.critical(
+                None,
+                "Error",
+                "Failed to set required parameters for new IOC!",
+                QMessageBox.Ok,
+                QMessageBox.Ok,
+            )
+            return True
+        if ioc_proc.name in self.get_next_config().procs:
+            QMessageBox.critical(
+                None,
+                "Error",
+                f"IOC {ioc_proc.name} already exists!",
+                QMessageBox.Ok,
+                QMessageBox.Ok,
+            )
+            return True
+        self.add_ioc(ioc_proc=ioc_proc)
+        return False
+
+    def edit_details_dialog(self, index: QModelIndex):
         """
         Open the details dialog to edit settings not directly displayed in the table.
         """
         ioc_proc = self.get_ioc_proc(row=index.row())
-        self.details_dialog.setWindowTitle(f"Edit Details - {ioc_proc.name}")
-        self.details_dialog.ui.aliasEdit.setText(ioc_proc.alias)
-        self.details_dialog.ui.cmdEdit.setText(ioc_proc.cmd)
-        self.details_dialog.ui.delayEdit.setValue(ioc_proc.delay)
+        self.dialog_details.set_ioc_proc(ioc_proc=ioc_proc)
 
-        # Hard IOCs cannot edit cmd or delay
-        self.details_dialog.ui.cmdEdit.setDisabled(ioc_proc.hard)
-        self.details_dialog.ui.delayEdit.setDisabled(ioc_proc.hard)
-
-        index_to_update = []
-
-        if self.details_dialog.exec_() != QDialog.Accepted:
+        if self.dialog_details.exec_() != QDialog.Accepted:
             return
 
-        new_proc = deepcopy(ioc_proc)
-        new_alias = self.details_dialog.ui.aliasEdit.text()
-        if new_proc.alias != new_alias:
-            new_proc.alias = new_alias
-            index_to_update.append(self.index(index.row(), TableColumn.IOCNAME))
-        # Not shown in the table, nothing special to do
-        new_proc.cmd = self.details_dialog.ui.cmdEdit.text()
-        new_proc.delay = self.details_dialog.ui.delayEdit.value()
+        new_proc = self.dialog_details.get_ioc_proc()
 
         if new_proc != ioc_proc:
             self.edit_iocs[new_proc.name] = new_proc
-        for idx in index_to_update:
-            self.dataChanged.emit(idx, idx)
+        if new_proc.alias != ioc_proc.alias:
+            self.dataChanged.emit(self.index(index.row(), TableColumn.IOCNAME))
 
+    # Basic utility helpers
     def add_ioc(self, ioc_proc: IOCProc):
         """
         Add a completely new IOC to the config.
@@ -837,6 +896,7 @@ class IOCTableModel(QAbstractTableModel):
         idx2 = self.index(row, self.columnCount() - 1)
         self.dataChanged.emit(idx1, idx2)
 
+    # Helper functions that are easier to implement here than in IOCMainWindow
     def save_version(self, row: int):
         """
         For the IOC at row, add the current version to the history.
@@ -852,3 +912,19 @@ class IOCTableModel(QAbstractTableModel):
         """For all IOCs in the table, call save_version."""
         for row in range(self.rowCount()):
             self.save_version(row=row)
+
+    def get_desync_info(self, ioc_proc: IOCProc) -> DesyncInfo:
+        """
+        Return info about the differences between an IOC's config and live settings.
+
+        See DesyncInfo.
+        """
+        # Goal: summarize differences between configured and running
+        status_live = self.get_live_info(ioc_name=ioc_proc.name)
+        return DesyncInfo.from_info(ioc_proc=ioc_proc, status_live=status_live)
+
+    def pending_edits(self, ioc_name: str) -> bool:
+        """Return True if the ioc has pending edits."""
+        return self.config.procs.get(ioc_name) != self.get_next_config().procs.get(
+            ioc_name
+        )
