@@ -2,35 +2,44 @@
 The gui module impelements the main window of the iocmanager GUI.
 """
 
-import io
 import logging
 import os
-import pty
-import socket
-import sys
-import traceback
+import re
 from enum import IntEnum
 
-from qtpy.QtCore import QSortFilterProxyModel, Qt
+from pydm.exception import raise_to_operator
+from qtpy.QtCore import (
+    QItemSelection,
+    QItemSelectionModel,
+    QPoint,
+    QSortFilterProxyModel,
+    Qt,
+    pyqtSignal,
+)
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QDialogButtonBox,
     QMainWindow,
+    QMenu,
     QMessageBox,
+    QTableView,
 )
 
-from . import commit_ui, utils
+from . import commit_ui, find_pv_ui, utils
 from .commit import commit_config
-from .config import check_auth, check_ssh, read_config, write_config
+from .config import read_config, write_config
+from .env_paths import env_paths
 from .epics_paths import get_parent
+from .hioc_tools import reboot_hioc
 from .imgr import ensure_auth, reboot_cmd
-from .ioc_info import get_base_name
+from .ioc_info import find_pv, get_base_name
 from .ioc_ui import Ui_MainWindow
 from .procserv_tools import apply_config
-from .server_tools import netconfig
+from .server_tools import netconfig, reboot_server
 from .table_delegate import IOCTableDelegate
-from .table_model import IOCTableModel
+from .table_model import IOCTableModel, TableColumn
+from .terminal import run_in_floating_terminal
 from .type_hints import ParentWidget
 from .version import version as version_str
 
@@ -86,24 +95,93 @@ class CommitDialog(QDialog):
         self.setResult(CommitOption.CANCEL)
 
 
-def raise_to_operator(exc: Exception) -> QMessageBox:
+class FindPVDialog(QDialog):
     """
-    Utility function to show an Exception to a user.
+    Load the pyuic-compiled ui/find_pv.ui into a QDialog.
 
-    Vendored from typhos/pydm, can unvendor if we add either
-    as a dependency later.
+    This dialog contains space to place to results from a find_pv operation.
     """
-    logger.error("Reporting error %r to user ...", exc)
-    err_msg = QMessageBox()
-    err_msg.setText(f"{exc.__class__.__name__}: {exc}")
-    err_msg.setWindowTitle(type(exc).__name__)
-    err_msg.setIcon(QMessageBox.Critical)
-    handle = io.StringIO()
-    traceback.print_tb(exc.__traceback__, file=handle)
-    handle.seek(0)
-    err_msg.setDetailedText(handle.read())
-    err_msg.exec_()
-    return err_msg
+
+    process_next = pyqtSignal(int)
+
+    def __init__(
+        self, model: IOCTableModel, view: QTableView, parent: ParentWidget = None
+    ):
+        super().__init__(parent)
+        self.ui = find_pv_ui.Ui_Dialog()
+        self.ui.setupUi(self)
+        self.model = model
+        self.view = view
+        self.config = model.config
+        self.ioc_names = []
+        self.regex_text = ""
+        self.regexp = re.compile("")
+        self.last_ioc_found = ""
+        self.found_count = 0
+        self.process_next.connect(self._process_next_ioc)
+
+    def find_pv_and_exec(self, regex_text: str):
+        """
+        Call this with the user's input to get a result and show it to the user.
+
+        The dialog should open, then find with all the PVs in the config that match
+        the regular expression, then stay open until the user closes it.
+        """
+        self.setWindowTitle(f"Find PV: {regex_text}")
+        self.ui.progress_label.setText("Initializing find_pv...")
+        self.ui.found_pvs.setPlainText("")
+        self.show()
+        self.config = self.model.get_next_config()
+        self.ioc_names = list(self.config.procs)
+        self.regex_text = regex_text
+        self.regexp = re.compile(regex_text)
+        self.last_ioc_found = ""
+        self.found_count = 0
+        self.process_next.emit(0)
+        self.exec_()
+
+    def _process_next_ioc(self, index: int):
+        """Process IOCs one at a time to get an updating display."""
+        try:
+            ioc_name = self.ioc_names[index]
+        except IndexError:
+            self._finish_find_pv()
+            return
+        self.ui.progress_label.setText(
+            f"Checking IOC {index + 1}/{len(self.ioc_names)} ({ioc_name})"
+        )
+        results = []
+        try:
+            results = find_pv(regexp=self.regexp, ioc=ioc_name)
+        except Exception:
+            ...
+        ioc_proc = self.config.procs[ioc_name]
+        for res in results:
+            if ioc_proc.alias:
+                text = f"{res} --> {ioc_name} ({ioc_proc.alias})"
+            else:
+                text = f"{res} --> {ioc_name}"
+            self.ui.found_pvs.appendPlainText(text)
+        if results:
+            self.last_ioc_found = ioc_name
+            self.found_count += len(results)
+        self.process_next.emit(index + 1)
+
+    def _finish_find_pv(self):
+        """Clean up and finalize at the end of find_pv"""
+        self.ui.progress_label.setText("Find PV Results:")
+        if self.found_count == 0:
+            self.ui.found_pvs.setPlainText(
+                f"Searching for '{self.regex_text}' produced no matches."
+            )
+        elif self.found_count == 1:
+            # We can jump to the IOC with that PV
+            selection_model = self.view.selectionModel()
+            idx = self.model.index(
+                self.model.get_ioc_row_map().index(self.last_ioc_found), 0
+            )
+            selection_model.select(idx, QItemSelectionModel.SelectCurrent)
+            self.view.scrollTo(idx, QAbstractItemView.PositionAtCenter)
 
 
 class IOCMainWindow(QMainWindow):
@@ -133,13 +211,15 @@ class IOCMainWindow(QMainWindow):
 
         # User state
         self.current_ioc = ""
-        self.current_base = ""
 
         # Set up all the qt objects we'll need
         # Helpful title: which hutch and iocmanager version we're using
         self.setWindowTitle(f"{hutch.upper()} iocmanager {version_str}")
         # Re-usable dialogs
         self.commit_dialog = CommitDialog(hutch=hutch, parent=self)
+        self.find_pv_dialog = FindPVDialog(
+            model=self.model, view=self.ui.tableView, parent=self
+        )
         # Configuration menu
         self.ui.actionApply.triggered.connect(self.action_write_and_apply_config)
         self.ui.actionSave.triggered.connect(self.action_write_config)
@@ -148,15 +228,14 @@ class IOCMainWindow(QMainWindow):
         self.ui.actionReboot.triggered.connect(self.action_soft_reboot)
         self.ui.actionHard_Reboot.triggered.connect(self.action_hard_reboot)
         self.ui.actionReboot_Server.triggered.connect(self.action_server_reboot)
-        self.ui.actionLog.triggered.connect(self.doLog)
-        self.ui.actionConsole.triggered.connect(self.doConsole)
+        self.ui.actionLog.triggered.connect(self.action_view_log)
+        self.ui.actionConsole.triggered.connect(self.action_show_console)
         # Utilities menu
-        self.ui.actionHelp.triggered.connect(self.doHelp)
-        self.ui.actionRemember.triggered.connect(self.doSaveVersions)
-        self.ui.actionAuth.triggered.connect(self.doAuthenticate)
-        self.ui.actionQuit.triggered.connect(self.doQuit)
+        self.ui.actionHelp.triggered.connect(self.action_help)
+        self.ui.actionRemember.triggered.connect(self.action_remember_versions)
+        self.ui.actionQuit.triggered.connect(self.action_quit)
         # At the very bottom of the window
-        self.ui.findpv.returnPressed.connect(self.doFindPV)
+        self.ui.findpv.returnPressed.connect(self.on_find_pv)
         # Set up the table view properly
         self.ui.tableView.setModel(self.sort_model)
         self.ui.tableView.setItemDelegate(self.delegate)
@@ -168,8 +247,10 @@ class IOCMainWindow(QMainWindow):
         self.ui.tableView.sortByColumn(0, Qt.AscendingOrder)
         self.ui.tableView.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.tableView.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.ui.tableView.selectionModel().selectionChanged.connect(self.getSelection)
-        self.ui.tableView.customContextMenuRequested.connect(self.showContextMenu)
+        self.ui.tableView.selectionModel().selectionChanged.connect(
+            self.on_table_select
+        )
+        self.ui.tableView.customContextMenuRequested.connect(self.show_context_menu)
 
         # Ready to go! Start checking ioc status!
         self.model.start_poll_thread()
@@ -244,7 +325,7 @@ class IOCMainWindow(QMainWindow):
 
         This reboots the IOC via using the SYSRESET PV.
         """
-        self._reboot(reboot_mode="soft")
+        self._ioc_process_reboot(reboot_mode="soft")
 
     def action_hard_reboot(self):
         """
@@ -252,9 +333,9 @@ class IOCMainWindow(QMainWindow):
 
         This reboots the IOC via procServ telnet controls.
         """
-        self._reboot(reboot_mode="hard")
+        self._ioc_process_reboot(reboot_mode="hard")
 
-    def _reboot(self, reboot_mode: str):
+    def _ioc_process_reboot(self, reboot_mode: str):
         """
         Shared functionality between soft and hard reboot actions.
 
@@ -322,7 +403,16 @@ class IOCMainWindow(QMainWindow):
 
         This includes a special confirm dialog for the hard ioc.
         """
-        ...
+        user_choice = QMessageBox.question(
+            None,
+            f"Reboot Hard IOC {host}",
+            f"Confirm: reboot hard IOC {host}?",
+            QMessageBox.Cancel | QMessageBox.Ok,
+            QMessageBox.Cancel,
+        )
+        if user_choice != QMessageBox.Ok:
+            return
+        reboot_hioc(host=host)
 
     def _sioc_server_reboot(self, host: str, ioc_names: list[str]):
         """
@@ -330,136 +420,191 @@ class IOCMainWindow(QMainWindow):
 
         This includes a special confirm dialog for the soft ioc.
         """
-        ...
-
-    def doHelp(self):
-        d = QtWidgets.QDialog()
-        d.setWindowTitle("IocManager Help")
-        d.layout = QtWidgets.QVBoxLayout(d)
-        d.label1 = QtWidgets.QLabel(d)
-        d.label1.setText("Documentation for the IocManager can be found on confluence:")
-        d.layout.addWidget(d.label1)
-        d.label2 = QtWidgets.QLabel(d)
-        d.label2.setText(
-            "https://confluence.slac.stanford.edu/display/PCDS/IOC+Manager+User+Guide"
-        )
-        d.layout.addWidget(d.label2)
-        d.buttonBox = QtWidgets.QDialogButtonBox(d)
-        d.buttonBox.setOrientation(QtCore.Qt.Horizontal)
-        d.buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Ok)
-        d.layout.addWidget(d.buttonBox)
-        d.buttonBox.accepted.connect(d.accept)
-        d.exec_()
-
-    def doFindPV(self):
-        d = QtWidgets.QDialog()
-        d.setWindowTitle("Find PV: %s" % self.ui.findpv.text())
-        d.layout = QtWidgets.QVBoxLayout(d)
-        te = QtWidgets.QPlainTextEdit(d)
-        te.setMinimumSize(QtCore.QSize(600, 200))
-        font = QtGui.QFont()
-        font.setFamily("Monospace")
-        font.setPointSize(10)
-        te.setFont(font)
-        te.setTextInteractionFlags(
-            QtCore.Qt.TextSelectableByKeyboard | QtCore.Qt.TextSelectableByMouse
-        )
-        te.setMaximumBlockCount(500)
-        te.setPlainText("")
-        result = self.model.findPV(
-            str(self.ui.findpv.text())
-        )  # Return list of (pv, ioc, alias)
-        if isinstance(result, list):
-            for res in result:
-                if res[2] != "":
-                    te.appendPlainText("%s --> %s (%s)" % res)
+        msg = f"Confirm: reboot ioc server {host}?"
+        if ioc_names:
+            msg += f"Rebooting {host} will temporarily stop the following IOCs:"
+            for name in ioc_names:
+                ioc_proc = self.model.get_next_config().procs[name]
+                if ioc_proc.alias:
+                    msg += f"\n- {ioc_proc.alias} ({name})"
                 else:
-                    te.appendPlainText("%s --> %s%s" % res)  # Since l[2] is empty!
-            if len(result) == 1:
-                sm = self.ui.tableView.selectionModel()
-                idx = self.model.createIndex(self.model.findid(res[1]), 0)
-                sm.select(idx, Qt.QItemSelectionModel.SelectCurrent)
-                self.ui.tableView.scrollTo(idx, Qt.QAbstractItemView.PositionAtCenter)
-            elif len(result) == 0:
-                te.appendPlainText(
-                    "Searching for '%s' produced no matches!\n" % self.ui.findpv.text()
-                )
+                    msg += f"\n- {name}"
         else:
-            te.appendPlainText(result)
-        d.layout.addWidget(te)
-        d.buttonBox = QtWidgets.QDialogButtonBox(d)
-        d.buttonBox.setOrientation(QtCore.Qt.Horizontal)
-        d.buttonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Ok)
-        d.layout.addWidget(d.buttonBox)
-        d.buttonBox.accepted.connect(d.accept)
-        d.exec_()
+            msg += f" There are no IOCs running on {host}."
+        user_choice = QMessageBox.question(
+            None,
+            f"Reboot IOC Server {host}",
+            msg,
+            QMessageBox.Cancel | QMessageBox.Ok,
+            QMessageBox.Cancel,
+        )
+        if user_choice != QMessageBox.Ok:
+            return
+        if not reboot_server(host=host):
+            QMessageBox.critical(
+                None,
+                "Error",
+                f"Failed to reboot host {host}!",
+                QMessageBox.Ok,
+                QMessageBox.Ok,
+            )
 
-    def doQuit(self):
+    def action_view_log(self):
+        """
+        Action when the user clicks "Show Log".
+
+        This opens a floating terminal that tails the IOC's logfile.
+        """
+        if not self._check_selected():
+            return
+        try:
+            run_in_floating_terminal(
+                title=f"{self.current_ioc} logfile",
+                cmd=f"tail -1000lf {env_paths.LOGBASE % self.current_ioc}",
+            )
+        except Exception as exc:
+            raise_to_operator(exc)
+
+    def action_show_console(self):
+        """
+        Action when the user clicks "Show Console".
+
+        This opens a floating terminal that telnets to the IOC's host and port.
+        """
+        if not self._check_selected():
+            return
+        try:
+            ioc_proc = self.model.get_next_config().procs[self.current_ioc]
+            run_in_floating_terminal(
+                title=f"{self.current_ioc} telnet session",
+                cmd=f"telnet {ioc_proc.host} {ioc_proc.port}",
+            )
+        except Exception as exc:
+            raise_to_operator(exc)
+
+    def action_help(self):
+        """
+        Action when the user clicks "Help".
+
+        This opens a small dialog with a link to the confluence page.
+        """
+        QMessageBox.information(
+            None,
+            "IOC Manager Help",
+            (
+                "Documentation for the iocmanager can be found on confluence:\n"
+                "https://confluence.slac.stanford.edu/x/WYCPCg"
+            ),
+            QMessageBox.Ok,
+            QMessageBox.Ok,
+        )
+
+    def action_remember_versions(self):
+        """
+        Action when the user clicks "Remember Versions"
+
+        For every IOC in the configuration, add the current version to the history.
+        """
+        try:
+            self.model.save_all_versions()
+        except Exception as exc:
+            raise_to_operator(exc)
+
+    def action_quit(self):
+        """
+        Action when the user clicks "Quit"
+        """
         self.close()
 
-    def doLog(self):
-        if self.current_ioc:
-            self.model.viewlogIOC(self.current_ioc)
+    def on_find_pv(self):
+        """
+        Callback when the user types a regex into the "Find PV" field and presses enter.
 
-    def doConsole(self):
-        if self.current_ioc and (
-            self.model.getVar("allow_console") or self.authorize_action(False)
-        ):
-            self.model.connectIOC(self.current_ioc)
+        This searches through all IOCs in the config for PV names that match the regex.
+        """
+        try:
+            self.find_pv_dialog.find_pv_and_exec(self.ui.findpv.text())
+        except Exception as exc:
+            raise_to_operator(exc)
 
-    def dopv(self, name, gui, format):
-        pv = Pv(name, initialize=True)
-        if pv is not None:
-            gui.setText("")
-            pv.gui = gui
-            pv.format = format
-            self.pvlist.append(pv)
-            pv.add_monitor_callback(lambda e: self.displayPV(pv, e))
-            try:
-                pv.wait_ready(0.5)
-                pv.monitor()
-            except Exception:
-                logger.debug(f"Error setting up {pv} in dopv", exc_info=True)
+    def on_table_select(self, selected: QItemSelection, deselected: QItemSelection):
+        """
+        Callback when the user selects any cell in the gsrid.
 
-    def getSelection(self, selected, deselected):
+        We need to update the widget displays and instance variables to reflect which
+        IOC we've selected.
+        """
         try:
             row = selected.indexes()[0].row()
-            ioc = self.model.data(
-                self.model.index(row, table_model.IOCNAME), QtCore.Qt.EditRole
-            ).value()
-            host = self.model.data(
-                self.model.index(row, table_model.HOST), QtCore.Qt.EditRole
-            ).value()
-            if ioc == self.current_ioc:
+            ioc_name = self.model.data(self.model.index(row, TableColumn.IOCNAME))
+            host = self.model.data(self.model.index(row, TableColumn.HOST))
+            if ioc_name == self.current_ioc:
                 return
-            self.disconnectPVs()
-            self.current_ioc = ioc
-            self.ui.IOCname.setText(ioc)
+            self.current_ioc = ioc_name
+            self.ui.IOCname.setText(ioc_name)
             try:
-                base = get_base_name(ioc)
+                base = get_base_name(ioc=ioc_name)
             except Exception:
-                self.current_base = None
+                self.ui.heartbeat.set_channel("")
+                self.ui.tod.set_channel("")
+                self.ui.boottime.set_channel("")
             else:
-                self.current_base = base
-                self.dopv(base + ":HEARTBEAT", self.ui.heartbeat, "%d")
-                self.dopv(base + ":TOD", self.ui.tod, "%s")
-                self.dopv(base + ":STARTTOD", self.ui.boottime, "%s")
-                pyca.flush_io()
-            d = netconfig(host)
+                self.ui.heartbeat.set_channel(f"ca://{base}:HEARTBEAT")
+                self.ui.tod.set_channel(f"ca://{base}:TOD")
+                self.ui.boottime.set_channel(f"ca://{base}:STARTTOD")
             try:
-                self.ui.location.setText(d["location"])
+                host_info = netconfig(host)
             except Exception:
+                host_info = {}
+            try:
+                self.ui.location.setText(host_info["location"])
+            except KeyError:
                 self.ui.location.setText("")
             try:
-                self.ui.description.setText(d["description"])
-            except Exception:
+                self.ui.description.setText(host_info["description"])
+            except KeyError:
                 self.ui.description.setText("")
-        except Exception:
-            pass
+        except Exception as exc:
+            raise_to_operator(exc)
 
-    def showContextMenu(self, pos):
+    def show_context_menu(self, pos: QPoint):
+        """
+        When the user right-clicks the table, generate a proper menu.
+
+        This has the following features:
+        - Add New IOC
+          - Opens a dialog to add a new IOC to the config
+        - Delete IOC
+          - Schedule this right-clicked row for deletion
+          - Only appears if we right-clicked on a row
+        - Add Running to Config
+          - Add this untracked row to the config
+          - Only appears if we right-clicked on a row
+          - Only appears if the row isn't in the config (but is live)
+          - Invalid for HIOCs
+        - Set from Running
+          - Update the config to have the parameters of the running IOC
+          - Only appears if we right-clicked on a row
+          - Only appears if the row's live status doesn't match the config
+          - Invalid for HIOCs
+        - Apply Configuration
+          - Save the config with all of our pending changes
+          - Apply the config to reality for the right-clicked IOC
+          - Only appears if we right-clicked a row with changes to apply
+          - Invalid for HIOCs
+        - Remember Version
+          - Add the IOC's current version to the history, if not present
+          - Only appears if we right-clicked on a row
+          - Invalid for HIOCs
+        - Revert IOC
+          - Undo all pending changes for an IOC row
+          - Only appears if we right-clicked on a row with pending changes
+        - Edit Details
+          - Opens up a dialog for editing some of the items not in the table.
+          - Only appears if we right-clicked on a row
+        """
         index = self.ui.tableView.indexAt(pos)
-        menu = QtWidgets.QMenu()
+        menu = QMenu()
         menu.addAction("Add New IOC")
         if index.row() != -1:
             menu.addAction("Delete IOC")
@@ -643,149 +788,3 @@ class IOCMainWindow(QMainWindow):
                 continue
             self.model.addIOC(name, alias, host, port, dir)
             return
-
-    def authenticate_user(self, user):
-        if user == "":
-            user = self.myuid
-        need_su = self.myuid != user
-        if not check_ssh(user, self.hutch):
-            if self.model.userIO is not None:
-                try:
-                    os.close(self.model.userIO)
-                except Exception:
-                    logger.debug(
-                        f"Error closing {self.model.userIO} in authenticate_user",
-                        exc_info=True,
-                    )
-            self.model.userIO = None
-            self.ui.userLabel.setText("User: " + self.myuid)
-            self.model.user = self.myuid
-            return self.myuid == user
-        #
-        # Try to use su to become the user.  If this fails, one of the
-        # I/O operations below will raise an exception, because the su
-        # will exit.
-        #
-        (pid, fd) = pty.fork()
-        if pid == 0:
-            try:
-                if need_su:
-                    if utils.COMMITHOST == socket.gethostname().split(".")[0]:
-                        os.execv("/usr/bin/su", ["su", user, "-c", "/bin/tcsh -if"])
-                    else:
-                        os.execv(
-                            "/usr/bin/ssh",
-                            ["ssh", user + "@" + utils.COMMITHOST, "/bin/tcsh", "-if"],
-                        )
-                else:
-                    if utils.COMMITHOST == socket.gethostname().split(".")[0]:
-                        os.execv("/bin/tcsh", ["tcsh", "-if"])
-                    else:
-                        os.execv(
-                            "/usr/bin/ssh",
-                            ["ssh", utils.COMMITHOST, "/bin/tcsh", "-if"],
-                        )
-            except Exception:
-                pass
-            print("Say what?  execv failed?")
-            sys.exit(0)
-        tty_text = utils.read_until(
-            fd, "(assphrase for key '[a-zA-Z0-9._/]*':|assword:|> )"
-        ).group(1)
-        password = None
-        if tty_text[:5] == "assph":
-            passphrase = self.getAuthField("Key for '%s':" % tty_text[19:-2], True)
-            if passphrase is None:
-                return
-            os.write(fd, passphrase + "\n")
-            #
-            # We have entered a passphrase for an ssh key.  Maybe it was wrong,
-            # maybe it was empty (and now we're being asked for a password) or
-            # maybe it worked.
-            #
-            tty_text = utils.read_until(fd, "(> |assword:|assphrase)").group(1)
-            if tty_text == "assphrase":
-                raise Exception("Passphrase not accepted")  # Life is cruel.
-        if tty_text == "assword:":
-            password = self.getAuthField("Password:", True)
-            if password is None:
-                return
-            os.write(fd, password + "\n")
-            #
-            # I don't *think* we can get a passphrase prompt.  But let's not
-            # hang around here if we do...
-            #
-            tty_text = utils.read_until(fd, "(> |assword:|assphrase)").group(1)
-            if tty_text != "> ":
-                raise Exception("Password not accepted")
-        #
-        # Sigh.  Someone once had a file named time.py in their home
-        # directory.  So let's go somewhere where we know the files.
-        #
-        os.write(fd, ("cd %s\n" % utils.TMP_DIR).encode("utf-8"))
-        tty_text = utils.read_until(fd, "> ")
-        self.model.user = user
-        if self.model.userIO is not None:
-            try:
-                os.close(self.model.userIO)
-            except Exception:
-                logger.debug(
-                    f"Error closing {self.model.userIO} in authenticate_user",
-                    exc_info=True,
-                )
-        self.model.userIO = fd
-        if need_su:
-            self.utimer.start(10 * 60000)  # Let's go for 10 minutes.
-        self.ui.userLabel.setText("User: " + user)
-
-    def getAuthField(self, prompt, password):
-        self.auth_dialog.ui.label.setText(prompt)
-        self.auth_dialog.ui.nameEdit.setText("")
-        self.auth_dialog.ui.nameEdit.setEchoMode(
-            QtWidgets.QLineEdit.Password if password else QtWidgets.QLineEdit.Normal
-        )
-        result = self.auth_dialog.exec_()
-        if result == QtWidgets.QDialog.Accepted:
-            return self.auth_dialog.ui.nameEdit.text()
-        else:
-            return None
-
-    def doAuthenticate(self):
-        user = self.getAuthField("User:", False)
-        if user is not None:
-            try:
-                self.authenticate_user(user)
-            except Exception:
-                logger.info("Authentication as %s failed!", user)
-                logger.debug("", exc_info=True)
-                self.unauthenticate()
-
-    def unauthenticate(self):
-        self.utimer.stop()
-        try:
-            self.authenticate_user(self.myuid)
-        except Exception:
-            logger.error("Authentication as self failed?!?")
-            logger.debug("", exc_info=True)
-
-    def authorize_action(self, file_action):
-        # The user might be OK.
-        if check_auth(self.model.user, self.hutch) and (
-            not file_action or check_ssh(self.model.user, self.hutch) == file_action
-        ):
-            return True
-        # If the user isn't OK, give him or her a chance to authenticate.
-        if self.model.user == self.myuid:
-            self.doAuthenticate()
-        if check_auth(self.model.user, self.hutch) and (
-            not file_action or check_ssh(self.model.user, self.hutch) == file_action
-        ):
-            return True
-        QtWidgets.QMessageBox.critical(
-            None,
-            "Error",
-            "Action not authorized for user %s" % self.model.user,
-            QtWidgets.QMessageBox.Ok,
-            QtWidgets.QMessageBox.Ok,
-        )
-        return False

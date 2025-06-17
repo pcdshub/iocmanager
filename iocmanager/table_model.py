@@ -836,3 +836,19 @@ class IOCTableModel(QAbstractTableModel):
         idx1 = self.index(row, 0)
         idx2 = self.index(row, self.columnCount() - 1)
         self.dataChanged.emit(idx1, idx2)
+
+    def save_version(self, row: int):
+        """
+        For the IOC at row, add the current version to the history.
+
+        This is treated as a pending edit.
+        """
+        ioc_proc = self.get_ioc_proc(row)
+        if ioc_proc.path not in ioc_proc.history:
+            ioc_proc.history.insert(0, ioc_proc.path)
+            self.edit_iocs[ioc_proc.name] = ioc_proc
+
+    def save_all_versions(self):
+        """For all IOCs in the table, call save_version."""
+        for row in range(self.rowCount()):
+            self.save_version(row=row)

@@ -1,2 +1,3 @@
+pydm
 pyepics
 qtpy

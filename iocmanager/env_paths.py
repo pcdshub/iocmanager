@@ -135,6 +135,15 @@ class EnvPaths:
             "CAMRECORD_ROOT", "/cds/group/pcds/controls/camrecord"
         ).removesuffix(os.sep)
 
+    @property
+    def GNOME_TERMINAL_SERVER(self) -> str:
+        """
+        The path to the gnome-terminal-server executable.
+
+        This is used by the GUI to launch floating terminals if available.
+        """
+        return os.getenv("GNOME_TERMINAL_SERVER", "/usr/libexec/gnome-terminal-server")
+
     # The rest of these are derived from the above environment variables
     # or from each other
     @property

@@ -1204,3 +1204,25 @@ def test_revert_ioc(model: IOCTableModel, qapp: QApplication):
     assert model.setData(index=model.index(1, TableColumn.IOCNAME), value="Alias")
     model.revert_ioc(1)
     assert_not_changed()
+
+
+def test_save_version(model: IOCTableModel, qapp: QApplication):
+    """
+    model.save_version should pend saving a new history entry for the given row.
+    """
+    assert not model.get_next_config().procs["ioc0"].history
+    model.save_version(0)
+    ioc_proc = model.get_next_config().procs["ioc0"]
+    assert ioc_proc.path in ioc_proc.history
+
+
+def test_save_all_versions(model: IOCTableModel, qapp: QApplication):
+    """
+    model.save_all_versions should pend saving a new history entry for all rows.
+    """
+    for ioc_name in (f"ioc{num}" for num in range(10)):
+        assert not model.get_next_config().procs[ioc_name].history
+    model.save_all_versions()
+    for ioc_name in (f"ioc{num}" for num in range(10)):
+        ioc_proc = model.get_next_config().procs[ioc_name]
+        assert ioc_proc.path in ioc_proc.history
