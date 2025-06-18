@@ -193,9 +193,9 @@ class Config:
             if proc.host == host:
                 used_ports.add(proc.port)
         if closed:
-            new_port_options = range(30000, 39000)
+            new_port_options = range(30001, 39000)
         else:
-            new_port_options = range(39099, 39200)
+            new_port_options = range(39100, 39200)
         for new_port in new_port_options:
             if new_port not in used_ports:
                 return new_port
