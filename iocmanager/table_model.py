@@ -183,7 +183,7 @@ class IOCTableModel(QAbstractTableModel):
         super().__init__(parent)
         self.config = config
         self.hutch = hutch
-        self.dialog_add = AddIOCDialog(hutch=hutch, parent=parent)
+        self.dialog_add = AddIOCDialog(hutch=hutch, model=self, parent=parent)
         self.dialog_details = DetailsDialog(parent=parent)
         self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         # Track last sort to reapply sorting after changing the IOC list
@@ -968,3 +968,12 @@ class IOCTableModel(QAbstractTableModel):
         if status_live.path:
             edit_proc.path = status_live.path
         self.edit_iocs[ioc_name] = edit_proc
+
+    def get_unused_port(self, host: str, closed: bool) -> int:
+        """
+        Return the smallest valid unused port for the host.
+
+        Works in the context of the current config including
+        pending edits.
+        """
+        return self.get_next_config().get_unused_port(host=host, closed=closed)

@@ -176,6 +176,31 @@ class Config:
             host_ports.add((proc.host, proc.port))
         return len(host_ports) == len(self.procs)
 
+    def get_unused_port(self, host: str, closed: bool):
+        """
+        Return the smallest valid unused port for the host.
+
+        Parameters
+        ----------
+        host : str
+            The name of the host
+        closed : bool
+            True to use the closed range (30001-38999),
+            False to use the open range (39100-39199).
+        """
+        used_ports = set()
+        for proc in self.procs.values():
+            if proc.host == host:
+                used_ports.add(proc.port)
+        if closed:
+            new_port_options = range(30000, 39000)
+        else:
+            new_port_options = range(39099, 39200)
+        for new_port in new_port_options:
+            if new_port not in used_ports:
+                return new_port
+        raise RuntimeError("No unused ports found in range!")
+
 
 config_cache: dict[str, Config] = {}
 

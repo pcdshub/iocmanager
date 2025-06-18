@@ -509,8 +509,6 @@ def ensure_auth(hutch: str, ioc_name: str, special_ok: bool, special_version: st
     raise RuntimeError(msg)
 
 
-# TODO decide if the open-port-finding code should be in a module
-# because it might be used in the GUI too
 def parse_host_port(config: Config, host_port: str) -> tuple[str, int]:
     """
     Convert the "host:port" string from the cli to a (str host, int port) tuple.
@@ -542,22 +540,14 @@ def parse_host_port(config: Config, host_port: str) -> tuple[str, int]:
     except ValueError:
         ...
     if port.lower() == "closed":
-        port_options = range(30001, 39000)
+        closed = True
     elif port.lower() == "open":
-        port_options = range(39100, 39200)
+        closed = False
     else:
         raise ValueError(
             f"Invalid port {port}, expected an integer or one of closed, open"
         )
-    used_ports = set()
-    for ioc_proc in config.procs.values():
-        if ioc_proc.host == host:
-            used_ports.add(ioc_proc.port)
-    for check_port in port_options:
-        if check_port not in used_ports:
-            return host, check_port
-
-    raise ValueError(f"No available port for {host_port}")
+    return host, config.get_unused_port(host=host, closed=closed)
 
 
 def status_cmd(config: Config, ioc_name: str):

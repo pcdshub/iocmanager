@@ -12,6 +12,7 @@ from qtpy.QtWidgets import (
     QLabel,
     QLayout,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QWidget,
@@ -19,6 +20,7 @@ from qtpy.QtWidgets import (
 
 from .config import IOCProc
 from .epics_paths import standard_ioc_paths
+from .table_model import IOCTableModel
 from .type_hints import ParentWidget
 
 
@@ -30,7 +32,7 @@ class AddIOCDialog(QFileDialog):
     - Helpers for port selection
     """
 
-    def __init__(self, hutch: str, parent: ParentWidget):
+    def __init__(self, hutch: str, model: IOCTableModel, parent: ParentWidget):
         standard_paths = standard_ioc_paths(hutch=hutch)
         default_dir = standard_paths[0]
         for pth in standard_paths:
@@ -42,6 +44,8 @@ class AddIOCDialog(QFileDialog):
         self.setOptions(QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog)
         self.setSidebarUrls(QUrl("file://" + pth) for pth in standard_paths)
 
+        self.model = model
+
         self.name_edit = self._add_row("IOC Name *+", QLineEdit())
         self.alias_edit = self._add_row("Alias", QLineEdit())
         self.host_edit = self._add_row("Host *", QLineEdit())
@@ -51,9 +55,9 @@ class AddIOCDialog(QFileDialog):
         self.port_spinbox.valueChanged.connect(self._validate_port_spinbox)
         self.port_is_valid = False
         self.auto_closed = QPushButton("Select CLOSED")
-        # TODO implement select closed
+        self.auto_closed.clicked.connect(self._select_closed_port)
         self.auto_open = QPushButton("Select OPEN")
-        # TODO implement select open
+        self.auto_open.clicked.connect(self._select_open_port)
         port_layout = QHBoxLayout()
         port_layout.addWidget(self.port_spinbox)
         port_layout.addWidget(self.auto_closed)
@@ -93,6 +97,37 @@ class AddIOCDialog(QFileDialog):
             self.port_spinbox.setStyleSheet("QSpinBox { color: red; }")
             self.port_is_valid = False
 
+    def _select_closed_port(self):
+        """
+        Slot when the user clicks on "Select CLOSED".
+
+        Puts an available closed port in the port spinbox.
+        Host must already be selected.
+        """
+        self._select_port(closed=True)
+
+    def _select_open_port(self):
+        """
+        Slot when the user clicks on "Select OPEN".
+
+        Puts an available open port in the port spinbox.
+        Host must already be selected.
+        """
+        self._select_port(closed=False)
+
+    def _select_port(self, closed: bool):
+        """Shared implementation for automatically selecting ports."""
+        host = self.host_edit.text().strip()
+        if not host:
+            QMessageBox.warning(
+                None,
+                "Host not selected!",
+                "Selecting a port requires the host field to be populated.",
+                QMessageBox.Ok,
+                QMessageBox.Ok,
+            )
+        self.model.get_unused_port(host=host, closed=closed)
+
     def reset(self):
         """
         Set the widgets back to their default values.
@@ -100,8 +135,7 @@ class AddIOCDialog(QFileDialog):
         self.name_edit.setText("")
         self.alias_edit.setText("")
         self.host_edit.setText("")
-        # TODO initialize port_edit to an available closed port
-        self.port_spinbox.setValue(30001)
+        self._select_closed_port()
         self.parent_edit.setText("")
 
     def get_ioc_proc(self) -> IOCProc:
