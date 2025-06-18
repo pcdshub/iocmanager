@@ -440,7 +440,6 @@ class IOCMainWindow(QMainWindow):
           - Schedule this right-clicked row for deletion
           - Only appears if we right-clicked on a row
         - Add Running to Config
-          - TODO Implement this
           - Add this untracked row to the config
           - Only appears if we right-clicked on a row
           - Only appears if the row isn't in the config (but is live)
@@ -475,9 +474,11 @@ class IOCMainWindow(QMainWindow):
             del_ioc = menu.addAction("Delete IOC")
             del_ioc.triggered.connect(partial(self.model.delete_ioc, ioc=ioc_proc))
             if not ioc_proc.hard:
-                # TODO handle IOCs that are running, but not in the config at all
-                # TODO needs to be handled in table_model too
-                # TODO "Add Running to Config"
+                if ioc_proc.name in self.model.live_only_iocs:
+                    add_running = menu.addAction("Add Running to Config")
+                    add_running.triggered.connect(
+                        partial(self.action_add_running, ioc=ioc_proc)
+                    )
                 if self.model.get_desync_info(ioc=ioc_proc).has_diff:
                     set_running = menu.addAction("Set from Running")
                     set_running.triggered.connect(
@@ -511,6 +512,18 @@ class IOCMainWindow(QMainWindow):
         """
         try:
             self.model.add_ioc_dialog()
+        except Exception as exc:
+            raise_to_operator(exc)
+
+    def action_add_running(self, ioc: IOCModelIdentifier):
+        """
+        Context menu action when the user clicks "Add Running to Config".
+
+        This takes an IOC that is running without being tracked by IOC manager
+        and adds it to IOC manager.
+        """
+        try:
+            self.model.add_ioc(ioc_proc=self.model.get_ioc_proc(ioc=ioc))
         except Exception as exc:
             raise_to_operator(exc)
 
