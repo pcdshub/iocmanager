@@ -48,7 +48,8 @@ class AddIOCDialog(QFileDialog):
         self.port_spinbox = QSpinBox()
         self.port_spinbox.setMinimum(-1)
         self.port_spinbox.setMaximum(39199)
-        # TODO data validation for port edit
+        self.port_spinbox.valueChanged.connect(self._validate_port_spinbox)
+        self.port_is_valid = False
         self.auto_closed = QPushButton("Select CLOSED")
         # TODO implement select closed
         self.auto_open = QPushButton("Select OPEN")
@@ -63,6 +64,7 @@ class AddIOCDialog(QFileDialog):
         self._add_row("* = Required Fields for Soft IOCs.")
         self._add_row("+ = Required fields for Hard IOCs.")
         # TODO implement parent edit updating on directoryEnterered, currentChanged
+        self.reset()
 
     def _add_row[T](self, text: str, widget: T = None) -> T:
         """Helper for adding a widget to the grid, similar to a form layout."""
@@ -79,6 +81,17 @@ class AddIOCDialog(QFileDialog):
         elif isinstance(widget, QLayout):
             layout.addLayout(widget, row, 1)
         return widget
+
+    def _validate_port_spinbox(self, value: int):
+        """
+        Turn the text in the spinbox black/red depending on if the port is valid or not.
+        """
+        if value == -1 or (30000 < value < 39000) or (39100 <= value < 39200):
+            self.port_spinbox.setStyleSheet("QSpinBox { color: black; }")
+            self.port_is_valid = True
+        else:
+            self.port_spinbox.setStyleSheet("QSpinBox { color: red; }")
+            self.port_is_valid = False
 
     def reset(self):
         """

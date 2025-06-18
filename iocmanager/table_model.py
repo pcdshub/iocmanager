@@ -798,6 +798,20 @@ class IOCTableModel(QAbstractTableModel):
         """
         if self.dialog_add.exec_() != QDialog.Accepted:
             return False
+        if not self.dialog_add.port_is_valid:
+            QMessageBox.critical(
+                None,
+                "Error",
+                (
+                    "Invalid port selected! "
+                    "Expected port ranges are 30001-38999 for closed ports, "
+                    "39100-39199 for open ports, "
+                    "and -1 to signify a hard ioc."
+                ),
+                QMessageBox.Ok,
+                QMessageBox.Ok,
+            )
+            return True
         ioc_proc = self.dialog_add.get_ioc_proc()
         if not ioc_proc.name or (
             not ioc_proc.hard
