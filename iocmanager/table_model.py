@@ -11,9 +11,6 @@ The data in the table represents:
 - Helpful status and context information for each IOC
 
 See https://doc.qt.io/qt-5/qabstracttablemodel.html#details
-
-TODO: handle IOCs that are running, but not in the config at all
-TODO: e.g. IOCs that have status files but are not in config
 """
 
 import concurrent.futures
@@ -218,13 +215,12 @@ class IOCTableModel(QAbstractTableModel):
         self.dialog_add = AddIOCDialog(hutch=hutch, model=self, parent=parent)
         self.dialog_details = DetailsDialog(parent=parent)
         self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
-        # Track last sort to reapply sorting after changing the IOC list
-        self.last_sort: tuple[int, Qt.SortOrder] = (0, Qt.DescendingOrder)
         # Local changes (not applied yet)
         self.add_iocs: dict[str, IOCProc] = {}
         self.edit_iocs: dict[str, IOCProc] = {}
         self.delete_iocs: set[str] = set()
         # Live info, collected in poll_thread
+        self.live_only_iocs: dict[str, IOCProc] = {}
         self.status_live: dict[str, IOCStatusLive] = {}
         self.status_files: dict[str, IOCStatusFile] = {}
         self.host_os: dict[str, str] = {}
@@ -270,6 +266,7 @@ class IOCTableModel(QAbstractTableModel):
         self.add_iocs.clear()
         self.edit_iocs.clear()
         self.delete_iocs.clear()
+        self.refresh_live_only_iocs()
         if needs_refresh:
             self._emit_all_changed()
 
@@ -332,10 +329,11 @@ class IOCTableModel(QAbstractTableModel):
         We'll define the rows in the apparent dictionary order:
         - First, the config file contents
         - Second, any IOCs that are being added
+        - Third, any discovered IOCs that are not in the config
 
         See get_ioc_proc.
         """
-        return list(self.config.procs) + list(self.add_iocs)
+        return list(self.config.procs) + list(self.add_iocs) + list(self.live_only_iocs)
 
     def get_ioc_name(self, ioc: IOCModelIdentifier) -> str:
         """For any valid ioc identifier, get the name."""
@@ -362,7 +360,12 @@ class IOCTableModel(QAbstractTableModel):
         include the user's edits.
         """
         ioc_name = self.get_ioc_name(ioc=ioc)
-        for source in (self.edit_iocs, self.add_iocs, self.config.procs):
+        for source in (
+            self.edit_iocs,
+            self.add_iocs,
+            self.config.procs,
+            self.live_only_iocs,
+        ):
             try:
                 return source[ioc_name]
             except KeyError:
@@ -416,7 +419,7 @@ class IOCTableModel(QAbstractTableModel):
 
         https://doc.qt.io/archives/qt-5.15/qabstractitemmodel.html#rowCount
         """
-        return len(self.config.procs) + len(self.add_iocs)
+        return len(self.get_ioc_row_map())
 
     def columnCount(self, parent: QModelIndex | None = None) -> int:
         """
@@ -794,9 +797,13 @@ class IOCTableModel(QAbstractTableModel):
             self.host_os = get_host_os(config.hosts)
             self.update_from_config_file(config)
 
+        for status_file in read_status_dir(self.hutch):
+            self.update_from_status_file(status_file=status_file)
+
         # IO-bound task, use threads
         futures: list[concurrent.futures.Future[IOCStatusLive]] = []
-        for ioc_proc in self.config.procs.values():
+        next_config = self.get_next_config()
+        for ioc_proc in next_config.procs.values():
             futures.append(
                 executor.submit(
                     check_status,
@@ -805,13 +812,16 @@ class IOCTableModel(QAbstractTableModel):
                     name=ioc_proc.name,
                 )
             )
-
-        # TODO consider reordering, might be correct to check status files first
-        # TODO so we can include running-but-not-in-config IOC candidates
-        # TODO when we extend this to support these dark IOCs
-        # Check the status files while thread IO finishes
-        for status_file in read_status_dir(self.hutch):
-            self.update_from_status_file(status_file=status_file)
+        for ioc_name, ioc_file in self.status_files.items():
+            if ioc_name not in next_config.procs:
+                futures.append(
+                    executor.submit(
+                        check_status,
+                        host=ioc_file.host,
+                        port=ioc_file.port,
+                        name=ioc_file.name,
+                    )
+                )
 
         # Collect the thread results and apply them
         for fut in futures:
@@ -838,6 +848,7 @@ class IOCTableModel(QAbstractTableModel):
         # It should be faster to tell most everything to update than to pick cells
         # Technically we could skip the status columns but it's ok
         self._emit_all_changed()
+        self.refresh_live_only_iocs()
 
     def update_from_status_file(self, status_file: IOCStatusFile):
         """
@@ -860,9 +871,11 @@ class IOCTableModel(QAbstractTableModel):
         """
         if status_file != self.status_files.get(status_file.name):
             self.status_files[status_file.name] = status_file
-            # Update extra cell
-            row_map = self.get_ioc_row_map()
-            row = row_map.index(status_file.name)
+            # Update extra cell if IOC exists
+            try:
+                row = self.get_ioc_row(ioc=status_file.name)
+            except Exception:
+                return
             idx = self.index(row, TableColumn.EXTRA)
             self.dataChanged.emit(idx, idx)
 
@@ -886,13 +899,48 @@ class IOCTableModel(QAbstractTableModel):
         """
         if status_live != self.status_live.get(status_live.name):
             self.status_live[status_live.name] = status_live
-            # Update status, extra cells
-            row_map = self.get_ioc_row_map()
-            row = row_map.index(status_live.name)
+            self.refresh_live_only_iocs()
+            # Update status, extra cells if IOC exists
+            try:
+                row = self.get_ioc_row(ioc=status_live)
+            except Exception:
+                return
             idx1 = self.index(row, TableColumn.STATUS)
             idx2 = self.index(row, TableColumn.EXTRA)
             self.dataChanged.emit(idx1, idx1)
             self.dataChanged.emit(idx2, idx2)
+
+    def refresh_live_only_iocs(self):
+        """
+        Update our cache of IOCs that are only live (and not in the config).
+
+        An IOC is live if it has a non-erroring entry in self.status_live.
+        An IOC is in the config if it is present in any of:
+        - self.config.procs
+        - self.add_iocs
+        - self.edit_iocs
+        """
+        had_live_only_iocs = bool(self.live_only_iocs)
+        self.live_only_iocs.clear()
+        for ioc_name, ioc_live in self.status_live.items():
+            if ioc_name in self.config.procs:
+                continue
+            if ioc_name in self.add_iocs:
+                continue
+            if ioc_name in self.edit_iocs:
+                continue
+            # We were able to connect to it and get a status
+            if ioc_live.status in ("RUNNING", "SHUTDOWN"):
+                self.live_only_iocs[ioc_name] = IOCProc(
+                    name=ioc_name,
+                    port=ioc_live.port,
+                    host=ioc_live.host,
+                    path=ioc_live.path,
+                )
+        if had_live_only_iocs and not self.live_only_iocs:
+            self._emit_all_changed()
+        elif self.live_only_iocs:
+            self._emit_live_only_changed()
 
     # User Dialogs
     def add_ioc_dialog(self):
@@ -977,6 +1025,7 @@ class IOCTableModel(QAbstractTableModel):
         """
         self.add_iocs[ioc_proc.name] = ioc_proc
         self._emit_added_changed()
+        self.refresh_live_only_iocs()
 
     def delete_ioc(self, ioc: IOCModelIdentifier):
         """
@@ -987,6 +1036,7 @@ class IOCTableModel(QAbstractTableModel):
         ioc_info = self.get_ioc_info(ioc=ioc)
         self.delete_iocs.add(ioc_info.name)
         self._emit_row_changed(ioc_info.row)
+        self.refresh_live_only_iocs()
 
     def revert_ioc(self, ioc: IOCModelIdentifier):
         """
@@ -1008,6 +1058,7 @@ class IOCTableModel(QAbstractTableModel):
             self._emit_added_changed()
         elif undo_edit is not None or undo_delete is not None:
             self._emit_row_changed(row=row)
+        self.refresh_live_only_iocs()
 
     def _emit_all_changed(self):
         """Helper for causing a full table update."""
@@ -1018,7 +1069,15 @@ class IOCTableModel(QAbstractTableModel):
     def _emit_added_changed(self):
         """Helper for causing an update of only the added IOCs."""
         added_iocs_row = len(self.config.procs)
+        added_iocs_count = len(self.add_iocs)
         idx1 = self.index(added_iocs_row, 0)
+        idx2 = self.index(added_iocs_row + added_iocs_count - 1, self.columnCount() - 1)
+        self.dataChanged.emit(idx1, idx2)
+
+    def _emit_live_only_changed(self):
+        """Helper for causing an update of only the live-only IOCs."""
+        live_only_row = len(self.config.procs) + len(self.add_iocs)
+        idx1 = self.index(live_only_row, 0)
         idx2 = self.index(self.rowCount() - 1, self.columnCount() - 1)
         self.dataChanged.emit(idx1, idx2)
 
@@ -1081,6 +1140,7 @@ class IOCTableModel(QAbstractTableModel):
         if ioc_live.path:
             edit_proc.path = ioc_live.path
         self.edit_iocs[ioc_info.name] = edit_proc
+        self.refresh_live_only_iocs()
 
     def get_unused_port(self, host: str, closed: bool) -> int:
         """
