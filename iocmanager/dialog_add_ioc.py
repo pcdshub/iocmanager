@@ -19,7 +19,7 @@ from qtpy.QtWidgets import (
 )
 
 from .config import IOCProc
-from .epics_paths import standard_ioc_paths
+from .epics_paths import get_parent, standard_ioc_paths
 from .table_model import IOCTableModel
 from .type_hints import ParentWidget
 
@@ -67,7 +67,8 @@ class AddIOCDialog(QFileDialog):
         self.parent_edit.setReadOnly(True)
         self._add_row("* = Required Fields for Soft IOCs.")
         self._add_row("+ = Required fields for Hard IOCs.")
-        # TODO implement parent edit updating on directoryEnterered, currentChanged
+        self.directoryEntered.connect(self._update_parent)
+        self.currentChanged.connect(self._update_parent)
         self.reset()
 
     def _add_row[T](self, text: str, widget: T = None) -> T:
@@ -127,6 +128,21 @@ class AddIOCDialog(QFileDialog):
                 QMessageBox.Ok,
             )
         self.model.get_unused_port(host=host, closed=closed)
+
+    def _update_parent(self, selected_path: str):
+        """Set the parent widget to the IOC parent (for templated IOCs)"""
+        ioc_name = self.name_edit.text().strip()
+        parent_path = self._get_parent(selected_path=selected_path, ioc_name=ioc_name)
+        self.parent_edit.setText(parent_path)
+
+    def _get_parent(self, selected_path: str, ioc_name: str) -> str:
+        """Inner wrapper for _update_parent that returns the str to use."""
+        if not ioc_name or not selected_path:
+            return ""
+        try:
+            return get_parent(directory=selected_path, ioc_name=ioc_name)
+        except Exception:
+            return ""
 
     def reset(self):
         """
