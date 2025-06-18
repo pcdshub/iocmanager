@@ -965,7 +965,8 @@ class IOCTableModel(QAbstractTableModel):
         if new_proc != ioc_proc:
             self.edit_iocs[new_proc.name] = new_proc
         if new_proc.alias != ioc_proc.alias:
-            self.dataChanged.emit(self.index(ioc_info.row, TableColumn.IOCNAME))
+            index = self.index(ioc_info.row, TableColumn.IOCNAME)
+            self.dataChanged.emit(index, index)
 
     # Basic utility helpers
     def add_ioc(self, ioc_proc: IOCProc):

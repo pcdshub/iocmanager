@@ -133,6 +133,7 @@ class AddIOCDialog(QFileDialog):
                 QMessageBox.Ok,
                 QMessageBox.Ok,
             )
+            return
         self.model.get_unused_port(host=host, closed=closed)
 
     def _update_parent(self, selected_path: str):
@@ -157,7 +158,7 @@ class AddIOCDialog(QFileDialog):
         self.name_edit.setText("")
         self.alias_edit.setText("")
         self.host_edit.setText("")
-        self._select_closed_port()
+        self.port_spinbox.setValue(30001)
         self.parent_edit.setText("")
 
     def get_ioc_proc(self) -> IOCProc:
