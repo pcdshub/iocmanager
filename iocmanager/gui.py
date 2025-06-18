@@ -116,6 +116,9 @@ class IOCMainWindow(QMainWindow):
         Runs through the same steps as action_write_config,
         and then starts, stops, restarts IOCs as needed to make the new
         configuration reality.
+
+        This may also be called from the context menu "Apply Configuration"
+        action, which will pass an ioc_name.
         """
         try:
             if not self.action_write_config():
@@ -473,7 +476,7 @@ class IOCMainWindow(QMainWindow):
                 if self.model.get_desync_info(ioc_proc=ioc_proc).has_diff:
                     set_running = menu.addAction("Set from Running")
                     set_running.triggered.connect(
-                        partial(self.action_set_from_running, name=ioc_proc.name)
+                        partial(self.action_set_from_running, ioc_name=ioc_proc.name)
                     )
                 if self.model.pending_edits(ioc_proc.name):
                     apply_config = menu.addAction("Apply Configuration")
@@ -484,7 +487,7 @@ class IOCMainWindow(QMainWindow):
                     )
                 rem_ver = menu.addAction("Remember Version")
                 rem_ver.triggered.connect(
-                    partial(self.action_remember_one_version, name=ioc_proc.name)
+                    partial(self.action_remember_one_version, row=index.row())
                 )
             if self.model.pending_edits(ioc_name=ioc_proc.name):
                 rev_ioc = menu.addAction("Revert IOC")
@@ -499,16 +502,49 @@ class IOCMainWindow(QMainWindow):
         menu.exec_(gpos)
 
     def action_add_ioc(self):
+        """
+        Context menu action when the user clicks "Add IOC".
+
+        This will open a dialog that will prompt the user for all the required
+        fields and all of the commonly used normal fields needed for an IOC.
+        """
         try:
             self.model.add_ioc_dialog()
         except Exception as exc:
             raise_to_operator(exc)
 
-    def action_set_from_running(self, name: str):
-        raise NotImplementedError
+    def action_set_from_running(self, ioc_name: str):
+        """
+        Context menu action when the user clicks "Set from Running".
 
-    def action_remember_one_version(self, name: str):
-        raise NotImplementedError
+        This will make pending edits to the selected IOC config such that the
+        selected IOC config matches the live IOC status.
+        """
+        try:
+            self.model.set_from_running(ioc_name=ioc_name)
+        except Exception as exc:
+            raise_to_operator(exc)
+
+    def action_remember_one_version(self, row: int):
+        """
+        Context menu action when the user clicks "Remember Version".
+
+        This will make a pending history edit where the IOC's current version
+        will be added to the history.
+        """
+        try:
+            self.model.save_version(row=row)
+        except Exception as exc:
+            raise_to_operator(exc)
 
     def action_revert_one(self, row: int):
-        raise NotImplementedError
+        """
+        Context menu action when the user clicks "Revert IOC".
+
+        This will undo all pending edits for the selected IOC, e.g.
+        pending deletions, additions, and changes will be removed.
+        """
+        try:
+            self.model.revert_ioc(row=row)
+        except Exception as exc:
+            raise_to_operator(exc)

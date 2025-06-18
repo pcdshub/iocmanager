@@ -14,6 +14,8 @@ See https://doc.qt.io/qt-5/qabstracttablemodel.html#details
 
 TODO: handle IOCs that are running, but not in the config at all
 TODO: e.g. IOCs that have status files but are not in config
+TODO: clean up input args. Some functions take ints, others take str etc.
+TODO: allow all functions to take any of int, str, IOCProc, QModelIndex
 """
 
 import concurrent.futures
@@ -919,7 +921,6 @@ class IOCTableModel(QAbstractTableModel):
 
         See DesyncInfo.
         """
-        # Goal: summarize differences between configured and running
         status_live = self.get_live_info(ioc_name=ioc_proc.name)
         return DesyncInfo.from_info(ioc_proc=ioc_proc, status_live=status_live)
 
@@ -928,3 +929,28 @@ class IOCTableModel(QAbstractTableModel):
         return self.config.procs.get(ioc_name) != self.get_next_config().procs.get(
             ioc_name
         )
+
+    def set_from_running(self, ioc_name: str) -> None:
+        """
+        Edit the IOC's config such that it matches the values found in the live status.
+
+        The IOC might be in any state: newly added, edited, deleted, or unchanged.
+        Check edited first, then added, then base config for IOCProc.
+        """
+        status_live = self.get_live_info(ioc_name=ioc_name)
+        try:
+            ioc_proc = self.edit_iocs[ioc_name]
+        except KeyError:
+            try:
+                ioc_proc = self.add_iocs[ioc_name]
+            except KeyError:
+                ioc_proc = self.config.procs[ioc_name]
+        edit_proc = deepcopy(ioc_proc)
+        # Check port, host, and path
+        if status_live.port:
+            edit_proc.port = status_live.port
+        if status_live.host:
+            edit_proc.host = status_live.host
+        if status_live.path:
+            edit_proc.path = status_live.path
+        self.edit_iocs[ioc_name] = edit_proc
