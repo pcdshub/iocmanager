@@ -47,9 +47,9 @@ def test_get_next_config_and_reset_edits(model: IOCTableModel, qapp: QApplicatio
     # Delete an original config and a new config
     # Note: pending deletion does not remove the row from the table!
     # Row 1 = ioc1
-    model.delete_ioc(row=1)
+    model.delete_ioc(ioc=1)
     # Row 12 = added2
-    model.delete_ioc(row=12)
+    model.delete_ioc(ioc=12)
     # Get the next config
     next_config = model.get_next_config()
     # All deleted IOCs should be gone, all non-deleted iocs should stay
@@ -95,11 +95,11 @@ def test_get_ioc_proc(model: IOCTableModel, qapp: QApplication):
     assert model.setData(index=model.index(2, TableColumn.PORT), value=50000)
 
     # Check an unmodified IOC from the starting config
-    assert model.get_ioc_proc(row=4).name == "ioc4"
+    assert model.get_ioc_proc(ioc=4).name == "ioc4"
     # Check our modified IOC
-    assert model.get_ioc_proc(row=2).port == 50000
+    assert model.get_ioc_proc(ioc=2).port == 50000
     # Check our added IOC
-    assert model.get_ioc_proc(row=10).name == "added"
+    assert model.get_ioc_proc(ioc=10).name == "added"
 
 
 def test_get_ioc_row_map(model: IOCTableModel, qapp: QApplication):
@@ -135,7 +135,7 @@ def test_get_live_info(model: IOCTableModel, qapp: QApplication):
     ioc_name = "ioc7"
 
     # Default case, no info at all
-    null_info = model.get_live_info(ioc_name=ioc_name)
+    null_info = model.get_live_info(ioc=ioc_name)
     assert null_info.name == ioc_name
     assert not null_info.port
     assert not null_info.host
@@ -152,7 +152,7 @@ def test_get_live_info(model: IOCTableModel, qapp: QApplication):
             pid=12345,
         )
     )
-    file_info = model.get_live_info(ioc_name=ioc_name)
+    file_info = model.get_live_info(ioc=ioc_name)
     assert file_info.name == ioc_name
     assert file_info.port == 40001
     assert file_info.host == "file_host"
@@ -171,7 +171,7 @@ def test_get_live_info(model: IOCTableModel, qapp: QApplication):
             autorestart_mode=AutoRestartMode.OFF,
         )
     )
-    file_info2 = model.get_live_info(ioc_name=ioc_name)
+    file_info2 = model.get_live_info(ioc=ioc_name)
     assert file_info2.name == ioc_name
     assert file_info2.port == 40001
     assert file_info2.host == "file_host"
@@ -190,7 +190,7 @@ def test_get_live_info(model: IOCTableModel, qapp: QApplication):
             autorestart_mode=AutoRestartMode.ON,
         )
     )
-    live_info = model.get_live_info(ioc_name=ioc_name)
+    live_info = model.get_live_info(ioc=ioc_name)
     assert live_info.name == ioc_name
     assert live_info.port == 50001
     assert live_info.host == "live_host"
@@ -384,11 +384,7 @@ def test_get_display_data(
     )
 
     # Now that we've set up, let's check the case from params
-    config = model.get_next_config()
-    assert (
-        model.get_display_data(ioc_proc=config.procs[ioc_name], column=column)
-        == expected
-    )
+    assert model.get_display_data(ioc=ioc_name, column=column) == expected
 
 
 @pytest.mark.parametrize(
@@ -528,12 +524,7 @@ def test_get_foreground_color(
         )
     )
     # Check this test case
-    config = model.get_next_config()
-    try:
-        ioc_proc = config.procs[ioc_name]
-    except KeyError:
-        ioc_proc = model.config.procs[ioc_name]
-    assert model.get_foreground_color(ioc_proc=ioc_proc, column=column) == expected
+    assert model.get_foreground_color(ioc=ioc_name, column=column) == expected
 
 
 @pytest.mark.parametrize(
@@ -664,11 +655,7 @@ def test_get_background_color(
     # Create a port conflict
     model.setData(index=model.index(9, TableColumn.PORT), value=30009)
     # Check this test case
-    config = model.get_next_config()
-    assert (
-        model.get_background_color(ioc_proc=config.procs[ioc_name], column=column)
-        == expected
-    )
+    assert model.get_background_color(ioc=ioc_name, column=column) == expected
 
 
 @pytest.mark.parametrize(
@@ -1087,7 +1074,7 @@ def test_edit_details_dialog(
     model.dialog_details.exec_ = fake_exec
 
     # Edited from row 0, column 0 (ioc0)
-    model.edit_details_dialog(index=model.index(0, 0))
+    model.edit_details_dialog(ioc=model.index(0, 0))
     new_config = model.get_next_config()
     ioc_proc = new_config.procs["ioc0"]
 

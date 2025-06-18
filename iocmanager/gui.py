@@ -31,7 +31,7 @@ from .ioc_ui import Ui_MainWindow
 from .procserv_tools import apply_config
 from .server_tools import netconfig, reboot_server
 from .table_delegate import IOCTableDelegate
-from .table_model import IOCTableModel, TableColumn
+from .table_model import IOCModelIdentifier, IOCTableModel, TableColumn
 from .terminal import run_in_floating_terminal
 from .version import version as version_str
 
@@ -109,7 +109,7 @@ class IOCMainWindow(QMainWindow):
         # Ready to go! Start checking ioc status!
         self.model.start_poll_thread()
 
-    def action_write_and_apply_config(self, ioc_name: str | None = None):
+    def action_write_and_apply_config(self, ioc: IOCModelIdentifier | None = None):
         """
         Action when the user clicks "Apply".
 
@@ -118,8 +118,13 @@ class IOCMainWindow(QMainWindow):
         configuration reality.
 
         This may also be called from the context menu "Apply Configuration"
-        action, which will pass an ioc_name.
+        action, which will pass an ioc to use (so we only apply to one ioc).
+        Note that this will still save all pending edits.
         """
+        if ioc is None:
+            ioc_name = None
+        else:
+            ioc_name = self.model.get_ioc_name(ioc=ioc)
         try:
             if not self.action_write_config():
                 return
@@ -466,37 +471,33 @@ class IOCMainWindow(QMainWindow):
         add_ioc = menu.addAction("Add New IOC")
         add_ioc.triggered.connect(self.action_add_ioc)
         if index.row() != -1:
-            ioc_proc = self.model.get_ioc_proc(row=index.row())
+            ioc_proc = self.model.get_ioc_proc(ioc=index)
             del_ioc = menu.addAction("Delete IOC")
-            del_ioc.triggered.connect(partial(self.model.delete_ioc, row=index.row()))
+            del_ioc.triggered.connect(partial(self.model.delete_ioc, ioc=ioc_proc))
             if not ioc_proc.hard:
                 # TODO handle IOCs that are running, but not in the config at all
                 # TODO needs to be handled in table_model too
                 # TODO "Add Running to Config"
-                if self.model.get_desync_info(ioc_proc=ioc_proc).has_diff:
+                if self.model.get_desync_info(ioc=ioc_proc).has_diff:
                     set_running = menu.addAction("Set from Running")
                     set_running.triggered.connect(
-                        partial(self.action_set_from_running, ioc_name=ioc_proc.name)
+                        partial(self.action_set_from_running, ioc=ioc_proc)
                     )
                 if self.model.pending_edits(ioc_proc.name):
                     apply_config = menu.addAction("Apply Configuration")
                     apply_config.triggered.connect(
-                        partial(
-                            self.action_write_and_apply_config, ioc_name=ioc_proc.name
-                        )
+                        partial(self.action_write_and_apply_config, ioc=ioc_proc)
                     )
                 rem_ver = menu.addAction("Remember Version")
                 rem_ver.triggered.connect(
-                    partial(self.action_remember_one_version, row=index.row())
+                    partial(self.action_remember_one_version, ioc=ioc_proc)
                 )
-            if self.model.pending_edits(ioc_name=ioc_proc.name):
+            if self.model.pending_edits(ioc=ioc_proc):
                 rev_ioc = menu.addAction("Revert IOC")
-                rev_ioc.triggered.connect(
-                    partial(self.action_revert_one, row=index.row())
-                )
+                rev_ioc.triggered.connect(partial(self.action_revert_one, ioc=ioc_proc))
             edit_detail = menu.addAction("Edit Details")
             edit_detail.triggered.connect(
-                partial(self.model.edit_details_dialog, index=index)
+                partial(self.model.edit_details_dialog, ioc=ioc_proc)
             )
         gpos = self.ui.tableView.viewport().mapToGlobal(pos)
         menu.exec_(gpos)
@@ -513,7 +514,7 @@ class IOCMainWindow(QMainWindow):
         except Exception as exc:
             raise_to_operator(exc)
 
-    def action_set_from_running(self, ioc_name: str):
+    def action_set_from_running(self, ioc: IOCModelIdentifier):
         """
         Context menu action when the user clicks "Set from Running".
 
@@ -521,11 +522,11 @@ class IOCMainWindow(QMainWindow):
         selected IOC config matches the live IOC status.
         """
         try:
-            self.model.set_from_running(ioc_name=ioc_name)
+            self.model.set_from_running(ioc=ioc)
         except Exception as exc:
             raise_to_operator(exc)
 
-    def action_remember_one_version(self, row: int):
+    def action_remember_one_version(self, ioc: IOCModelIdentifier):
         """
         Context menu action when the user clicks "Remember Version".
 
@@ -533,11 +534,11 @@ class IOCMainWindow(QMainWindow):
         will be added to the history.
         """
         try:
-            self.model.save_version(row=row)
+            self.model.save_version(ioc=ioc)
         except Exception as exc:
             raise_to_operator(exc)
 
-    def action_revert_one(self, row: int):
+    def action_revert_one(self, ioc: IOCModelIdentifier):
         """
         Context menu action when the user clicks "Revert IOC".
 
@@ -545,6 +546,6 @@ class IOCMainWindow(QMainWindow):
         pending deletions, additions, and changes will be removed.
         """
         try:
-            self.model.revert_ioc(row=row)
+            self.model.revert_ioc(ioc=ioc)
         except Exception as exc:
             raise_to_operator(exc)

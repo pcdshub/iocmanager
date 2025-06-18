@@ -112,7 +112,7 @@ class IOCTableDelegate(QStyledItemDelegate):
             elif col == TableColumn.HOST:
                 items = self.model.get_next_config().hosts
             elif col == TableColumn.VERSION:
-                ioc_proc = self.model.get_ioc_proc(row=index.row())
+                ioc_proc = self.model.get_ioc_proc(ioc=index)
                 items = [ioc_proc.path]
                 items.extend(path for path in ioc_proc.history if path != ioc_proc.path)
             else:

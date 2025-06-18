@@ -14,8 +14,6 @@ See https://doc.qt.io/qt-5/qabstracttablemodel.html#details
 
 TODO: handle IOCs that are running, but not in the config at all
 TODO: e.g. IOCs that have status files but are not in config
-TODO: clean up input args. Some functions take ints, others take str etc.
-TODO: allow all functions to take any of int, str, IOCProc, QModelIndex
 """
 
 import concurrent.futures
@@ -50,6 +48,40 @@ from .procserv_tools import (
 from .type_hints import ParentWidget
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class IOCModelInfo:
+    """
+    Disambiguated information about an IOC in context of the model.
+
+    Attributes
+    ----------
+    ioc_proc : IOCProc
+        The ioc's config information including all pending edits.
+    ioc_live : IOCStatusLive
+        The ioc's actual live status based on our polling loop.
+    name : str
+        The name of the ioc (not the alias).
+    row : int
+        The row in the table associated with the ioc.
+    deleted : bool
+        True if the ioc is pending deletion, False otherwise.
+    file_proc : IOCProc | None
+        The ioc's config information without any pending edits.
+    """
+
+    ioc_proc: IOCProc
+    ioc_live: IOCStatusLive
+    name: str
+    row: int
+    deleted: bool
+    file_proc: IOCProc | None
+
+
+# Alias for type union that lets us uniquely identify an IOC in the table
+# Can use the full dataclass, the name, the row, or the index
+IOCModelIdentifier = IOCModelInfo | IOCProc | IOCStatusLive | str | int | QModelIndex
 
 
 class TableColumn(IntEnum):
@@ -242,47 +274,109 @@ class IOCTableModel(QAbstractTableModel):
             self._emit_all_changed()
 
     # Basic helpers
-    def get_ioc_proc(self, row: int) -> IOCProc:
+    def get_ioc_info(self, ioc: IOCModelIdentifier) -> IOCModelInfo:
         """
-        Define the row -> proc mapping for the table.
+        Given one of a variety of input types, disambiguate to get all the info.
 
-        This does not need maintain stable row indices, nor does it need to consider
-        the timing of data updates.
-
-        We'll define the rows in the apparent dictionary order:
-        - First, the config file contents
-        - Second, any IOCs that are being added
-
-        When picking an IOCProc instance to return, one from the edit_iocs dict
-        will be chosen first, to make sure we display and edit the values that
-        include the user's edits.
+        This is used throughout the model to remove the need to keep track of
+        which functions need rows, which need QModelIndex, which need ioc names, etc.
         """
-        ioc_name = self.get_ioc_row_map()[row]
-        for source in (self.edit_iocs, self.add_iocs, self.config.procs):
-            try:
-                return source[ioc_name]
-            except KeyError:
-                ...
-        # This is not a valid codepath, but let's be paranoid
-        raise RuntimeError(
-            f"Found {ioc_name} at row {row} but no data associated with it."
-        )
+        match ioc:
+            case IOCModelInfo():
+                return ioc
+            case IOCProc():
+                return IOCModelInfo(
+                    ioc_proc=ioc,
+                    ioc_live=self.get_live_info(ioc=ioc),
+                    name=ioc.name,
+                    row=self.get_ioc_row(ioc=ioc),
+                    deleted=ioc.name in self.delete_iocs,
+                    file_proc=self.config.procs.get(ioc.name),
+                )
+            case IOCStatusLive():
+                return IOCModelInfo(
+                    ioc_proc=self.get_ioc_proc(ioc=ioc),
+                    ioc_live=ioc,
+                    name=ioc.name,
+                    row=self.get_ioc_row(ioc=ioc),
+                    deleted=ioc.name in self.delete_iocs,
+                    file_proc=self.config.procs.get(ioc.name),
+                )
+            case int():
+                ioc_proc = self.get_ioc_proc(ioc=ioc)
+                return IOCModelInfo(
+                    ioc_proc=ioc_proc,
+                    ioc_live=self.get_live_info(ioc=ioc),
+                    name=ioc_proc.name,
+                    row=ioc,
+                    deleted=ioc_proc.name in self.delete_iocs,
+                    file_proc=self.config.procs.get(ioc_proc.name),
+                )
+            case str() | QModelIndex():
+                ioc_proc = self.get_ioc_proc(ioc=ioc)
+                return IOCModelInfo(
+                    ioc_proc=self.get_ioc_proc(ioc=ioc),
+                    ioc_live=self.get_live_info(ioc=ioc),
+                    name=ioc_proc.name,
+                    row=self.get_ioc_row(ioc=ioc),
+                    deleted=ioc_proc.name in self.delete_iocs,
+                    file_proc=self.config.procs.get(ioc_proc.name),
+                )
+            case _:
+                raise TypeError(f"Invalid ioc identifier type {type(ioc)}")
 
     def get_ioc_row_map(self) -> list[str]:
         """
         Define the row -> name mapping for the table.
 
+        We'll define the rows in the apparent dictionary order:
+        - First, the config file contents
+        - Second, any IOCs that are being added
+
         See get_ioc_proc.
         """
         return list(self.config.procs) + list(self.add_iocs)
 
-    def get_live_info(self, ioc_name: str) -> IOCStatusLive:
+    def get_ioc_name(self, ioc: IOCModelIdentifier) -> str:
+        """For any valid ioc identifier, get the name."""
+        if isinstance(ioc, QModelIndex):
+            ioc = ioc.row()
+        match ioc:
+            case IOCModelInfo():
+                return ioc.name
+            case IOCProc() | IOCStatusLive():
+                return ioc.name
+            case str():
+                return ioc
+            case int():
+                return self.get_ioc_row_map()[ioc]
+            case _:
+                raise TypeError(f"Invalid ioc identifier type {type(ioc)}")
+
+    def get_ioc_proc(self, ioc: IOCModelIdentifier) -> IOCProc:
         """
-        Return the information about a live IOC.
+        For any valid ioc identifier, get the correct IOCProc instance.
+
+        When picking an IOCProc instance to return, one from the edit_iocs dict
+        will be chosen first, to make sure we display and edit the values that
+        include the user's edits.
+        """
+        ioc_name = self.get_ioc_name(ioc=ioc)
+        for source in (self.edit_iocs, self.add_iocs, self.config.procs):
+            try:
+                return source[ioc_name]
+            except KeyError:
+                ...
+        raise RuntimeError(f"No data associated with {ioc_name}!")
+
+    def get_live_info(self, ioc: IOCModelIdentifier) -> IOCStatusLive:
+        """
+        Return the information about a live ioc.
 
         This uses the cached IOCStatusLive if it is fully populated,
         but auguments it with values from the IOCStatusFile if not.
         """
+        ioc_name = self.get_ioc_name(ioc=ioc)
         try:
             live_info = self.status_live[ioc_name]
         except KeyError:
@@ -302,6 +396,15 @@ class IOCTableModel(QAbstractTableModel):
                 if not getattr(live_info, attr):
                     setattr(live_info, attr, getattr(self.status_files[ioc_name], attr))
         return live_info
+
+    def get_ioc_row(self, ioc: IOCModelIdentifier) -> int:
+        """
+        Get the row in the table we expect to find ioc at.
+        """
+        if isinstance(ioc, int):
+            return ioc
+        ioc_name = self.get_ioc_name(ioc=ioc)
+        return self.get_ioc_row_map().index(ioc_name)
 
     # Implement QAbstractTableModel API
     def rowCount(self, parent: QModelIndex | None = None) -> int:
@@ -341,28 +444,26 @@ class IOCTableModel(QAbstractTableModel):
         if not index.isValid() or index.row() >= self.rowCount():
             # Invalid or off the table
             return QVariant()
-        ioc_proc = self.get_ioc_proc(index.row())
         column = index.column()
         match role:
             case Qt.DisplayRole | Qt.EditRole:
                 try:
-                    return self.get_display_data(ioc_proc=ioc_proc, column=column)
+                    return self.get_display_data(ioc=index, column=column)
                 except (KeyError, ValueError):
                     return QVariant()
             case Qt.ForegroundRole:
-                return QBrush(
-                    self.get_foreground_color(ioc_proc=ioc_proc, column=column)
-                )
+                return QBrush(self.get_foreground_color(ioc=index, column=column))
             case Qt.BackgroundRole:
-                return QBrush(
-                    self.get_background_color(ioc_proc=ioc_proc, column=column)
-                )
+                return QBrush(self.get_background_color(ioc=index, column=column))
             case _:
                 # Unsupported role
                 return QVariant()
 
-    def get_display_data(self, ioc_proc: IOCProc, column: int) -> str | int:
+    def get_display_data(self, ioc: IOCModelIdentifier, column: int) -> str | int:
         """Get data for displaying and editing in the table."""
+        ioc_info = self.get_ioc_info(ioc=ioc)
+        ioc_proc = ioc_info.ioc_proc
+        ioc_live = ioc_info.ioc_live
         match column:
             case TableColumn.IOCNAME:
                 return ioc_proc.alias or ioc_proc.name
@@ -378,7 +479,7 @@ class IOCTableModel(QAbstractTableModel):
                 else:
                     return StateOption.DEV
             case TableColumn.STATUS:
-                return self.get_live_info(ioc_name=ioc_proc.name).status
+                return ioc_live.status
             case TableColumn.HOST:
                 return ioc_proc.host
             case TableColumn.OSVER:
@@ -393,7 +494,7 @@ class IOCTableModel(QAbstractTableModel):
                 if ioc_proc.hard:
                     return "HARD IOC"
                 # Goal: summarize differences between configured and running
-                desync_info = self.get_desync_info(ioc_proc=ioc_proc)
+                desync_info = self.get_desync_info(ioc=ioc_info)
                 if not desync_info.has_diff:
                     return ""
                 text_parts = []
@@ -410,15 +511,21 @@ class IOCTableModel(QAbstractTableModel):
             case _:
                 raise ValueError(f"Invalid column {column}")
 
-    def get_foreground_color(self, ioc_proc: IOCProc, column: int) -> Qt.GlobalColor:
+    def get_foreground_color(
+        self, ioc: IOCModelIdentifier, column: int
+    ) -> Qt.GlobalColor:
         """Get the text color for a cell in the table"""
+        ioc_info = self.get_ioc_info(ioc=ioc)
+        ioc_proc = ioc_info.ioc_proc
+        file_proc = ioc_info.file_proc
+
         # Universal handling for pending deletion
         if ioc_proc.name in self.delete_iocs:
             return Qt.red
         # Universal handling for new ioc row
-        if ioc_proc.name not in self.config.procs:
+        if file_proc is None:
             return Qt.blue
-        file_proc = self.config.procs[ioc_proc.name]
+
         # Specific handling for modified (blue) and other
         match column:
             case TableColumn.IOCNAME:
@@ -459,13 +566,19 @@ class IOCTableModel(QAbstractTableModel):
             case _:
                 raise ValueError(f"Invalid column {column}")
         # Default, contrast with background
-        bg_color = self.get_background_color(ioc_proc=ioc_proc, column=column)
+        bg_color = self.get_background_color(ioc=ioc_info, column=column)
         if bg_color in (Qt.blue, Qt.red):
             return Qt.white
         return Qt.black
 
-    def get_background_color(self, ioc_proc: IOCProc, column: int) -> Qt.GlobalColor:
+    def get_background_color(
+        self, ioc: IOCModelIdentifier, column: int
+    ) -> Qt.GlobalColor:
         """Get the background color for a cell in the table."""
+        ioc_info = self.get_ioc_info(ioc=ioc)
+        ioc_proc = ioc_info.ioc_proc
+        ioc_live = ioc_info.ioc_live
+
         # In general, stay default
         # In a few specific cases put special colors up
         match column:
@@ -476,27 +589,26 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.STATE:
                 # Be annoying with yellow if the IOC is in dev mode
                 if (
-                    self.get_display_data(ioc_proc=ioc_proc, column=column)
+                    self.get_display_data(ioc=ioc_info, column=column)
                     == StateOption.DEV
                 ):
                     return Qt.yellow
             case TableColumn.STATUS:
-                status = self.get_live_info(ioc_name=ioc_proc.name)
                 # Blue is init, or host down while being enabled
                 # Would otherwise be yellow or red
-                if status.status == ProcServStatus.INIT or (
-                    status.status == ProcServStatus.DOWN and not ioc_proc.disable
+                if ioc_live.status == ProcServStatus.INIT or (
+                    ioc_live.status == ProcServStatus.DOWN and not ioc_proc.disable
                 ):
                     return Qt.blue
                 # Yellow has priority and means reality != configured (host, port, path)
                 if (
-                    ioc_proc.host != status.host
-                    or ioc_proc.port != status.port
-                    or ioc_proc.path != status.path
+                    ioc_proc.host != ioc_live.host
+                    or ioc_proc.port != ioc_live.port
+                    or ioc_proc.path != ioc_live.path
                 ):
                     return Qt.yellow
                 # Green is what we want to see (reality matches config)
-                if (status.status == ProcServStatus.RUNNING) ^ ioc_proc.disable:
+                if (ioc_live.status == ProcServStatus.RUNNING) ^ ioc_proc.disable:
                     return Qt.green
                 # Red is the other bad cases
                 return Qt.red
@@ -507,7 +619,7 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.PORT:
                 # Port conflicts are bad! Red bad!
                 for other_proc in self.get_next_config().procs.values():
-                    if ioc_proc == other_proc:
+                    if ioc_proc.name == other_proc.name:
                         continue
                     if (
                         ioc_proc.host == other_proc.host
@@ -555,7 +667,7 @@ class IOCTableModel(QAbstractTableModel):
         if role != Qt.EditRole or not index.isValid() or index.row() >= self.rowCount():
             return False
 
-        ioc_proc = self.get_ioc_proc(index.row())
+        ioc_proc = self.get_ioc_proc(ioc=index)
         new_proc = deepcopy(ioc_proc)
 
         # We mostly need to do type handling based on the column
@@ -603,7 +715,7 @@ class IOCTableModel(QAbstractTableModel):
         if not index.isValid() or index.row() >= self.rowCount():
             logger.debug("Invalid index")
             return Qt.NoItemFlags | Qt.NoItemFlags
-        ioc_proc = self.get_ioc_proc(row=index.row())
+        ioc_proc = self.get_ioc_proc(ioc=index)
 
         if ioc_proc.hard:
             # Hard IOCs are never editable
@@ -837,11 +949,12 @@ class IOCTableModel(QAbstractTableModel):
         self.add_ioc(ioc_proc=ioc_proc)
         return False
 
-    def edit_details_dialog(self, index: QModelIndex):
+    def edit_details_dialog(self, ioc: IOCModelIdentifier):
         """
         Open the details dialog to edit settings not directly displayed in the table.
         """
-        ioc_proc = self.get_ioc_proc(row=index.row())
+        ioc_info = self.get_ioc_info(ioc=ioc)
+        ioc_proc = ioc_info.ioc_proc
         self.dialog_details.set_ioc_proc(ioc_proc=ioc_proc)
 
         if self.dialog_details.exec_() != QDialog.Accepted:
@@ -852,7 +965,7 @@ class IOCTableModel(QAbstractTableModel):
         if new_proc != ioc_proc:
             self.edit_iocs[new_proc.name] = new_proc
         if new_proc.alias != ioc_proc.alias:
-            self.dataChanged.emit(self.index(index.row(), TableColumn.IOCNAME))
+            self.dataChanged.emit(self.index(ioc_info.row, TableColumn.IOCNAME))
 
     # Basic utility helpers
     def add_ioc(self, ioc_proc: IOCProc):
@@ -864,24 +977,26 @@ class IOCTableModel(QAbstractTableModel):
         self.add_iocs[ioc_proc.name] = ioc_proc
         self._emit_added_changed()
 
-    def delete_ioc(self, row: int):
+    def delete_ioc(self, ioc: IOCModelIdentifier):
         """
-        Mark the IOC at row as pending deletion.
+        Mark the IOC as pending deletion.
 
         Refreshes that row to pick up the color updates.
         """
-        ioc_name = self.get_ioc_row_map()[row]
-        self.delete_iocs.add(ioc_name)
-        self._emit_row_changed(row=row)
+        ioc_info = self.get_ioc_info(ioc=ioc)
+        self.delete_iocs.add(ioc_info.name)
+        self._emit_row_changed(ioc_info.row)
 
-    def revert_ioc(self, row: int):
+    def revert_ioc(self, ioc: IOCModelIdentifier):
         """
         Revert all pending adds, edits, and deletes for an IOC.
 
         Refreshes the row in the case of reverting edits and deletes,
         or the added rows section in the case of reverting an add.
         """
-        ioc_name = self.get_ioc_row_map()[row]
+        ioc_info = self.get_ioc_info(ioc=ioc)
+        ioc_name = ioc_info.name
+        row = ioc_info.row
         undo_add = self.add_iocs.pop(ioc_name, None)
         undo_edit = self.edit_iocs.pop(ioc_name, None)
         try:
@@ -912,14 +1027,15 @@ class IOCTableModel(QAbstractTableModel):
         idx2 = self.index(row, self.columnCount() - 1)
         self.dataChanged.emit(idx1, idx2)
 
-    # Helper functions that are easier to implement here than in IOCMainWindow
-    def save_version(self, row: int):
+    # Helper functions that are simpler to maintain here than in IOCMainWindow
+    # due to proximity to related code
+    def save_version(self, ioc: IOCModelIdentifier):
         """
         For the IOC at row, add the current version to the history.
 
         This is treated as a pending edit.
         """
-        ioc_proc = self.get_ioc_proc(row)
+        ioc_proc = deepcopy(self.get_ioc_proc(ioc=ioc))
         if ioc_proc.path not in ioc_proc.history:
             ioc_proc.history.insert(0, ioc_proc.path)
             self.edit_iocs[ioc_proc.name] = ioc_proc
@@ -927,47 +1043,43 @@ class IOCTableModel(QAbstractTableModel):
     def save_all_versions(self):
         """For all IOCs in the table, call save_version."""
         for row in range(self.rowCount()):
-            self.save_version(row=row)
+            self.save_version(ioc=row)
 
-    def get_desync_info(self, ioc_proc: IOCProc) -> DesyncInfo:
+    def get_desync_info(self, ioc: IOCModelIdentifier) -> DesyncInfo:
         """
         Return info about the differences between an IOC's config and live settings.
 
         See DesyncInfo.
         """
-        status_live = self.get_live_info(ioc_name=ioc_proc.name)
-        return DesyncInfo.from_info(ioc_proc=ioc_proc, status_live=status_live)
-
-    def pending_edits(self, ioc_name: str) -> bool:
-        """Return True if the ioc has pending edits."""
-        return self.config.procs.get(ioc_name) != self.get_next_config().procs.get(
-            ioc_name
+        ioc_info = self.get_ioc_info(ioc=ioc)
+        return DesyncInfo.from_info(
+            ioc_proc=ioc_info.ioc_proc, status_live=ioc_info.ioc_live
         )
 
-    def set_from_running(self, ioc_name: str) -> None:
+    def pending_edits(self, ioc: IOCModelIdentifier) -> bool:
+        """Return True if the ioc has pending edits."""
+        ioc_info = self.get_ioc_info(ioc=ioc)
+        return ioc_info.ioc_proc != ioc_info.file_proc
+
+    def set_from_running(self, ioc: IOCModelIdentifier) -> None:
         """
         Edit the IOC's config such that it matches the values found in the live status.
 
         The IOC might be in any state: newly added, edited, deleted, or unchanged.
         Check edited first, then added, then base config for IOCProc.
         """
-        status_live = self.get_live_info(ioc_name=ioc_name)
-        try:
-            ioc_proc = self.edit_iocs[ioc_name]
-        except KeyError:
-            try:
-                ioc_proc = self.add_iocs[ioc_name]
-            except KeyError:
-                ioc_proc = self.config.procs[ioc_name]
+        ioc_info = self.get_ioc_info(ioc=ioc)
+        ioc_proc = ioc_info.ioc_proc
+        ioc_live = ioc_info.ioc_live
         edit_proc = deepcopy(ioc_proc)
         # Check port, host, and path
-        if status_live.port:
-            edit_proc.port = status_live.port
-        if status_live.host:
-            edit_proc.host = status_live.host
-        if status_live.path:
-            edit_proc.path = status_live.path
-        self.edit_iocs[ioc_name] = edit_proc
+        if ioc_live.port:
+            edit_proc.port = ioc_live.port
+        if ioc_live.host:
+            edit_proc.host = ioc_live.host
+        if ioc_live.path:
+            edit_proc.path = ioc_live.path
+        self.edit_iocs[ioc_info.name] = edit_proc
 
     def get_unused_port(self, host: str, closed: bool) -> int:
         """
