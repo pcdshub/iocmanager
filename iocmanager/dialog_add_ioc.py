@@ -4,6 +4,10 @@ The dialog_add_ioc module defines the AddIOCDialog.
 This dialog helps the user add an IOC to the GUI table.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from qtpy.QtCore import QUrl
 from qtpy.QtWidgets import (
     QFileDialog,
@@ -20,8 +24,10 @@ from qtpy.QtWidgets import (
 
 from .config import IOCProc
 from .epics_paths import get_parent, standard_ioc_paths
-from .table_model import IOCTableModel
 from .type_hints import ParentWidget
+
+if TYPE_CHECKING:
+    from .table_model import IOCTableModel
 
 
 class AddIOCDialog(QFileDialog):
