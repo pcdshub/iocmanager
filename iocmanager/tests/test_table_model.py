@@ -1459,3 +1459,27 @@ def test_pending_edits(model: IOCTableModel, qapp: QApplication):
     # The rest should still not be pending edits!
     for ioc_name in (f"ioc{num}" for num in range(3, 10)):
         assert not model.pending_edits(ioc=ioc_name)
+
+
+def test_set_from_running(model: IOCTableModel, qapp: QApplication):
+    """
+    model.set_from_running should edit the IOC to match the live status.
+    """
+    # Arbitrary example: live IOC has a different path/version
+    old = IOCProc(name="added", port=40001, host="host", path="old/path")
+    new = IOCProc(name="added", port=40001, host="host", path="new/path")
+    status_live = IOCStatusLive(
+        name="added",
+        port=40001,
+        host="host",
+        path="new/path",
+        pid=None,
+        status=ProcServStatus.RUNNING,
+        autorestart_mode=AutoRestartMode.ON,
+    )
+
+    model.add_ioc(ioc_proc=old)
+    assert model.get_next_config().procs["added"] == old
+    model.update_from_live_ioc(status_live=status_live)
+    model.set_from_running(ioc="added")
+    assert model.get_next_config().procs["added"] == new
