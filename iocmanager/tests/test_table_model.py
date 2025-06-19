@@ -1483,3 +1483,18 @@ def test_set_from_running(model: IOCTableModel, qapp: QApplication):
     model.update_from_live_ioc(status_live=status_live)
     model.set_from_running(ioc="added")
     assert model.get_next_config().procs["added"] == new
+
+
+def test_get_unused_port(model: IOCTableModel, qapp: QApplication):
+    """
+    model.get_unused_port should return the smallest valid unused port.
+
+    The port should be in the context of the next saved config.
+    For example, if an IOC gets deleted, its port is fair game.
+    """
+    assert model.get_unused_port(host="new_host", closed=True) == 30001
+    assert model.get_unused_port(host="host", closed=True) == 30011
+    model.add_ioc(ioc_proc=IOCProc(name="added", port=30011, host="host", path=""))
+    assert model.get_unused_port(host="host", closed=True) == 30012
+    model.delete_ioc(ioc=5)
+    assert model.get_unused_port(host="host", closed=True) == 30006
