@@ -15,11 +15,13 @@ from ..config import (
     check_special,
     check_ssh,
     find_iocs,
+    get_host_os,
     get_hutch_list,
     read_config,
     read_status_dir,
     write_config,
 )
+from ..env_paths import env_paths
 from . import CFG_FOLDER
 
 
@@ -88,6 +90,24 @@ def test_read_config(cfg: str):
 
     assert config.commithost == "localhost"
     assert config.allow_console
+
+
+@pytest.mark.parametrize(
+    "host,expected",
+    (
+        ("test-server1", "rocky9"),
+        ("test-server2", "rhel7"),
+        ("test-server3", "rhel5"),
+        ("not-a-server", ""),
+    ),
+)
+def test_get_host_os(host: str, expected: str):
+    host_os = get_host_os(hosts_list=["test-server1", "test-server2", "test-server3"])
+    if expected:
+        assert host_os[host] == expected
+    else:
+        with pytest.raises(KeyError):
+            host_os[host]
 
 
 def test_write_config(tmp_path: Path):
@@ -165,7 +185,7 @@ def test_read_status_dir():
     # During this test suite, that's a temp dir
     # Which is filled with the contents of the local tests/pyps_root
     # Note: this never matches a prod dir, even if PYPS_ROOT is set to a prod value
-    status_dir = Path(os.getenv("PYPS_ROOT")) / "config" / ".status" / "pytest"
+    status_dir = Path(env_paths.PYPS_ROOT) / "config" / ".status" / "pytest"
     if not status_dir.is_dir():
         raise RuntimeError(
             f"Error in test writing: status dir {status_dir} does not exist."
