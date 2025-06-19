@@ -1122,7 +1122,13 @@ class IOCTableModel(QAbstractTableModel):
     def pending_edits(self, ioc: IOCModelIdentifier) -> bool:
         """Return True if the ioc has pending edits."""
         ioc_info = self.get_ioc_info(ioc=ioc)
-        return ioc_info.ioc_proc != ioc_info.file_proc
+        # Deleted is a pending edit regardless of the fields
+        if ioc_info.deleted and ioc_info.name not in self.add_iocs:
+            return True
+        # Covers any normal add, edit scenario via comparing fields or to None
+        if ioc_info.ioc_proc != ioc_info.file_proc:
+            return True
+        return False
 
     def set_from_running(self, ioc: IOCModelIdentifier) -> None:
         """

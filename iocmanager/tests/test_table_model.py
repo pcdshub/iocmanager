@@ -1430,3 +1430,32 @@ def test_save_all_versions(model: IOCTableModel, qapp: QApplication):
     for ioc_name in (f"ioc{num}" for num in range(10)):
         ioc_proc = model.get_next_config().procs[ioc_name]
         assert ioc_proc.path in ioc_proc.history
+
+
+def test_pending_edits(model: IOCTableModel, qapp: QApplication):
+    """
+    model.pending_edits should return True if we have unsaved changes for an ioc.
+    """
+    # Start without any pending edits on any IOC
+    for ioc in model.config.procs:
+        assert not model.pending_edits(ioc=ioc)
+
+    # Try some of the valid APIs for making an edit
+    # setData is typically called via QTableView when the user edits a cell
+    model.setData(model.index(0, TableColumn.PORT), 40001)
+    # delete_ioc is typically called via the QTableView context menu
+    model.delete_ioc(ioc=1)
+    # save_version is typically called via the QTableView context menu
+    model.save_version(ioc=2)
+    # add_ioc is typically called via the QTableView context menu
+    model.add_ioc(ioc_proc=IOCProc(name="added", port=50001, host="host", path=""))
+
+    # Each of the above should count as edited!
+    assert model.pending_edits(ioc="ioc0")
+    assert model.pending_edits(ioc="ioc1")
+    assert model.pending_edits(ioc="ioc2")
+    assert model.pending_edits(ioc="added")
+
+    # The rest should still not be pending edits!
+    for ioc_name in (f"ioc{num}" for num in range(3, 10)):
+        assert not model.pending_edits(ioc=ioc_name)
