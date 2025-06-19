@@ -1040,6 +1040,110 @@ def test_update_from_live_ioc(model: IOCTableModel, qapp: QApplication):
     assert data_emits[1][1].column() == TableColumn.EXTRA
 
 
+def test_live_only_iocs(
+    model: IOCTableModel, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
+):
+    """
+    This is a general integration test for iocs that are live but not in the config.
+
+    The following behavior is expected:
+    - During a poll, status files will be used to identify out-of-config iocs to check.
+    - If we check for an out-of-config ioc and it exists, that's a live-only ioc.
+    - These live-only iocs will be added to the model at the bottom of the table
+      (order is: configured iocs, added iocs, live-only iocs)
+    - The live-only iocs will be given provisional IOCProc structs and will be
+      queriable/findable as if they are a normal IOC.
+    - The live-only iocs will not be saved in the config unless the user requests it.
+    - When an ioc is added to the config with a name that matches a live-only ioc it
+      will no longer be considered a live-only ioc.
+    """
+    # We'll monkeypatch here to avoid fiddling with files and processes
+    fake_config = model.config
+    fake_status_files = []
+    fake_status_enums = {}
+
+    def read_config_patch(cfgname: str) -> Config:
+        return fake_config
+
+    def get_host_os_patch(hosts_list: list[str]) -> dict[str, str]:
+        return dict.fromkeys(hosts_list, "linux")
+
+    def read_status_dir_patch(cfg: str) -> list[IOCStatusFile]:
+        return fake_status_files
+
+    def check_status_patch(host: str, port: int, name: str) -> IOCStatusLive:
+        try:
+            status = fake_status_enums[(host, port)]
+        except KeyError:
+            status = ProcServStatus.DOWN
+        return IOCStatusLive(
+            name=name,
+            port=port,
+            host=host,
+            path="",
+            pid=None,
+            status=status,
+            autorestart_mode=AutoRestartMode.ON,
+        )
+
+    monkeypatch.setattr(table_model, "read_config", read_config_patch)
+    monkeypatch.setattr(table_model, "get_host_os", get_host_os_patch)
+    monkeypatch.setattr(table_model, "read_status_dir", read_status_dir_patch)
+    monkeypatch.setattr(table_model, "check_status", check_status_patch)
+
+    # One status file for each possible status
+    base_port = 40001
+    for num, status in enumerate(ProcServStatus):
+        name = status.name.lower()
+        fake_status_files.append(
+            IOCStatusFile(name=name, port=base_port + num, host="host", path="", pid=0)
+        )
+        fake_status_enums[("host", base_port + num)] = status
+
+    # Define which iocs should be live-only and which should not be
+    live_only_yes = ["running", "shutdown"]
+    live_only_no = [
+        status.name.lower()
+        for status in ProcServStatus
+        if status.name.lower() not in live_only_yes
+    ]
+
+    # Poll once
+    model.stop_poll_thread()
+    model._poll_loop()
+
+    # Check that the correct iocs are or are not queryable
+    for name in live_only_yes:
+        assert model.get_ioc_info(ioc=name).ioc_live.status.name.lower() == name
+    for name in live_only_no:
+        with pytest.raises(RuntimeError):
+            model.get_ioc_info(ioc=name)
+
+    # Check the table rows for live-only ioc info
+    for num in range(len(live_only_yes)):
+        assert model.data(model.index(10 + num, TableColumn.IOCNAME)) in live_only_yes
+    for row in range(model.rowCount()):
+        assert model.data(model.index(row, TableColumn.IOCNAME)) not in live_only_no
+
+    # Check that the live-only iocs are not included in the next config
+    next_config = model.get_next_config()
+    for name in live_only_yes + live_only_no:
+        assert name not in next_config.procs
+
+    # Add a live-only ioc to the config, check that it changes category and index
+    include_ioc_name = model.data(model.index(11, TableColumn.IOCNAME))
+    include_ioc_proc = model.get_ioc_proc(ioc=include_ioc_name)
+    assert include_ioc_name in model.live_only_iocs
+    assert include_ioc_name not in model.add_iocs
+    model.add_ioc(ioc_proc=include_ioc_proc)
+    assert include_ioc_name not in model.live_only_iocs
+    assert include_ioc_name in model.add_iocs
+    assert model.data(model.index(10, TableColumn.IOCNAME)) == include_ioc_name
+
+    # Once added, verify that it is included in the next config
+    assert include_ioc_name in model.get_next_config().procs
+
+
 @pytest.mark.parametrize("user_accept", (True, False))
 def test_edit_details_dialog(
     user_accept: bool,
