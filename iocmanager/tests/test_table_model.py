@@ -2,11 +2,12 @@ import dataclasses
 import time
 from copy import deepcopy
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from qtpy.QtCore import QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
-from qtpy.QtWidgets import QApplication, QDialog
+from qtpy.QtWidgets import QApplication, QDialog, QMessageBox
 
 from .. import table_model
 from ..config import Config, IOCProc
@@ -1142,6 +1143,118 @@ def test_live_only_iocs(
 
     # Once added, verify that it is included in the next config
     assert include_ioc_name in model.get_next_config().procs
+
+
+def test_add_ioc_dialog(
+    model: IOCTableModel, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
+):
+    """
+    model.add_ioc_dialog opens a dialog to add an IOC.
+
+    The specifics of this dialog should be tested in test_dialog_add_ioc.py
+    Here, we'll test the behavior defined in IOCTableModel:
+    - Clear the dialog before starting
+    - If the user picks an invalid port, show an error pop-up and re-open
+    - If the user omits a required field, show an error pop-up and re-open
+    - If the ioc name already exists, show an error pop-up and re-open
+    - If everything was ok, call add_ioc
+
+    We'll need to monkeypatch away the actual dialog opens since we can't
+    easily interact with the dialogs
+
+    QMessageBox.critical opens the error dialogs, here we just need to count
+    the calls and return QMessageBox.Ok. We'll use monkeypatch because this
+    is a class method that would otherwise bleed into other tests.
+
+    model.dialog_add.exec_() is how we open the dialog for the user,
+    we'll hard-patch this with the series of inputs we want the user
+    to take and then return QDialog.Accepted or QDialog.Rejected.
+    We don't need to use monkeypatch since the dialog object is transient.
+    """
+    error_message_mock = Mock()
+    monkeypatch.setattr(QMessageBox, "critical", error_message_mock)
+
+    # Set a starting name on the dialog, should be cleared
+    model.dialog_add.name_edit.setText("turkey")
+
+    # First call: make sure it's cleared, reject the dialog
+    def exec1() -> QDialog.DialogCode:
+        assert not model.dialog_add.name_edit.text()
+        return QDialog.Rejected
+
+    # Second call: user picks an invalid port, should error and go to third call
+    def exec2() -> QDialog.DialogCode:
+        # check from last exec
+        assert error_message_mock.call_count == 0
+        model.dialog_add.name_edit.setText("some_name")
+        model.dialog_add.host_edit.setText("some_host")
+        model.dialog_add.port_spinbox.setValue(42)
+        return QDialog.Accepted
+
+    # Third call: user forgot to pick a name, should error and go to fourth call
+    def exec3() -> QDialog.DialogCode:
+        # check from last exec
+        assert error_message_mock.call_count == 1
+        model.dialog_add.name_edit.setText("")
+        model.dialog_add.host_edit.setText("some_host")
+        model.dialog_add.port_spinbox.setValue(40001)
+        return QDialog.Accepted
+
+    # Fourth call: user picked a name that already exists, error and fifth
+    def exec4() -> QDialog.DialogCode:
+        # check from last exec
+        assert error_message_mock.call_count == 2
+        model.dialog_add.name_edit.setText("ioc1")
+        model.dialog_add.host_edit.setText("some_host")
+        model.dialog_add.port_spinbox.setValue(40001)
+        return QDialog.Accepted
+
+    # Fifth call: user did it right
+    def exec5() -> QDialog.DialogCode:
+        # check from last exec
+        assert error_message_mock.call_count == 3
+        model.dialog_add.name_edit.setText("some_name")
+        model.dialog_add.host_edit.setText("some_host")
+        model.dialog_add.port_spinbox.setValue(40001)
+        return QDialog.Accepted
+
+    n_exec_calls = 0
+
+    def exec_patch() -> QDialog.DialogCode:
+        nonlocal n_exec_calls
+        n_exec_calls += 1
+        match n_exec_calls:
+            case 1:
+                return exec1()
+            case 2:
+                return exec2()
+            case 3:
+                return exec3()
+            case 4:
+                return exec4()
+            case 5:
+                return exec5()
+            case num:
+                raise RuntimeError(f"Test error: no patch for call number {num}")
+
+    model.dialog_add.exec_ = exec_patch
+
+    # First try at the dialog: only exec1
+    model.add_ioc_dialog()
+    assert n_exec_calls == 1
+
+    # The first call was the assert-and-reject check
+    # IOC should not have been added!
+    assert "some_name" not in model.add_iocs
+
+    # Second try at the dialog: exec2+
+    model.add_ioc_dialog()
+    assert n_exec_calls == 5
+    # e.g. no error after exec5
+    assert error_message_mock.call_count == 3
+
+    # IOC should have been added!
+    assert "some_name" in model.add_iocs
 
 
 @pytest.mark.parametrize("user_accept", (True, False))
