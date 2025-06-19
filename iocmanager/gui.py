@@ -479,7 +479,7 @@ class IOCMainWindow(QMainWindow):
                     add_running.triggered.connect(
                         partial(self.action_add_running, ioc=ioc_proc)
                     )
-                if self.model.get_desync_info(ioc=ioc_proc).has_diff:
+                elif self.model.get_desync_info(ioc=ioc_proc).has_diff:
                     set_running = menu.addAction("Set from Running")
                     set_running.triggered.connect(
                         partial(self.action_set_from_running, ioc=ioc_proc)
