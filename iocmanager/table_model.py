@@ -860,8 +860,11 @@ class IOCTableModel(QAbstractTableModel):
         The StatusPollThread calls this function cyclically with up-to-date
         status files.
 
-        Functionally, this can only impact the contents of the "extra"
-        information, which can help us identify what the real running
+        This is primarily used to find candidates for IOCs that are live but
+        not in the configuration.
+
+        This also impacts the contents of the "extra" column in the table,
+        which can help us identify what the real running
         IOC is when different from the configuration.
 
         Parameters
