@@ -7,8 +7,9 @@ source ./scripts/default_env
 echo "Compile with python bin ${IOCMAN_PY_BIN}"
 
 echo "(re-)build .py files from .ui"
-"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/commit_ui.py ui/commit.ui
-"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/details_ui.py ui/details.ui
-"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/find_pv_ui.py ui/find_pv.ui
-"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/hostname_ui.py ui/hostname.ui
-"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ioc_ui.py ui/ioc.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ui_apply_verify.py ui/apply_verify.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ui_commit.py ui/commit.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ui_details.py ui/details.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ui_find_pv.py ui/find_pv.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ui_hostname.py ui/hostname.ui
+"${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ui_ioc.py ui/ioc.ui

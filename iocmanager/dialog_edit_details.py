@@ -11,7 +11,7 @@ from copy import deepcopy
 
 from qtpy.QtWidgets import QDialog
 
-from . import details_ui
+from . import ui_details
 from .config import IOCProc
 from .type_hints import ParentWidget
 
@@ -28,7 +28,7 @@ class DetailsDialog(QDialog):
 
     def __init__(self, parent: ParentWidget = None):
         super().__init__(parent)
-        self.ui = details_ui.Ui_Dialog()
+        self.ui = ui_details.Ui_Dialog()
         self.ui.setupUi(self)
         self.ioc_proc = IOCProc(name="", port=0, host="", path="")
 

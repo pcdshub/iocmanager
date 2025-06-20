@@ -8,11 +8,7 @@
 __pycache__
 core.*
 
-commit_ui.py
-details_ui.py
-find_pv_ui.py
-hostname_ui.py
-ioc_ui.py
+iocmanager/ui_*.py
 
 _version.py
 iocmanager.egg-info

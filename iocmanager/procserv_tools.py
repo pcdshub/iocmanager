@@ -594,7 +594,7 @@ class ApplyConfigContext:
 
 
 @dataclass
-class VerifyResult:
+class VerifyPlan:
     """
     The payload expected from an external "verify" function in apply_config.
 
@@ -616,8 +616,7 @@ class VerifyResult:
 
 def apply_config(
     cfg: str,
-    verify: typing.Callable[[ApplyConfigContext, VerifyResult], VerifyResult]
-    | None = None,
+    verify: typing.Callable[[ApplyConfigContext, VerifyPlan], VerifyPlan] | None = None,
     ioc: str | None = None,
 ) -> None:
     """
@@ -641,8 +640,8 @@ def apply_config(
         The name of the hutch, or a full filepath to the config file.
     verify : callable, optional
         An optionally provided function that is expected to take an
-        ApplyConfigContext and a VerifyResult and return a VerifyResult.
-        You can create a new VerifyResult or mutate the provided object.
+        ApplyConfigContext and a VerifyPlan and return a VerifyPlan.
+        You can create a new VerifyPlan or mutate the provided object.
     ioc : str, optional
         The name of a single IOC to apply to, if provided.
         If not provided, we'll apply the entire configuration.
@@ -752,7 +751,7 @@ def apply_config(
                 status_files=deepcopy(running),
                 proc_config=deepcopy(desired_iocs),
             ),
-            VerifyResult(
+            VerifyPlan(
                 kill_list=kill_list,
                 start_list=start_list,
                 restart_list=restart_list,

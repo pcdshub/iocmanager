@@ -23,7 +23,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from . import hostname_ui
+from . import ui_hostname
 from .env_paths import env_paths
 from .epics_paths import get_parent, normalize_path, standard_ioc_paths
 from .table_model import IOCTableModel, TableColumn
@@ -44,7 +44,7 @@ class HostnameDialog(QDialog):
 
     def __init__(self, parent: ParentWidget = None):
         super().__init__(parent)
-        self.ui = hostname_ui.Ui_Dialog()
+        self.ui = ui_hostname.Ui_Dialog()
         self.ui.setupUi(self)
 
 

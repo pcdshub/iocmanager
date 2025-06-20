@@ -21,18 +21,19 @@ from qtpy.QtWidgets import (
 
 from .commit import commit_config
 from .config import read_config, write_config
+from .dialog_apply_verify import verify_dialog
 from .dialog_commit import CommitDialog, CommitOption
 from .dialog_find_pv import FindPVDialog
 from .env_paths import env_paths
 from .hioc_tools import reboot_hioc
 from .imgr import ensure_auth, reboot_cmd
 from .ioc_info import get_base_name
-from .ioc_ui import Ui_MainWindow
 from .procserv_tools import apply_config
 from .server_tools import netconfig, reboot_server
 from .table_delegate import IOCTableDelegate
 from .table_model import IOCModelIdentifier, IOCTableModel, TableColumn
 from .terminal import run_in_floating_terminal
+from .ui_ioc import Ui_MainWindow
 from .version import version as version_str
 
 logger = logging.getLogger(__name__)
@@ -128,7 +129,7 @@ class IOCMainWindow(QMainWindow):
         try:
             if not self.action_write_config():
                 return
-            apply_config(cfg=self.hutch, ioc=ioc_name)
+            apply_config(cfg=self.hutch, verify=verify_dialog, ioc=ioc_name)
         except Exception as exc:
             raise_to_operator(exc)
 

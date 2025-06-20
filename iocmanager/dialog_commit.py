@@ -11,7 +11,7 @@ from enum import IntEnum
 
 from qtpy.QtWidgets import QDialog, QDialogButtonBox
 
-from . import commit_ui
+from . import ui_commit
 from .type_hints import ParentWidget
 
 
@@ -37,7 +37,7 @@ class CommitDialog(QDialog):
 
     def __init__(self, hutch: str, parent: ParentWidget = None):
         super().__init__(parent)
-        self.ui = commit_ui.Ui_Dialog()
+        self.ui = ui_commit.Ui_Dialog()
         self.ui.setupUi(self)
         self.setWindowTitle(f"Commit {hutch}")
         self.setResult(CommitOption.CANCEL)

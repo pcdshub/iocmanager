@@ -17,7 +17,7 @@ from ..procserv_tools import (
     AutoRestartMode,
     IOCStatusLive,
     ProcServStatus,
-    VerifyResult,
+    VerifyPlan,
     apply_config,
     check_status,
     fix_telnet_shell,
@@ -394,12 +394,12 @@ def test_apply_config(
     # Change our verify approach based on the input arg
     if do_verify == "allow":
 
-        def verify(ctx: ApplyConfigContext, res: VerifyResult) -> VerifyResult:
+        def verify(ctx: ApplyConfigContext, res: VerifyPlan) -> VerifyPlan:
             return res
     elif do_verify == "deny":
 
-        def verify(ctx: ApplyConfigContext, res: VerifyResult) -> VerifyResult:
-            return VerifyResult(
+        def verify(ctx: ApplyConfigContext, res: VerifyPlan) -> VerifyPlan:
+            return VerifyPlan(
                 kill_list=[],
                 start_list=[],
                 restart_list=[],

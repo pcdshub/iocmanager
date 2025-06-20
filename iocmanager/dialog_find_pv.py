@@ -14,7 +14,7 @@ import re
 from qtpy.QtCore import QItemSelectionModel
 from qtpy.QtWidgets import QAbstractItemView, QDialog, QTableView
 
-from . import find_pv_ui
+from . import ui_find_pv
 from .ioc_info import find_pv
 from .table_model import IOCTableModel
 from .type_hints import ParentWidget
@@ -42,7 +42,7 @@ class FindPVDialog(QDialog):
         self, model: IOCTableModel, view: QTableView, parent: ParentWidget = None
     ):
         super().__init__(parent)
-        self.ui = find_pv_ui.Ui_Dialog()
+        self.ui = ui_find_pv.Ui_Dialog()
         self.ui.setupUi(self)
         self.model = model
         self.view = view
