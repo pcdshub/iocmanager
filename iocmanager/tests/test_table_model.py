@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import pytest
 from qtpy.QtCore import QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
-from qtpy.QtWidgets import QApplication, QDialog, QMessageBox
+from qtpy.QtWidgets import QDialog, QMessageBox
 
 from .. import table_model
 from ..config import Config, IOCProc
@@ -20,7 +20,7 @@ from ..procserv_tools import (
 from ..table_model import IOCTableModel, StateOption, TableColumn, table_headers
 
 
-def test_get_next_config_and_reset_edits(model: IOCTableModel, qapp: QApplication):
+def test_get_next_config_and_reset_edits(model: IOCTableModel):
     """
     model.get_next_config should return a Config object given the table data.
 
@@ -76,7 +76,7 @@ def test_get_next_config_and_reset_edits(model: IOCTableModel, qapp: QApplicatio
     assert reset_config.procs["ioc0"].port == 30001
 
 
-def test_get_ioc_proc(model: IOCTableModel, qapp: QApplication):
+def test_get_ioc_proc(model: IOCTableModel):
     """
     model.get_ioc_proc should return the IOCProc a row displays/edits
     """
@@ -103,7 +103,7 @@ def test_get_ioc_proc(model: IOCTableModel, qapp: QApplication):
     assert model.get_ioc_proc(ioc=10).name == "added"
 
 
-def test_get_ioc_row_map(model: IOCTableModel, qapp: QApplication):
+def test_get_ioc_row_map(model: IOCTableModel):
     """
     model.get_ioc_row_map should return a list of each ioc name
 
@@ -124,7 +124,7 @@ def test_get_ioc_row_map(model: IOCTableModel, qapp: QApplication):
     assert model.get_ioc_row_map() == starting_map + ext_map
 
 
-def test_get_live_info(model: IOCTableModel, qapp: QApplication):
+def test_get_live_info(model: IOCTableModel):
     """
     model.get_live_info should return information about the live IOC.
 
@@ -199,7 +199,7 @@ def test_get_live_info(model: IOCTableModel, qapp: QApplication):
     assert live_info.status == ProcServStatus.RUNNING
 
 
-def test_row_count(model: IOCTableModel, qapp: QApplication):
+def test_row_count(model: IOCTableModel):
     """
     model.rowCount should return the number of rows in the table.
 
@@ -220,7 +220,7 @@ def test_row_count(model: IOCTableModel, qapp: QApplication):
     assert model.rowCount() == 10
 
 
-def test_column_count(model: IOCTableModel, qapp: QApplication):
+def test_column_count(model: IOCTableModel):
     """
     model.columnCount should return the number of columns in the table.
 
@@ -258,7 +258,6 @@ def test_data(
     role: int,
     expected: Any,
     model: IOCTableModel,
-    qapp: QApplication,
 ):
     """
     model.data should return data from the table.
@@ -302,7 +301,7 @@ def test_data(
     ),
 )
 def test_get_display_data(
-    ioc_name: str, column: int, expected: str, model: IOCTableModel, qapp: QApplication
+    ioc_name: str, column: int, expected: str, model: IOCTableModel
 ):
     """
     model.get_display_data should get the data we want to display for the ioc's column.
@@ -453,7 +452,6 @@ def test_get_foreground_color(
     column: int,
     expected: Qt.GlobalColor,
     model: IOCTableModel,
-    qapp: QApplication,
 ):
     """
     model.get_foreground_color should get the text color of a cell.
@@ -565,7 +563,6 @@ def test_get_background_color(
     column: int,
     expected: Qt.GlobalColor,
     model: IOCTableModel,
-    qapp: QApplication,
 ):
     """
     model.get_background_color should get the background color for a cell.
@@ -698,7 +695,6 @@ def test_header_data(
     orientation: Qt.Orientation,
     expected: Any,
     model: IOCTableModel,
-    qapp: QApplication,
 ):
     """
     model.headerData should return the text in a column.
@@ -734,7 +730,6 @@ def test_set_data(
     exp_attr: str,
     exp_value: Any,
     model: IOCTableModel,
-    qapp: QApplication,
 ):
     """
     model.setData should stage an edit to the configuration.
@@ -823,7 +818,6 @@ def test_flags(
     column: int,
     expected: Qt.ItemFlags,
     model: IOCTableModel,
-    qapp: QApplication,
 ):
     """
     model.flags should return the intended click behavior of the cell.
@@ -843,9 +837,7 @@ def test_flags(
     assert model.flags(index=model.index(row, column)) == expected
 
 
-def test_poll(
-    model: IOCTableModel, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
-):
+def test_poll(model: IOCTableModel, monkeypatch: pytest.MonkeyPatch):
     """
     The model's polling loop should get updated information.
 
@@ -922,7 +914,7 @@ def test_poll(
     assert not model.poll_thread.is_alive()
 
 
-def test_update_from_config_file(model: IOCTableModel, qapp: QApplication):
+def test_update_from_config_file(model: IOCTableModel):
     """
     model.update_from_config_file should introduce a new config file to the model.
 
@@ -962,7 +954,7 @@ def test_update_from_config_file(model: IOCTableModel, qapp: QApplication):
     assert data_emits[0][1].column() == model.columnCount() - 1
 
 
-def test_update_from_status_file(model: IOCTableModel, qapp: QApplication):
+def test_update_from_status_file(model: IOCTableModel):
     """
     model.update_from_status_file should introduce a new status file to the model.
 
@@ -999,7 +991,7 @@ def test_update_from_status_file(model: IOCTableModel, qapp: QApplication):
     assert data_emits[0][1].column() == TableColumn.EXTRA
 
 
-def test_update_from_live_ioc(model: IOCTableModel, qapp: QApplication):
+def test_update_from_live_ioc(model: IOCTableModel):
     """
     model.update_from_live_ioc should introduce a new IOC live status to the model.
 
@@ -1041,9 +1033,7 @@ def test_update_from_live_ioc(model: IOCTableModel, qapp: QApplication):
     assert data_emits[1][1].column() == TableColumn.EXTRA
 
 
-def test_live_only_iocs(
-    model: IOCTableModel, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
-):
+def test_live_only_iocs(model: IOCTableModel, monkeypatch: pytest.MonkeyPatch):
     """
     This is a general integration test for iocs that are live but not in the config.
 
@@ -1145,9 +1135,7 @@ def test_live_only_iocs(
     assert include_ioc_name in model.get_next_config().procs
 
 
-def test_add_ioc_dialog(
-    model: IOCTableModel, qapp: QApplication, monkeypatch: pytest.MonkeyPatch
-):
+def test_add_ioc_dialog(model: IOCTableModel, monkeypatch: pytest.MonkeyPatch):
     """
     model.add_ioc_dialog opens a dialog to add an IOC.
 
@@ -1261,7 +1249,6 @@ def test_add_ioc_dialog(
 def test_edit_details_dialog(
     user_accept: bool,
     model: IOCTableModel,
-    qapp: QApplication,
 ):
     """
     model.edit_details opens the details dialog.
@@ -1309,7 +1296,7 @@ def test_edit_details_dialog(
         assert not data_emits
 
 
-def test_add_ioc(model: IOCTableModel, qapp: QApplication):
+def test_add_ioc(model: IOCTableModel):
     """
     model.add_ioc should add a pending IOC, adding a new row to the table.
     """
@@ -1355,7 +1342,7 @@ def test_add_ioc(model: IOCTableModel, qapp: QApplication):
     assert "added2" in new_config.procs
 
 
-def test_delete_ioc(model: IOCTableModel, qapp: QApplication):
+def test_delete_ioc(model: IOCTableModel):
     """
     model.delete_ioc should pend an IOC for deletion.
 
@@ -1380,7 +1367,7 @@ def test_delete_ioc(model: IOCTableModel, qapp: QApplication):
     assert data_emits[0][1].column() == model.columnCount() - 1
 
 
-def test_revert_ioc(model: IOCTableModel, qapp: QApplication):
+def test_revert_ioc(model: IOCTableModel):
     """
     model.revert_ioc should undo all pending changes.
 
@@ -1410,7 +1397,7 @@ def test_revert_ioc(model: IOCTableModel, qapp: QApplication):
     assert_not_changed()
 
 
-def test_save_version(model: IOCTableModel, qapp: QApplication):
+def test_save_version(model: IOCTableModel):
     """
     model.save_version should pend saving a new history entry for the given row.
     """
@@ -1420,7 +1407,7 @@ def test_save_version(model: IOCTableModel, qapp: QApplication):
     assert ioc_proc.path in ioc_proc.history
 
 
-def test_save_all_versions(model: IOCTableModel, qapp: QApplication):
+def test_save_all_versions(model: IOCTableModel):
     """
     model.save_all_versions should pend saving a new history entry for all rows.
     """
@@ -1432,7 +1419,7 @@ def test_save_all_versions(model: IOCTableModel, qapp: QApplication):
         assert ioc_proc.path in ioc_proc.history
 
 
-def test_pending_edits(model: IOCTableModel, qapp: QApplication):
+def test_pending_edits(model: IOCTableModel):
     """
     model.pending_edits should return True if we have unsaved changes for an ioc.
     """
@@ -1461,7 +1448,7 @@ def test_pending_edits(model: IOCTableModel, qapp: QApplication):
         assert not model.pending_edits(ioc=ioc_name)
 
 
-def test_set_from_running(model: IOCTableModel, qapp: QApplication):
+def test_set_from_running(model: IOCTableModel):
     """
     model.set_from_running should edit the IOC to match the live status.
     """
@@ -1485,7 +1472,7 @@ def test_set_from_running(model: IOCTableModel, qapp: QApplication):
     assert model.get_next_config().procs["added"] == new
 
 
-def test_get_unused_port(model: IOCTableModel, qapp: QApplication):
+def test_get_unused_port(model: IOCTableModel):
     """
     model.get_unused_port should return the smallest valid unused port.
 

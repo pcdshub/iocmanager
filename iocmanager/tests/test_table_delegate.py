@@ -5,7 +5,6 @@ import pytest
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QSize
 from qtpy.QtWidgets import (
-    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -20,7 +19,7 @@ from ..table_model import TableColumn
 
 
 @pytest.mark.parametrize("column", [col.value for col in TableColumn])
-def test_size_hint(column: int, delegate: IOCTableDelegate, qapp: QApplication):
+def test_size_hint(column: int, delegate: IOCTableDelegate):
     """
     sizeHint should return QSize for any valid index.
 
