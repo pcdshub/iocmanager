@@ -134,7 +134,8 @@ class AddIOCDialog(QFileDialog):
                 QMessageBox.Ok,
             )
             return
-        self.model.get_unused_port(host=host, closed=closed)
+        unused_port = self.model.get_unused_port(host=host, closed=closed)
+        self.port_spinbox.setValue(unused_port)
 
     def _update_parent(self, selected_path: str):
         """Set the parent widget to the IOC parent (for templated IOCs)"""
