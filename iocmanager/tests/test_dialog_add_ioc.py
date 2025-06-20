@@ -23,7 +23,7 @@ def setup_cool_ioc(dialog: AddIOCDialog):
     dialog.name_edit.setText("cool_name")
     dialog.alias_edit.setText("CoolIOC")
     dialog.host_edit.setText("neat_host")
-    dialog.port_spinbox.setValue(40001)
+    dialog.port_spinbox.setValue(31000)
     dialog.selectFile("/some/filename")
 
 
@@ -36,7 +36,7 @@ def test_get_ioc_proc(add_ioc_dialog: AddIOCDialog):
     assert ioc_proc.name == "cool_name"
     assert ioc_proc.alias == "CoolIOC"
     assert ioc_proc.host == "neat_host"
-    assert ioc_proc.port == 40001
+    assert ioc_proc.port == 31000
     assert ioc_proc.path == "/some/filename"
 
 
