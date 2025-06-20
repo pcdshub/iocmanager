@@ -11,13 +11,20 @@ The layout is defined in ui/find_pv.ui
 import logging
 import re
 
-from qtpy.QtCore import QItemSelectionModel, pyqtSignal
+from qtpy.QtCore import QItemSelectionModel
 from qtpy.QtWidgets import QAbstractItemView, QDialog, QTableView
 
 from . import find_pv_ui
 from .ioc_info import find_pv
 from .table_model import IOCTableModel
 from .type_hints import ParentWidget
+
+# Depends on the version, even pylance gets confused
+try:
+    from qtpy.QtCore import pyqtSignal as Signal
+except ImportError:
+    from qtpy.QtCore import Signal  # type: ignore
+
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +36,7 @@ class FindPVDialog(QDialog):
     This dialog contains space to place to results from a find_pv operation.
     """
 
-    process_next = pyqtSignal(int)
+    process_next = Signal(int)
 
     def __init__(
         self, model: IOCTableModel, view: QTableView, parent: ParentWidget = None
