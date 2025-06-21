@@ -35,7 +35,7 @@ from .log_setup import SPAM_LEVEL
 from .procserv_tools import apply_config
 from .server_tools import netconfig, reboot_server
 from .table_delegate import IOCTableDelegate
-from .table_model import IOCModelIdentifier, IOCTableModel, TableColumn
+from .table_model import IOCModelIdentifier, IOCTableModel
 from .terminal import run_in_floating_terminal
 from .ui_ioc import Ui_MainWindow
 from .version import version as version_str
@@ -396,15 +396,25 @@ class IOCMainWindow(QMainWindow):
 
     def on_table_select(self, selected: QItemSelection, deselected: QItemSelection):
         """
-        Callback when the user selects any cell in the gsrid.
+        Callback when the user selects any cell in the grid.
 
         We need to update the widget displays and instance variables to reflect which
         IOC we've selected.
+
+        Note: these indices are in the context of the proxy model,
+        so we want to convert them to the base model indices to use the
+        dataclass getters.
         """
         try:
-            row = selected.indexes()[0].row()
-            ioc_name = self.model.data(self.model.index(row, TableColumn.IOCNAME))
-            host = self.model.data(self.model.index(row, TableColumn.HOST))
+            try:
+                proxy_index = selected.indexes()[0]
+            except KeyError:
+                # Nothing selected
+                return
+            source_index = self.sort_model.mapToSource(proxy_index)
+            ioc_proc = self.model.get_ioc_proc(ioc=source_index)
+            ioc_name = ioc_proc.name
+            host = ioc_proc.host
             if ioc_name == self.current_ioc:
                 return
             self.current_ioc = ioc_name
@@ -469,13 +479,18 @@ class IOCMainWindow(QMainWindow):
         - Edit Details
           - Opens up a dialog for editing some of the items not in the table.
           - Only appears if we right-clicked on a row
+
+        Note: these indices are in the context of the proxy model,
+        so we want to convert them to the base model indices to use the
+        dataclass getters.
         """
-        index = self.ui.tableView.indexAt(pos)
+        proxy_index = self.ui.tableView.indexAt(pos)
+        source_index = self.sort_model.mapToSource(proxy_index)
         menu = QMenu()
         add_ioc = menu.addAction("Add New IOC")
         add_ioc.triggered.connect(self.action_add_ioc)
-        if index.row() != -1:
-            ioc_proc = self.model.get_ioc_proc(ioc=index)
+        if source_index.row() != -1:
+            ioc_proc = self.model.get_ioc_proc(ioc=source_index)
             del_ioc = menu.addAction("Delete IOC")
             del_ioc.triggered.connect(partial(self.model.delete_ioc, ioc=ioc_proc))
             if not ioc_proc.hard:
