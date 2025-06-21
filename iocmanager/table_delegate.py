@@ -100,17 +100,37 @@ class IOCTableDelegate(QStyledItemDelegate):
         """
         Returns the size needed by the delegate to display the item.
 
-        This simply resizes the host column's width to a number that is much wider
-        than most normal hostnames. This fixed width probably helps the GUI
-        keep a consistent sizing.
+        This is used when the table first renders to set the initial row/column sizes.
+        The default default without this function is to have exactly enough space
+        to fix the text. This works OK sometimes but other times we don't have a
+        value filled in on first render, and cells get generated much too small.
+
+        This function sets some minimums for cell height and width (column-specific)
 
         https://doc.qt.io/qt-5/qstyleditemdelegate.html#sizeHint
         """
         index = self._source_index(index)
-        if index.column() == TableColumn.HOST:
-            return QSize(150, 25)
-        else:
-            return super().sizeHint(option, index)
+        size = super().sizeHint(option, index)
+
+        # Makes the table feel less cramped!
+        if size.height() < 25:
+            size.setHeight(25)
+
+        # Make sure there's enough room for incoming data/edits
+        match index.column():
+            case TableColumn.HOST | TableColumn.VERSION | TableColumn.PARENT:
+                min_width = 150
+            case TableColumn.IOCNAME | TableColumn.ID:
+                min_width = 110
+            case TableColumn.STATUS:
+                min_width = 80
+            case _:
+                min_width = 50
+
+        if size.width() < min_width:
+            size.setWidth(min_width)
+
+        return size
 
     def createEditor(
         self, parent: QWidget, option: QStyleOptionViewItem, index: QModelIndex
