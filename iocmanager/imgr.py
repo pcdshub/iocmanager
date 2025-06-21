@@ -954,7 +954,7 @@ def run_command(imgr_args: ImgrArgs):
             raise RuntimeError(f"{other} is not a valid imgr command.")
 
 
-def main() -> int:
+def main(args: list[str] | None = None) -> int:
     """
     Main cli entrypoint for imgr.
 
@@ -967,12 +967,19 @@ def main() -> int:
     The main outputs of the cli will be in stdout, log messages and
     errors will be in stderr.
 
+    Parameters
+    ----------
+    args : list[str], optional
+        The arguments to pass to imgr, for testing purposes.
+
     Returns
     -------
     return_code : int
         The shell return code for the cli program.
     """
-    imgr_args = parse_args(sys.argv[1:])
+    if args is None:
+        args = sys.argv[1:]
+    imgr_args = parse_args(args)
     if imgr_args.version:
         print(version_str)
         return 0

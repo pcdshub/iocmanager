@@ -23,10 +23,12 @@ ROOT_PATH = TESTS_PATH.parent.parent.resolve()
 PROCSERV_BUILD = ROOT_PATH / "procserv" / "build"
 
 
-@pytest.fixture(scope="function", autouse=True)
-def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def setup_test_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """
     Set environment variables appropriately for the unit tests.
+
+    This is imported in tests.interactive to use the same environment
+    for interactive testing.
     """
     monkeypatch.setenv("CAMRECORD_ROOT", str(tmp_path))
     try:
@@ -46,6 +48,14 @@ def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
 
     # Verify that the env_paths object is doing "something"
     assert env_paths.PYPS_ROOT == str(temp_pyps_root)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def prepare_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """
+    Wrap setup_test_env in a fixture that gets used in every unit test.
+    """
+    setup_test_env(tmp_path=tmp_path, monkeypatch=monkeypatch)
 
     yield
 

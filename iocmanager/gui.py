@@ -2,7 +2,9 @@
 The gui module impelements the main window of the iocmanager GUI.
 """
 
+import argparse
 import logging
+import sys
 from functools import partial
 
 from pydm.exception import raise_to_operator
@@ -14,6 +16,7 @@ from qtpy.QtCore import (
 )
 from qtpy.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -28,6 +31,7 @@ from .env_paths import env_paths
 from .hioc_tools import reboot_hioc
 from .imgr import ensure_auth, reboot_cmd
 from .ioc_info import get_base_name
+from .log_setup import SPAM_LEVEL
 from .procserv_tools import apply_config
 from .server_tools import netconfig, reboot_server
 from .table_delegate import IOCTableDelegate
@@ -563,3 +567,57 @@ class IOCMainWindow(QMainWindow):
             self.model.revert_ioc(ioc=ioc)
         except Exception as exc:
             raise_to_operator(exc)
+
+
+def get_parser():
+    parser = argparse.ArgumentParser(
+        prog="iocmanager",
+        description=(
+            "iocmanager is a GUI application for managing IOCs. "
+            "It allows you to start, stop, and debug IOC processes "
+            "running inside procServ on your servers."
+        ),
+    )
+    parser.add_argument("--hutch", help="The area whose IOCs you'd like to manage.")
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="count",
+        default=0,
+        help=(
+            "Increase debug verbosity. "
+            "-v or --verbose shows debug messages, "
+            "-vv shows spammy debug messages."
+        ),
+    )
+    parser.add_argument(
+        "--version", action="store_true", help="Show the version information and exit."
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = get_parser()
+    args = parser.parse_args(argv)
+    if args.version:
+        print(version_str)
+        sys.exit(0)
+    if not args.verbose:
+        log_level = logging.INFO
+    elif args.verbose == 1:
+        log_level = logging.DEBUG
+    else:
+        log_level = SPAM_LEVEL
+    logging.basicConfig(level=log_level)
+    logger = logging.getLogger(__name__)
+
+    app = QApplication([""])
+    gui = IOCMainWindow(hutch=args.hutch.lower())
+    try:
+        gui.show()
+        retval = app.exec_()
+    except KeyboardInterrupt:
+        logger.debug("KeyboardInterrupt", exc_info=True)
+        retval = 1
+        app.exit(retval)
+    return retval

@@ -5,9 +5,8 @@ import pytest
 from pytestqt.qtbot import QtBot
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
-from qtpy.QtWidgets import QApplication, QMessageBox
+from qtpy.QtWidgets import QMessageBox
 
-from ..config import Config
 from ..dialog_add_ioc import AddIOCDialog
 from ..table_model import IOCTableModel
 from . import IOC_FOLDER
@@ -31,15 +30,6 @@ def setup_cool_ioc(dialog: AddIOCDialog):
     # This is because the dialog is in directory mode
     dialog.selectFile("repo_name")
     # See tests/ioc/hutch_name/repo_name/ioc_name.cfg
-
-
-def run_interactive():
-    """Outside of test suite helper for opening the dialog in a clickable form."""
-    app = QApplication([])  # noqa: F841
-    config = Config("")
-    model = IOCTableModel(config=config, hutch="pytest")
-    dialog = AddIOCDialog(hutch="pytest", model=model, parent=None)
-    dialog.exec_()
 
 
 def test_get_ioc_proc(add_ioc_dialog: AddIOCDialog):
