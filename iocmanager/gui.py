@@ -66,7 +66,9 @@ class IOCMainWindow(QMainWindow):
         self.model = IOCTableModel(config=config, hutch=hutch)
         self.sort_model = QSortFilterProxyModel()
         self.sort_model.setSourceModel(self.model)
-        self.delegate = IOCTableDelegate(hutch=hutch, model=self.model)
+        self.delegate = IOCTableDelegate(
+            hutch=hutch, model=self.model, proxy_model=self.sort_model
+        )
 
         # User state
         self.current_ioc = ""
@@ -408,7 +410,7 @@ class IOCMainWindow(QMainWindow):
         try:
             try:
                 proxy_index = selected.indexes()[0]
-            except KeyError:
+            except IndexError:
                 # Nothing selected
                 return
             source_index = self.sort_model.mapToSource(proxy_index)

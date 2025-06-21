@@ -10,7 +10,13 @@ See https://doc.qt.io/qt-5/qstyleditemdelegate.html#details
 import logging
 import os
 
-from qtpy.QtCore import QAbstractItemModel, QModelIndex, QSize, QUrl
+from qtpy.QtCore import (
+    QAbstractItemModel,
+    QModelIndex,
+    QSize,
+    QSortFilterProxyModel,
+    QUrl,
+)
 from qtpy.QtWidgets import (
     QComboBox,
     QDialog,
@@ -70,11 +76,25 @@ class IOCTableDelegate(QStyledItemDelegate):
       ) -> None
     """
 
-    def __init__(self, hutch: str, model: IOCTableModel, parent: ParentWidget = None):
+    def __init__(
+        self,
+        hutch: str,
+        model: IOCTableModel,
+        proxy_model: QSortFilterProxyModel | None = None,
+        parent: ParentWidget = None,
+    ):
         super().__init__(parent)
         self.hutch = hutch
         self.model = model
+        self.proxy_model = proxy_model
         self.hostdialog = HostnameDialog(parent)
+
+    def _source_index(self, index: QModelIndex) -> QModelIndex:
+        """If we have a proxy model, convert to source model."""
+        if self.proxy_model is None:
+            return index
+        sauce = self.proxy_model.mapToSource(index)
+        return sauce
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         """
@@ -86,6 +106,7 @@ class IOCTableDelegate(QStyledItemDelegate):
 
         https://doc.qt.io/qt-5/qstyleditemdelegate.html#sizeHint
         """
+        index = self._source_index(index)
         if index.column() == TableColumn.HOST:
             return QSize(150, 25)
         else:
@@ -102,6 +123,7 @@ class IOCTableDelegate(QStyledItemDelegate):
 
         https://doc.qt.io/qt-5/qstyleditemdelegate.html#createEditor
         """
+        index = self._source_index(index)
         col = index.column()
         if col in (TableColumn.STATE, TableColumn.HOST, TableColumn.VERSION):
             editor = QComboBox(parent)
@@ -138,6 +160,7 @@ class IOCTableDelegate(QStyledItemDelegate):
 
         https://doc.qt.io/qt-5/qstyleditemdelegate.html#setEditorData
         """
+        index = self._source_index(index)
         if not isinstance(editor, QComboBox):
             return super().setEditorData(editor, index)
 
@@ -166,6 +189,9 @@ class IOCTableDelegate(QStyledItemDelegate):
         Gets data from the editor widget and stores in the model.
 
         https://doc.qt.io/qt-5/qstyleditemdelegate.html#setModelData
+
+        For whatever reason, this is the only function that doesn't need
+        to be converted from proxy coordinates to standard coordinates.
         """
         if not isinstance(editor, QComboBox):
             return super().setModelData(editor, model, index)
@@ -196,9 +222,7 @@ class IOCTableDelegate(QStyledItemDelegate):
                     if os.path.exists(full_path_candidate):
                         current_version = full_path_candidate
 
-                    ioc_name = str(
-                        model.data(index=model.index(index.row(), TableColumn.ID))
-                    )
+                    ioc_name = str(model.data(model.index(index.row(), TableColumn.ID)))
                     parent = self.parent()
                     if not isinstance(parent, QWidget):
                         parent = None
