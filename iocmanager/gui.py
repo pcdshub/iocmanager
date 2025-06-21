@@ -3,6 +3,7 @@ The gui module impelements the main window of the iocmanager GUI.
 """
 
 import argparse
+import getpass
 import logging
 import sys
 from functools import partial
@@ -23,7 +24,7 @@ from qtpy.QtWidgets import (
 )
 
 from .commit import commit_config
-from .config import read_config, write_config
+from .config import check_auth, read_config, write_config
 from .dialog_apply_verify import verify_dialog
 from .dialog_commit import CommitDialog, CommitOption
 from .dialog_find_pv import FindPVDialog
@@ -59,6 +60,11 @@ class IOCMainWindow(QMainWindow):
         self.ui.setupUi(self)
         # Not sure how to do this in designer, so we put it randomly and move it now.
         self.ui.statusbar.addWidget(self.ui.userLabel)
+        user = getpass.getuser()
+        if check_auth(user=user, hutch=hutch):
+            self.ui.userLabel.setText(f"User: {user}  (Full Auth)")
+        else:
+            self.ui.userLabel.setText(f"User: {user}  (Limited Auth)")
 
         # Data interfaces
         self.hutch = hutch
