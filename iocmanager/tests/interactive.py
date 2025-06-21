@@ -6,6 +6,9 @@ Usage:
 python -m iocmanager.tests.interactive gui (args)
 python -m iocmanager.tests.interactive imgr (args)
 python -m iocmanager.tests.interactive add_ioc_dialog
+python -m iocmanager.tests.interactive floating_terminal command
+python -m iocmanager.tests.interactive gnome_terminal command
+python -m iocmanager.tests.interactive xterm_terminal command
 
 More can be easily be added later.
 """
@@ -23,6 +26,7 @@ from ..env_paths import env_paths
 from ..gui import main as gui_main
 from ..imgr import main as imgr_main
 from ..table_model import IOCTableModel
+from ..terminal import run_in_floating_terminal, run_in_gnome_terminal, run_in_xterm
 from .conftest import setup_test_env
 
 
@@ -61,6 +65,20 @@ def main() -> int:
                     return imgr_main(args)
                 case "add_ioc_dialog":
                     return add_ioc_dialog()
+                case "floating_terminal":
+                    shell_cmd = " ".join(args)
+                    proc = run_in_floating_terminal(
+                        title="Test run_in_floating_terminal", cmd=shell_cmd, out=None
+                    )
+                    return proc.wait()
+                case "gnome_terminal":
+                    proc = run_in_gnome_terminal(
+                        title="Test run_in_gnome_terminal", args=args, out=None
+                    )
+                    return proc.wait()
+                case "xterm_terminal":
+                    proc = run_in_xterm(title="Test run_in_xterm", args=args, out=None)
+                    return proc.wait()
                 case other:
                     raise RuntimeError(f"Unhandled command {other}")
 
