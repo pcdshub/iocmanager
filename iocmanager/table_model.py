@@ -474,15 +474,15 @@ class IOCTableModel(QAbstractTableModel):
                 return ioc_proc.name
             case TableColumn.STATE:
                 if ioc_proc.disable:
-                    return StateOption.OFF
+                    return StateOption.OFF.value
                 elif ioc_proc.path.startswith("ioc/") or ioc_proc.path.endswith(
                     "/camrecord"
                 ):
-                    return StateOption.PROD
+                    return StateOption.PROD.value
                 else:
-                    return StateOption.DEV
+                    return StateOption.DEV.value
             case TableColumn.STATUS:
-                return ioc_live.status
+                return ioc_live.status.value
             case TableColumn.HOST:
                 return ioc_proc.host
             case TableColumn.OSVER:
