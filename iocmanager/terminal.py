@@ -117,7 +117,7 @@ def run_in_xterm(
         "-title",
         title,
         "-geometry",
-        "160x80",
+        "160x40",
         "-hold",
         "-e",
     ] + args
