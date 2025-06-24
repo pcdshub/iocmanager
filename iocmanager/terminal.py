@@ -13,6 +13,7 @@ python -m iocmanager.tests.interactive xterm_terminal command
 """
 
 import getpass
+import logging
 import os
 import shutil
 import subprocess
@@ -20,6 +21,8 @@ import time
 import uuid
 
 from .env_paths import env_paths
+
+logger = logging.getLogger(__name__)
 
 
 def run_in_floating_terminal(
@@ -73,6 +76,7 @@ def run_in_gnome_terminal(
     allow us to run gnome-terminal properly without it, so we'll no
     longer consider this case.
     """
+    logger.debug(f"Running {title} in gnome-console")
     # a: after ., must not start with a digit. Pick "a".
     app_id = f"{getpass.getuser()}.a{uuid.uuid4()}"
     popen = subprocess.Popen(
@@ -90,6 +94,7 @@ def run_in_gnome_terminal(
     # If it didn't run, assume we're set up to not need app id
     subp_args += [f"--title={title}", "--"]
     subp_args += args
+    logger.debug(f"gnome-console command is {represent_command(subp_args)}")
     return subprocess.Popen(subp_args, stdout=out, stderr=out)
 
 
@@ -102,20 +107,36 @@ def run_in_xterm(
     This is much simpler than the gnome-terminal scheme but the result
     is less nice-looking.
     """
+    logger.debug(f"Running {title} in xterm window")
+    subp_args = [
+        "xterm",
+        "-bg",
+        "black",
+        "-fg",
+        "white",
+        "-title",
+        title,
+        "-geometry",
+        "160x80",
+        "-hold",
+        "-e",
+    ] + args
+    logger.debug(f"xterm command is {represent_command(subp_args)}")
     return subprocess.Popen(
-        [
-            "xterm",
-            "-bg",
-            "black",
-            "-fg",
-            "white",
-            "-title",
-            title,
-            "-geometry",
-            "160x80",
-            "-e",
-        ]
-        + args,
+        subp_args,
         stdout=out,
         stderr=out,
     )
+
+
+def represent_command(args: list[str]) -> str:
+    """
+    Return a copy-pastable command to try outside of iocmanager for debug.
+    """
+    disp_args = []
+    for this_arg in args:
+        if " " in this_arg:
+            disp_args.append(f'"{this_arg}"')
+        else:
+            disp_args.append(this_arg)
+    return " ".join(disp_args)

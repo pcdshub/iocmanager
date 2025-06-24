@@ -235,11 +235,11 @@ class IOCMainWindow(QMainWindow):
 
         Shows a warning and returns False if no IOC is selected.
         """
-        if self.current_ioc is None:
+        if not self.current_ioc:
             QMessageBox.warning(
                 None,
                 "Error",
-                "No IOC selected to reboot.",
+                "No IOC selected.",
                 QMessageBox.Ok,
                 QMessageBox.Ok,
             )
