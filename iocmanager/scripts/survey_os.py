@@ -16,10 +16,11 @@ from typing import Iterable
 from packaging.version import InvalidVersion, Version
 
 from .. import log_setup
-from ..config import IOCProc, get_host_os, get_hutch_list, read_config
+from ..config import IOCProc, get_host_os, read_config
 from ..env_paths import env_paths
 
-OS_PRIORITY = ["rhel9", "rhel7", "rhel5", "rtems"]
+ALL_HUTCHES = ["tmo", "rix", "txi", "xpp", "xcs", "mfx", "cxi", "mec", "all"]
+OS_PRIORITY = ["rhel9", "rhel7", "rhel5", "rtems", "ang_v2017"]
 UNKNOWN = "Unknown"
 RENAMES = {
     "leviton": "pdu_snmp",
@@ -27,6 +28,8 @@ RENAMES = {
 }
 REG = "/reg/g"
 CDS = "/cds/group"
+PACKAGE = "package/epics/3.14/ioc"
+NOPACK = "epics/ioc"
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +72,8 @@ class IOCResult:
         common_ioc = get_common_ioc(ioc_proc.parent)
         if common_ioc.startswith(REG):
             common_ioc = common_ioc.replace(REG, CDS, 1)
+        if PACKAGE in common_ioc:
+            common_ioc = common_ioc.replace(PACKAGE, NOPACK, 1)
         name = Path(common_ioc).name.lower()
         if name in RENAMES:
             common_ioc = str(Path(common_ioc).parent / RENAMES[name])
@@ -185,10 +190,17 @@ class SurveyResult:
     def from_hutch_list[T: SurveyResult](cls: type[T], hutch_list: list[str]) -> T:
         hutch_results = []
         for hutch in hutch_list:
-            config = read_config(hutch)
-            hutch_results.append(
-                HutchResult.from_procs(hutch=hutch, procs=config.procs.values())
-            )
+            if hutch == "all":
+                procs = []
+                for hutch_name in ALL_HUTCHES:
+                    if hutch_name == "all":
+                        continue
+                    cfg = read_config(hutch_name)
+                    procs.extend(cfg.procs.values())
+            else:
+                config = read_config(hutch)
+                procs = config.procs.values()
+            hutch_results.append(HutchResult.from_procs(hutch=hutch, procs=procs))
         return cls(
             survey_date=datetime.datetime.now(),
             hutch_results=hutch_results,
@@ -300,7 +312,7 @@ def main(sys_argv: list[str] | None = None) -> int:
     else:
         logging.basicConfig(level=log_setup.SPAM_LEVEL)
     if args.hutch == "all":
-        hutches = get_hutch_list()
+        hutches = ALL_HUTCHES
     else:
         hutches = [args.hutch]
     results = SurveyResult.from_hutch_list(hutch_list=hutches)
