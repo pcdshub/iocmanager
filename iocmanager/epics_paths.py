@@ -75,14 +75,42 @@ def has_stcmd(directory: str, ioc_name: str) -> bool:
     has_stcmd : bool
         True if we found the st.cmd file at one of the standard locations.
     """
+    try:
+        get_stcmd(directory=directory, ioc_name=ioc_name)
+    except RuntimeError:
+        return False
+    return True
+
+
+def get_stcmd(directory: str, ioc_name: str) -> str:
+    """
+    Find a return the path to an IOC's st.cmd file.
+
+    Raises if one could not be found.
+
+    Parameters
+    ----------
+    directory : str
+        Path to the IOC release, either an absolute path or a path relative
+        to EPICS_SITE_TOP. An IOC release may contain multiple IOCs.
+    ioc_name : str
+        The name of the IOC to find within the IOC release directory.
+
+    Returns
+    -------
+    stcmd : str
+        The st.cmd file.
+    """
     if not os.path.isabs(directory):
         directory = os.path.join(env_paths.EPICS_SITE_TOP, directory)
     for pth in stpaths:
-        if os.path.exists(pth % (directory, ioc_name)):
-            return True
-    if os.path.exists(os.path.join(directory, "st.cmd")):
-        return True
-    return False
+        candidate = pth % (directory, ioc_name)
+        if os.path.exists(candidate):
+            return candidate
+    candidate = os.path.join(directory, "st.cmd")
+    if os.path.exists(candidate):
+        return candidate
+    raise RuntimeError(f"{ioc_name} in {directory} does not have a st.cmd file.")
 
 
 # Used in get_parent to match "RELEASE = /some/filepath" lines
@@ -99,13 +127,21 @@ spq = re.compile('^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]+"([^"]*)"[ \t]*$')
 # RELEASE 'path'
 spqq = re.compile("^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]+'([^']*)'[ \t]*$")
 
+# Match shebang e.g. #!/some/path/to/ioc/bin/arch/exe
+shbg = re.compile(r"^#!(.*)/bin/[A-Za-z0-9_]*-x86.*/.*$")
+
 
 def get_parent(directory: str, ioc_name: str) -> str:
     """
-    Return the parent (common) ioc path for a templated ioc.
+    Return the parent (common) ioc path for a child ioc.
 
-    To do this, we find and read the .cfg file, looking for the
-    RELEASE variable.
+    There are two possible sources.
+
+    For templated IOCs, we find and read the .cfg file,
+    looking for the RELEASE variable.
+
+    Otherwise, we locate the st.cmd file and use the path
+    in the shebang line to locate the parent.
 
     If the IOC has no parent, returns an empty string.
     The file could not be read, raises an appropriate OSError.
@@ -129,7 +165,21 @@ def get_parent(directory: str, ioc_name: str) -> str:
         lines = epics_readlines(filename)
     except Exception:
         filename = os.path.join(directory, "children", ioc_name + ".cfg")
-        lines = epics_readlines(filename)
+        try:
+            lines = epics_readlines(filename)
+        except Exception as err:
+            stcmd = get_stcmd(directory=directory, ioc_name=ioc_name)
+            with open(stcmd, "r") as fd:
+                line = fd.readline()
+            match = shbg.match(line)
+            if match:
+                path = match.group(1)
+                if path.startswith(os.sep):
+                    # Absolute path
+                    return path
+                # Relative path: relative to this file location?
+                return os.path.abspath(os.path.join(os.path.dirname(stcmd), path))
+            raise RuntimeError(f"Invalid shebang {line}") from err
 
     # Only the last RELEASE variable counts
     for ln in reversed(lines):
