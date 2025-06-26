@@ -263,6 +263,10 @@ def get_common_ioc(parent_ioc: str) -> str:
             return path_from_guess(guess=guess)
         except RuntimeError:
             ...
+    # Might not even be EPICS, check for python stuff
+    for option in ("conda", "pspkg", "python"):
+        if option in parent_ioc:
+            return option
     # Fallback, e.g. no parent IOC
     return UNKNOWN
 
@@ -283,6 +287,10 @@ def get_supported_os(common_ioc: str) -> str:
 
     The input should be the path that contains the versioned subdirectories.
     """
+    if common_ioc == "conda":
+        return "rhel9"
+    elif common_ioc in ("pspkg", "python"):
+        return "rhel7"
     latest_version = None
     for version_dir in Path(common_ioc).glob("R*"):
         this_version = version_dir.name.removeprefix("R")

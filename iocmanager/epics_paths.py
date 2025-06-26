@@ -4,6 +4,7 @@ The epics_paths module defines helper functions for paths in the EPICS filetree.
 This is everything under EPICS_SITE_TOP.
 """
 
+import glob
 import os
 import re
 
@@ -160,27 +161,38 @@ def get_parent(directory: str, ioc_name: str) -> str:
         The possibly truncated path to the parent IOC release,
         or an empty string if one could not be determined.
     """
+    parent = _get_parent(directory=directory, ioc_name=ioc_name)
+    if os.pathsep in parent:
+        return normalize_path(directory=parent, ioc_name=ioc_name)
+    return parent
+
+
+def _get_parent(directory: str, ioc_name: str) -> str:
+    try:
+        return cfg_parent(directory=directory, ioc_name=ioc_name)
+    except Exception:
+        ...
+    try:
+        return stcmd_parent(directory=directory, ioc_name=ioc_name)
+    except Exception:
+        ...
+    try:
+        return pyioc_parent(directory=directory, ioc_name=ioc_name)
+    except Exception:
+        ...
+    return ""
+
+
+def cfg_parent(directory: str, ioc_name: str) -> str:
+    """
+    Get the parent assuming this is a templated IOC directory with .cfg files.
+    """
     filename = os.path.join(directory, ioc_name + ".cfg")
     try:
         lines = epics_readlines(filename)
     except Exception:
         filename = os.path.join(directory, "children", ioc_name + ".cfg")
-        try:
-            lines = epics_readlines(filename)
-        except Exception as err:
-            stcmd = get_stcmd(directory=directory, ioc_name=ioc_name)
-            with open(stcmd, "r") as fd:
-                line = fd.readline()
-            match = shbg.match(line)
-            if match:
-                path = match.group(1)
-                if path.startswith(os.sep):
-                    # Absolute path
-                    return path
-                # Relative path: relative to this file location?
-                return os.path.abspath(os.path.join(os.path.dirname(stcmd), path))
-            raise RuntimeError(f"Invalid shebang {line}") from err
-
+        lines = epics_readlines(filename)
     # Only the last RELEASE variable counts
     for ln in reversed(lines):
         m = eqqq.search(ln)
@@ -201,8 +213,71 @@ def get_parent(directory: str, ioc_name: str) -> str:
                 val = val.replace(
                     "$$PATH/", directory + "/" + ioc_name + ".cfg"
                 ).replace("$$UP(PATH)", directory)
-                return normalize_path(val, ioc_name)
-    return ""
+                return val
+    raise RuntimeError(f"Can not find cfg parent for {ioc_name} in {directory}")
+
+
+def stcmd_parent(directory: str, ioc_name: str) -> str:
+    """
+    Get the parent assuming we have a st.cmd with a shebang that includes the parent.
+    """
+    stcmd = get_stcmd(directory=directory, ioc_name=ioc_name)
+    with open(stcmd, "r") as fd:
+        line = fd.readline()
+    # Try to find a shebang like #!/some/path/bin/rhel7-x86_64/exe
+    match = shbg.match(line)
+    if match:
+        path = match.group(1)
+        if path.startswith(os.sep):
+            # Absolute path
+            return path
+        # Relative path: relative to this file location?
+        return os.path.abspath(os.path.join(os.path.dirname(stcmd), path))
+    # Try to identify python iocs
+    raise RuntimeError(f"Invalid shebang {line}")
+
+
+def pyioc_parent(directory: str, ioc_name: str) -> str:
+    """
+    Get the parent assuming this is a python IOC.
+
+    Unlike the other parent getters, this returns the library and python environment
+    used to run the IOC, e.g.:
+    caproto conda pcds-5.8.1
+    pyioc pspkg xpp-1.2.0
+    """
+    stcmd = get_stcmd(directory=directory, ioc_name=ioc_name)
+    with open(stcmd, "r") as fd:
+        lines = fd.readlines()
+    # We want to figure out if we're using PSPKG or pcds_conda and at which version?
+    env_kind = "python"
+    env_version = ""
+    for line in lines:
+        text = line.strip()
+        if text.startswith("#"):
+            continue
+        if "PSPKG_RELEASE" in text:
+            env_kind = "pspkg"
+            env_version = text.split("=")[-1].strip("'\"")
+        elif "PCDS_CONDA_VER" in text:
+            env_kind = "conda"
+            env_version = text.split("=")[-1].strip("'\"")
+        elif "pcds_conda" in text:
+            env_kind = "conda"
+            if not env_version:
+                env_version = "latest"
+    if not env_version:
+        env_version = "unknown"
+    # Check the python files in the same repo for some keywords
+    python_ioc_frameworks = ("caproto", "pyioc", "pcaspy")
+    for filepath in glob.glob(os.path.join(os.path.dirname(stcmd), "*.py")):
+        with open(filepath, "r") as fd:
+            lines = fd.readlines()
+        for package in python_ioc_frameworks:
+            for line in lines:
+                if package in line:
+                    return f"{package} {env_kind} {env_version}"
+    return f"unknown {env_kind} {env_version}"
 
 
 def epics_readlines(filename: str) -> list[str]:
