@@ -19,7 +19,20 @@ from .. import log_setup
 from ..config import IOCProc, get_host_os, read_config
 from ..env_paths import env_paths
 
-ALL_HUTCHES = ["tmo", "rix", "txi", "xpp", "xcs", "mfx", "cxi", "mec", "all"]
+ALL_HUTCHES = [
+    "lfe",
+    "kfe",
+    "tmo",
+    "rix",
+    "txi",
+    "xpp",
+    "xrt",
+    "xcs",
+    "mfx",
+    "cxi",
+    "mec",
+    "all",
+]
 OS_PRIORITY = ["rhel9", "rhel7", "rhel5", "rtems", "ang_v2017"]
 UNKNOWN = "Unknown"
 RENAMES = {
