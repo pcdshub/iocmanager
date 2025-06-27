@@ -100,7 +100,7 @@ class IOCProc:
     hard: bool = False
 
     def __post_init__(self):
-        if self.name == self.host:
+        if self.name == self.host and "camrecord" not in self.path:
             self.hard = True
         try:
             self.parent = get_parent(self.path, self.name)
@@ -281,7 +281,6 @@ def read_config(cfgname: str) -> Config:
                 path=procmgr_cfg["dir"],
                 alias=procmgr_cfg.get("alias", ""),
                 disable=procmgr_cfg.get("disable", False),
-                hard=procmgr_cfg.get("hard", False),
                 cmd=procmgr_cfg.get("cmd", ""),
                 delay=procmgr_cfg.get("delay", 0),
                 history=procmgr_cfg.get("history", []),

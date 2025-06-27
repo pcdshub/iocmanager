@@ -259,6 +259,8 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
         if "PSPKG_RELEASE" in text:
             env_kind = "pspkg"
             env_version = text.split("=")[-1].strip("'\"")
+        elif "PSPKG_ROOT" in text:
+            env_kind = "pspkg"
         elif "PCDS_CONDA_VER" in text:
             env_kind = "conda"
             env_version = text.split("=")[-1].strip("'\"")

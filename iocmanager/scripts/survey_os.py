@@ -124,11 +124,16 @@ class IOCResult:
     supported_os: str
     enabled: bool
     hostname: str
+    snowflake: bool
 
     @classmethod
     def from_ioc_proc[T: IOCResult](cls: type[T], ioc_proc: IOCProc) -> T:
         current_os = get_one_host_os(ioc_proc.host)
         common_ioc = get_common_ioc(ioc_proc.parent)
+        snowflake = False
+        if common_ioc == UNKNOWN and ioc_proc.path == ioc_proc.parent:
+            common_ioc = ioc_proc.path
+            snowflake = True
         if common_ioc.startswith(REG):
             common_ioc = common_ioc.replace(REG, CDS, 1)
         if PACKAGE in common_ioc:
@@ -137,9 +142,10 @@ class IOCResult:
         if name in RENAMES:
             common_ioc = str(Path(common_ioc).parent / RENAMES[name])
         supported_os = get_supported_os(common_ioc)
-        if current_os == UNKNOWN and "rhel" not in supported_os:
-            # Small hack: assume the weird OSes are as they should be on the host
+        if current_os == UNKNOWN and ioc_proc.hard:
             current_os = supported_os
+        if not common_ioc.startswith("/cds/group/pcds/epics/ioc/common"):
+            snowflake = True
         return cls(
             name=ioc_proc.name,
             current_os=current_os,
@@ -147,40 +153,75 @@ class IOCResult:
             supported_os=supported_os,
             enabled=not ioc_proc.disable,
             hostname=ioc_proc.host,
+            snowflake=snowflake,
         )
 
 
 @dataclasses.dataclass
 class SurveyStats:
     ioc_count: int
-    common_ready_count: int
-    common_ready_percent: float
+    ready_count: int
+    waiting_for_common_count: int
     remaining_common_by_ioc: dict[str, int]
     live_os_ioc_count: dict[str, int]
-    live_os_percent: dict[str, float]
     iocs_with_unk_common: list[str]
     common_with_unk_os: list[str]
     hosts_with_unk_os: set[str]
+    python_upgrade: list[str]
+    snowflakes: list[str]
+    no_upgrade_needed: list[str]
 
     def print_data(self):
-        print(
-            f"{self.common_ready_percent:.2f}% "
-            f"({self.common_ready_count}/{self.ioc_count}) "
-            "of IOCs ready to migrate."
-        )
-        for common_ioc, count in sorted(
-            self.remaining_common_by_ioc.items(), key=lambda x: x[1], reverse=True
-        ):
-            print(f"{count} IOCs waiting on {common_ioc}")
+        print(f"There are {self.ioc_count} IOCs total.")
         for os_name in list(HOST_OS_TO_NAME.values()):
             count = self.live_os_ioc_count[os_name]
             if not count:
                 continue
             print(
-                f"{self.live_os_percent[os_name]:.2f}% "
+                f"{100 * count / self.ioc_count:.2f}% "
                 f"({count}/{self.ioc_count}) "
-                f"of IOCs running {os_name}."
+                f"of IOCs run {os_name}."
             )
+        print(
+            f"{100 * self.ready_count / self.ioc_count:.2f}% "
+            f"({self.ready_count}/{self.ioc_count}) "
+            "of IOCs are migrated or migration-ready."
+        )
+        print(
+            f"{100 * self.waiting_for_common_count / self.ioc_count:.2f}% "
+            f"({self.waiting_for_common_count}/{self.ioc_count}) "
+            "of IOCs are waiting for common IOC updates:"
+        )
+        for common_ioc, count in sorted(
+            self.remaining_common_by_ioc.items(), key=lambda x: x[1], reverse=True
+        ):
+            print(f"{count} IOCs waiting on {common_ioc}")
+        if self.snowflakes:
+            print(
+                f"{100 * len(self.snowflakes) / self.ioc_count:.2f}% "
+                f"({len(self.snowflakes)}/{self.ioc_count}) "
+                "of IOCs are custom one-offs that "
+                "will need manual upgrades. "
+                "Their names are:"
+            )
+            for name in self.snowflakes:
+                print(name)
+        if self.python_upgrade:
+            print(
+                f"{100 * len(self.python_upgrade) / self.ioc_count:.2f}% "
+                f"({len(self.python_upgrade)}/{self.ioc_count}) "
+                "of IOCs are python-based IOCs "
+                "using outdated versions of Python. "
+                "Their names are:"
+            )
+            for name in self.python_upgrade:
+                print(name)
+        if (
+            self.iocs_with_unk_common
+            or self.common_with_unk_os
+            or self.hosts_with_unk_os
+        ):
+            print("The following are errors with the script output:")
         if self.iocs_with_unk_common:
             print(
                 "The following IOCs' common IOC could not be found: "
@@ -200,18 +241,30 @@ class SurveyStats:
     @classmethod
     def from_results[T: SurveyStats](cls: type[T], results: Iterable[IOCResult]) -> T:
         ioc_count = 0
-        common_ready_count = 0
+        ready_count = 0
+        waiting_for_common_count = 0
         remaining_common_by_ioc = defaultdict(int)
         live_os_ioc_count = dict.fromkeys(list(HOST_OS_TO_NAME.values()), 0)
         iocs_with_unk_common = []
         common_with_unk_os = []
         hosts_with_unk_os = set()
+        python_upgrade = []
+        snowflakes = []
+        no_upgrade_needed = []
         for res in results:
             ioc_count += 1
             if res.supported_os == GOAL_OS:
-                common_ready_count += 1
+                ready_count += 1
             elif res.supported_os in NEEDS_UPGRADE:
-                remaining_common_by_ioc[res.common_ioc] += 1
+                if res.common_ioc in ("pspkg", "python"):
+                    python_upgrade.append(res.name)
+                elif res.snowflake:
+                    snowflakes.append(res.name)
+                else:
+                    remaining_common_by_ioc[res.common_ioc] += 1
+                    waiting_for_common_count += 1
+            else:
+                no_upgrade_needed.append(res.name)
             live_os_ioc_count[HOST_OS_TO_NAME.get(res.current_os, res.current_os)] += 1
             if res.common_ioc == UNKNOWN:
                 iocs_with_unk_common.append(res.name)
@@ -221,21 +274,18 @@ class SurveyStats:
                 hosts_with_unk_os.add(res.hostname)
         if ioc_count == 0:
             raise RuntimeError("No IOCs in results!")
-        common_ready_percent = 100 * (common_ready_count / ioc_count)
-        live_os_percent = {
-            os_name: 100 * os_count / ioc_count
-            for os_name, os_count in live_os_ioc_count.items()
-        }
         return cls(
             ioc_count=ioc_count,
-            common_ready_count=common_ready_count,
-            common_ready_percent=common_ready_percent,
+            ready_count=ready_count,
+            waiting_for_common_count=waiting_for_common_count,
             remaining_common_by_ioc=dict(remaining_common_by_ioc),
             live_os_ioc_count=live_os_ioc_count,
-            live_os_percent=live_os_percent,
             iocs_with_unk_common=iocs_with_unk_common,
             common_with_unk_os=common_with_unk_os,
             hosts_with_unk_os=hosts_with_unk_os,
+            python_upgrade=python_upgrade,
+            snowflakes=snowflakes,
+            no_upgrade_needed=no_upgrade_needed,
         )
 
 
