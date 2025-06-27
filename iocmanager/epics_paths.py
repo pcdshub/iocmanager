@@ -178,6 +178,10 @@ def _get_parent(directory: str, ioc_name: str) -> str:
     except Exception:
         ...
     try:
+        return makefile_parent(directory=directory, ioc_name=ioc_name)
+    except Exception:
+        ...
+    try:
         return pyioc_parent(directory=directory, ioc_name=ioc_name)
     except Exception:
         ...
@@ -235,11 +239,30 @@ def stcmd_parent(directory: str, ioc_name: str) -> str:
         path = match.group(1)
         if path.startswith(os.sep):
             # Absolute path
-            return path
-        # Relative path: relative to this file location?
-        return os.path.abspath(os.path.join(os.path.dirname(stcmd), path))
+            candidate = path
+        else:
+            # Relative path: relative to this file location?
+            candidate = os.path.abspath(os.path.join(os.path.dirname(stcmd), path))
+        if os.path.exists(candidate):
+            return candidate
+        else:
+            raise RuntimeError(f"Invalid parent path {candidate}")
     # Try to identify python iocs
     raise RuntimeError(f"Invalid shebang {line}")
+
+
+def makefile_parent(directory: str, ioc_name: str) -> str:
+    """
+    Get the parent assuming we have a Makefile with an IOC_TOP that is the parent.
+    """
+    stcmd = get_stcmd(directory=directory, ioc_name=ioc_name)
+    makefile = os.path.join(os.path.dirname(stcmd), "Makefile")
+    with open(makefile, "r") as fd:
+        lines = fd.readlines()
+    for line in lines:
+        if "IOC_TOP" in line:
+            return line.split("=")[-1].strip()
+    raise RuntimeError("Did not find IOC_TOP in Makefile")
 
 
 def pyioc_parent(directory: str, ioc_name: str) -> str:
