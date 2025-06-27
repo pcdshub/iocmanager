@@ -180,6 +180,10 @@ def _get_parent(directory: str, ioc_name: str) -> str:
         return pyioc_parent(directory=directory, ioc_name=ioc_name)
     except Exception:
         ...
+    try:
+        return self_parent(directory=directory)
+    except Exception:
+        ...
     return ""
 
 
@@ -280,6 +284,15 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
                 if package in line:
                     return f"{package} {env_kind} {env_version}"
     return f"unknown {env_kind} {env_version}"
+
+
+def self_parent(directory: str) -> str:
+    """
+    Check if directory is already a parent-like IOC
+    """
+    if os.path.exists(os.path.join(directory, "bin")):
+        return directory
+    raise RuntimeError(f"{directory} definitely not self parented")
 
 
 def epics_readlines(filename: str) -> list[str]:

@@ -8,6 +8,7 @@ import datetime
 import functools
 import logging
 import os
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -346,7 +347,7 @@ def get_common_ioc(parent_ioc: str) -> str:
     if parent_ioc.startswith("ioc/"):
         return str((Path(env_paths.EPICS_SITE_TOP) / parent_ioc).parent)
     parent_path = Path(parent_ioc)
-    if parent_ioc.startswith(env_paths.EPICS_SITE_TOP):
+    if parent_ioc.startswith(os.path.join(env_paths.EPICS_SITE_TOP, "ioc")):
         return str(parent_path.parent)
     # Something weird with the paths, but it's a versioned dir
     if parent_path.name.startswith("R"):
@@ -360,17 +361,21 @@ def get_common_ioc(parent_ioc: str) -> str:
     # It might not even have a normal name.
     # Do our best.
     # Variant 1: /some/path/to/ioc-common-name
-    if parent_path.name.startswith("ioc-common-"):
-        guess = parent_path.name.removeprefix("ioc-common-")
+    if parent_path.name.startswith("ioc-"):
+        parts = parent_path.name.split("-")
+        area = parts[1]
+        name = "-".join(parts[2:])
         try:
-            return path_from_guess(guess=guess)
+            return path_from_guess(name=name, area=area)
         except RuntimeError:
             ...
     # Variant 2: /some/path/to/ioc/common/name/something
-    if "/ioc/common/" in parent_ioc:
-        guess = parent_ioc.split("/ioc/common/")[-1].split(os.sep)[0]
+    match = re.match(r".*/ioc/(.*)/(.*)/.*", parent_ioc)
+    if match is not None:
+        area = match.group(1)
+        name = match.group(2)
         try:
-            return path_from_guess(guess=guess)
+            return path_from_guess(name=name, area=area)
         except RuntimeError:
             ...
     # Might not even be EPICS, check for python stuff
@@ -381,13 +386,13 @@ def get_common_ioc(parent_ioc: str) -> str:
     return UNKNOWN
 
 
-def path_from_guess(guess: str) -> str:
-    ioc_common = Path(env_paths.EPICS_SITE_TOP) / "ioc" / "common"
-    guess = RENAMES.get(guess.lower(), guess)
-    for ioc_path in ioc_common.glob("*"):
-        if ioc_path.name.lower() == guess.lower():
+def path_from_guess(name: str, area) -> str:
+    ioc_area = Path(env_paths.EPICS_SITE_TOP) / "ioc" / area
+    name = RENAMES.get(name.lower(), name)
+    for ioc_path in ioc_area.glob("*"):
+        if ioc_path.name.lower() == name.lower():
             return str(ioc_path)
-    raise RuntimeError(f"Could not find a match for {guess}")
+    raise RuntimeError(f"Could not find a match for {name} in {area}")
 
 
 @functools.lru_cache(maxsize=1024)
