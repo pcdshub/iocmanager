@@ -85,6 +85,15 @@ def get_parser() -> argparse.ArgumentParser:
             "If omitted, generate for all hutches."
         ),
     )
+    parser.add_argument(
+        "--include-disabled",
+        action="store_true",
+        help=(
+            "If this argument is passed, disabled IOCs "
+            "are included in the output. The default "
+            "is to only consider enabled IOCs."
+        ),
+    )
     return parser
 
 
@@ -367,12 +376,14 @@ def main(sys_argv: list[str] | None = None) -> int:
         hutches = [args.hutch]
     results = SurveyResult.from_hutch_list(hutch_list=hutches)
     for hutch_res in results.hutch_results:
-        print(f"{hutch_res.hutch} results: (enabled only)")
-        SurveyStats.from_results(
-            res for res in hutch_res.ioc_results if res.enabled
-        ).print_data()
-        print(f"{hutch_res.hutch} results: (all iocs)")
-        SurveyStats.from_results(hutch_res.ioc_results).print_data()
+        if args.include_disabled:
+            print(f"{hutch_res.hutch} results: (all iocs)")
+            SurveyStats.from_results(hutch_res.ioc_results).print_data()
+        else:
+            print(f"{hutch_res.hutch} results: (enabled only)")
+            SurveyStats.from_results(
+                res for res in hutch_res.ioc_results if res.enabled
+            ).print_data()
         logger.debug(hutch_res)
     return 0
 
