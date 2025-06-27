@@ -199,9 +199,14 @@ def cfg_parent(directory: str, ioc_name: str) -> str:
     filename = os.path.join(directory, ioc_name + ".cfg")
     try:
         lines = epics_readlines(filename)
+        if os.path.basename(directory) == "children":
+            updir = os.path.dirname(directory)
+        else:
+            updir = directory
     except Exception:
         filename = os.path.join(directory, "children", ioc_name + ".cfg")
         lines = epics_readlines(filename)
+        updir = directory
     # Only the last RELEASE variable counts
     for ln in reversed(lines):
         m = eqqq.search(ln)
@@ -221,7 +226,7 @@ def cfg_parent(directory: str, ioc_name: str) -> str:
             if var == "RELEASE":
                 val = val.replace(
                     "$$PATH/", directory + "/" + ioc_name + ".cfg"
-                ).replace("$$UP(PATH)", directory)
+                ).replace("$$UP(PATH)", updir)
                 return val
     raise RuntimeError(f"Can not find cfg parent for {ioc_name} in {directory}")
 
