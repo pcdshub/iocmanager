@@ -33,8 +33,25 @@ ALL_HUTCHES = [
     "mec",
     "all",
 ]
-OS_PRIORITY = ["rhel9", "rhel7", "rhel5", "rtems", "ang_v2017"]
+GOAL_OS = "rocky9"
 UNKNOWN = "Unknown"
+ARCH_TO_NAME = {
+    "rhel9-x86_64": "rocky9",
+    "rhel7-x86_64": "rhel7",
+    "linux-x86_64": "rhel5",
+    "linux-x86": "rhel5",
+    "linux-arm-apalis": "mpod-apalis",
+    "RTEMS-beatnik": "rtems",
+    UNKNOWN: UNKNOWN,
+}
+HOST_OS_TO_NAME = {
+    "rhel9": "rocky9",
+    "rhel7": "rhel7",
+    "rhel5": "rhel5",
+    "ang_v2017": "mpod-apalis",
+    UNKNOWN: UNKNOWN,
+}
+
 RENAMES = {
     "leviton": "pdu_snmp",
     "arcus_dmx": "arcus",
@@ -121,7 +138,7 @@ class SurveyStats:
             self.remaining_common_by_ioc.items(), key=lambda x: x[1], reverse=True
         ):
             print(f"{count} IOCs waiting on {common_ioc}")
-        for os_name in OS_PRIORITY + [UNKNOWN]:
+        for os_name in list(HOST_OS_TO_NAME.values()):
             count = self.live_os_ioc_count[os_name]
             if not count:
                 continue
@@ -146,16 +163,16 @@ class SurveyStats:
         ioc_count = 0
         common_ready_count = 0
         remaining_common_by_ioc = defaultdict(int)
-        live_os_ioc_count = dict.fromkeys(OS_PRIORITY + [UNKNOWN], 0)
+        live_os_ioc_count = dict.fromkeys(list(HOST_OS_TO_NAME.values()), 0)
         iocs_with_unk_common = []
         common_with_unk_os = []
         for res in results:
             ioc_count += 1
-            if res.supported_os == OS_PRIORITY[0]:
+            if res.supported_os == GOAL_OS:
                 common_ready_count += 1
             else:
                 remaining_common_by_ioc[res.common_ioc] += 1
-            live_os_ioc_count[res.current_os] += 1
+            live_os_ioc_count[HOST_OS_TO_NAME[res.current_os]] += 1
             if res.common_ioc == UNKNOWN:
                 iocs_with_unk_common.append(res.name)
             elif res.supported_os == UNKNOWN:
@@ -305,12 +322,12 @@ def get_supported_os(common_ioc: str) -> str:
             ...
     if latest_version is None:
         return UNKNOWN
-    for os_name in OS_PRIORITY:
+    for arch in ARCH_TO_NAME:
         binaries = list(
-            (Path(common_ioc) / f"R{latest_version}" / "bin").glob(f"{os_name}*/*")
+            (Path(common_ioc) / f"R{latest_version}" / "bin").glob(f"{arch}/*")
         )
         if binaries:
-            return os_name
+            return ARCH_TO_NAME[arch]
     return UNKNOWN
 
 
