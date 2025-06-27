@@ -118,6 +118,9 @@ class IOCResult:
         if name in RENAMES:
             common_ioc = str(Path(common_ioc).parent / RENAMES[name])
         supported_os = get_supported_os(common_ioc)
+        if current_os == UNKNOWN and "rhel" not in supported_os:
+            # Small hack: assume the weird OSes are as they should be on the host
+            current_os = supported_os
         return cls(
             name=ioc_proc.name,
             current_os=current_os,
@@ -190,7 +193,7 @@ class SurveyStats:
                 common_ready_count += 1
             else:
                 remaining_common_by_ioc[res.common_ioc] += 1
-            live_os_ioc_count[HOST_OS_TO_NAME[res.current_os]] += 1
+            live_os_ioc_count[HOST_OS_TO_NAME.get(res.current_os, res.current_os)] += 1
             if res.common_ioc == UNKNOWN:
                 iocs_with_unk_common.append(res.name)
             elif res.supported_os == UNKNOWN:
