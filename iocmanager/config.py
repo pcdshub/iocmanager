@@ -102,11 +102,10 @@ class IOCProc:
     def __post_init__(self):
         if self.name == self.host:
             self.hard = True
-        else:
-            try:
-                self.parent = get_parent(self.path, self.name)
-            except Exception:
-                ...
+        try:
+            self.parent = get_parent(self.path, self.name)
+        except Exception:
+            ...
 
 
 @dataclass(eq=True)
