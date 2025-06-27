@@ -95,6 +95,7 @@ class IOCResult:
     common_ioc: str
     supported_os: str
     enabled: bool
+    hostname: str
 
     @classmethod
     def from_ioc_proc[T: IOCResult](cls: type[T], ioc_proc: IOCProc) -> T:
@@ -114,6 +115,7 @@ class IOCResult:
             common_ioc=common_ioc,
             supported_os=supported_os,
             enabled=not ioc_proc.disable,
+            hostname=ioc_proc.host,
         )
 
 
@@ -127,6 +129,7 @@ class SurveyStats:
     live_os_percent: dict[str, float]
     iocs_with_unk_common: list[str]
     common_with_unk_os: list[str]
+    hosts_with_unk_os: set[str]
 
     def print_data(self):
         print(
@@ -154,8 +157,13 @@ class SurveyStats:
             )
         if self.common_with_unk_os:
             print(
-                "The following common IOC OSes could not be found: "
+                "The following common IOC supported OSes could not be found: "
                 f"{self.common_with_unk_os}"
+            )
+        if self.hosts_with_unk_os:
+            print(
+                "The following hosts' live OSes could not be found: "
+                f"{self.hosts_with_unk_os}"
             )
 
     @classmethod
@@ -166,6 +174,7 @@ class SurveyStats:
         live_os_ioc_count = dict.fromkeys(list(HOST_OS_TO_NAME.values()), 0)
         iocs_with_unk_common = []
         common_with_unk_os = []
+        hosts_with_unk_os = set()
         for res in results:
             ioc_count += 1
             if res.supported_os == GOAL_OS:
@@ -177,6 +186,8 @@ class SurveyStats:
                 iocs_with_unk_common.append(res.name)
             elif res.supported_os == UNKNOWN:
                 common_with_unk_os.append(res.common_ioc)
+            if res.current_os == UNKNOWN:
+                hosts_with_unk_os.add(res.hostname)
         if ioc_count == 0:
             raise RuntimeError("No IOCs in results!")
         common_ready_percent = 100 * (common_ready_count / ioc_count)
@@ -193,6 +204,7 @@ class SurveyStats:
             live_os_percent=live_os_percent,
             iocs_with_unk_common=iocs_with_unk_common,
             common_with_unk_os=common_with_unk_os,
+            hosts_with_unk_os=hosts_with_unk_os,
         )
 
 
