@@ -100,8 +100,6 @@ class IOCProc:
     hard: bool = False
 
     def __post_init__(self):
-        if self.name == self.host and "camrecord" not in self.path:
-            self.hard = True
         try:
             self.parent = get_parent(self.path, self.name)
         except Exception:
@@ -204,6 +202,8 @@ class Config:
 config_cache: dict[str, Config] = {}
 
 
+# TODO bring back hard ioc configuration somehow (through whole app)
+# TODO No IOCs in live config have the "hard" tag
 def read_config(cfgname: str) -> Config:
     """
     Read the configuration file for a given hutch.
