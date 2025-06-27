@@ -428,11 +428,20 @@ def get_supported_os(common_ioc: str) -> str:
     latest_version = None
     for version_dir in Path(common_ioc).glob("R*"):
         this_version = version_dir.name.removeprefix("R")
+        version_parts = this_version.split("-")
         try:
             if latest_version is None:
-                latest_version = Version(this_version)
+                latest_version = [Version(ver) for ver in version_parts]
             else:
-                new_version = Version(this_version)
+                new_version = [Version(ver) for ver in version_parts]
+                for latest_part, new_part in zip(
+                    latest_version, new_version, strict=True
+                ):
+                    if new_part > latest_part:
+                        latest_version = new_version
+                        break
+                    if new_part < latest_part:
+                        break
                 if new_version > latest_version:
                     latest_version = new_version
         except InvalidVersion:
@@ -440,7 +449,8 @@ def get_supported_os(common_ioc: str) -> str:
     if latest_version is None:
         path_to_try = Path(common_ioc)
     else:
-        path_to_try = Path(common_ioc) / f"R{latest_version}"
+        version_str = "-".join(str(ver) for ver in latest_version)
+        path_to_try = Path(common_ioc) / f"R{version_str}"
     for arch in ARCH_TO_NAME:
         binaries = list((path_to_try / "bin").glob(f"{arch}/*"))
         if binaries:
