@@ -35,6 +35,7 @@ ALL_HUTCHES = [
 ]
 GOAL_OS = "rocky9"
 UNKNOWN = "Unknown"
+NEEDS_UPGRADE = ("rhel7", "rhel5", UNKNOWN)
 ARCH_TO_NAME = {
     "rhel9-x86_64": "rocky9",
     "rhel7-x86_64": "rhel7",
@@ -191,7 +192,7 @@ class SurveyStats:
             ioc_count += 1
             if res.supported_os == GOAL_OS:
                 common_ready_count += 1
-            else:
+            elif res.supported_os in NEEDS_UPGRADE:
                 remaining_common_by_ioc[res.common_ioc] += 1
             live_os_ioc_count[HOST_OS_TO_NAME.get(res.current_os, res.current_os)] += 1
             if res.common_ioc == UNKNOWN:
