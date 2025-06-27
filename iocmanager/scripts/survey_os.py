@@ -159,7 +159,9 @@ class IOCResult:
         if snowflake and ioc_proc.parent and common_ioc == UNKNOWN:
             common_ioc = ioc_proc.parent
         supported_os = get_supported_os(common_ioc)
-        if current_os == UNKNOWN and ioc_proc.hard:
+        if current_os == UNKNOWN and "rhel" not in supported_os:
+            # Hack: just assume the live thing matches
+            # I don't care about non-rhel today
             current_os = supported_os
         return cls(
             name=ioc_proc.name,
