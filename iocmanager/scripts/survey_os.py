@@ -62,6 +62,11 @@ REG = "/reg/g"
 CDS = "/cds/group"
 PACKAGE = "package/epics/3.14/ioc"
 NOPACK = "epics/ioc"
+# Include a comment with each please
+HARD_CODE_COMMON_IOCS = {
+    # parent is a dev dir called ek9000_tmo
+    "ioc-bhc-peppex": "ek9000",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +135,12 @@ class IOCResult:
     @classmethod
     def from_ioc_proc[T: IOCResult](cls: type[T], ioc_proc: IOCProc) -> T:
         current_os = get_one_host_os(ioc_proc.host)
-        common_ioc = get_common_ioc(ioc_proc.parent)
+        try:
+            hc_ioc = HARD_CODE_COMMON_IOCS[ioc_proc.name]
+        except KeyError:
+            common_ioc = get_common_ioc(ioc_proc.parent)
+        else:
+            common_ioc = f"/cds/group/pcds/epics/ioc/common/{hc_ioc}"
         snowflake = False
         if common_ioc == UNKNOWN and ioc_proc.path == ioc_proc.parent:
             common_ioc = ioc_proc.path
