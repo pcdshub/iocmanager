@@ -5,6 +5,7 @@ This is everything under EPICS_SITE_TOP.
 """
 
 import glob
+import itertools
 import os
 import re
 
@@ -272,11 +273,22 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
             env_kind = "conda"
             if not env_version:
                 env_version = "latest"
+        elif "conda activate" in text:
+            env_kind = "conda"
+            env_version = text.split(" ")[-1]
     if not env_version:
         env_version = "unknown"
+    # Check for a conda_env in the same dir
+    if os.path.exists(os.path.join(os.path.dirname(stcmd), "conda_env")):
+        env_kind = "conda"
+        env_version = "local"
     # Check the python files in the same repo for some keywords
     python_ioc_frameworks = ("caproto", "pyioc", "pcaspy")
-    for filepath in glob.glob(os.path.join(os.path.dirname(stcmd), "*.py")):
+    for filepath in itertools.chain(
+        glob.glob(os.path.join(os.path.dirname(stcmd), "*.py")),
+        glob.glob(os.path.join(os.path.dirname(stcmd), "**/*.py")),
+        glob.glob(os.path.join(os.path.dirname(stcmd), "**/**/*.py")),
+    ):
         with open(filepath, "r") as fd:
             lines = fd.readlines()
         for package in python_ioc_frameworks:
@@ -290,6 +302,8 @@ def self_parent(directory: str) -> str:
     """
     Check if directory is already a parent-like IOC
     """
+    if not os.path.isabs(directory):
+        directory = os.path.join(env_paths.EPICS_SITE_TOP, directory)
     if os.path.exists(os.path.join(directory, "bin")):
         return directory
     raise RuntimeError(f"{directory} definitely not self parented")

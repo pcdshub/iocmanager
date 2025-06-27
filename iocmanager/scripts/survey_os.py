@@ -66,6 +66,8 @@ NOPACK = "epics/ioc"
 HARD_CODE_COMMON_IOCS = {
     # parent is a dev dir called ek9000_tmo
     "ioc-bhc-peppex": "ek9000",
+    # common ioc has no releases
+    "ioc-qrix-cryo-01": "cryotel",
 }
 
 logger = logging.getLogger(__name__)
@@ -152,11 +154,13 @@ class IOCResult:
         name = Path(common_ioc).name.lower()
         if name in RENAMES:
             common_ioc = str(Path(common_ioc).parent / RENAMES[name])
+        if not common_ioc.startswith("/cds/group/pcds/epics/ioc/common"):
+            snowflake = True
+        if snowflake and ioc_proc.parent and common_ioc == UNKNOWN:
+            common_ioc = ioc_proc.parent
         supported_os = get_supported_os(common_ioc)
         if current_os == UNKNOWN and ioc_proc.hard:
             current_os = supported_os
-        if not common_ioc.startswith("/cds/group/pcds/epics/ioc/common"):
-            snowflake = True
         return cls(
             name=ioc_proc.name,
             current_os=current_os,
@@ -388,6 +392,11 @@ def get_common_ioc(parent_ioc: str) -> str:
             return path_from_guess(name=name, area=area)
         except RuntimeError:
             ...
+    # Variant 3: /some/arbitrary/path/ending/in/name
+    try:
+        return path_from_guess(name=parent_path.name, area="common")
+    except RuntimeError:
+        ...
     # Might not even be EPICS, check for python stuff
     for option in ("conda", "pspkg", "python"):
         if option in parent_ioc:
@@ -429,11 +438,11 @@ def get_supported_os(common_ioc: str) -> str:
         except InvalidVersion:
             ...
     if latest_version is None:
-        return UNKNOWN
+        path_to_try = Path(common_ioc)
+    else:
+        path_to_try = Path(common_ioc) / f"R{latest_version}"
     for arch in ARCH_TO_NAME:
-        binaries = list(
-            (Path(common_ioc) / f"R{latest_version}" / "bin").glob(f"{arch}/*")
-        )
+        binaries = list((path_to_try / "bin").glob(f"{arch}/*"))
         if binaries:
             return ARCH_TO_NAME[arch]
     return UNKNOWN
