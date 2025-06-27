@@ -95,6 +95,24 @@ def get_parser() -> argparse.ArgumentParser:
             "is to only consider enabled IOCs."
         ),
     )
+    parser.add_argument(
+        "--debug-ioc",
+        default="",
+        help=(
+            "Pass an IOC name to check just that IOC and do a debug print "
+            "instead of the nice user-facing print. "
+            "Requires --hutch to be passed."
+        ),
+    )
+    parser.add_argument(
+        "--debug-common",
+        default="",
+        help=(
+            "Show details on all IOCs that use a specific common IOC. "
+            "Incompatible with --debug-ioc and always includes disabled "
+            "iocs."
+        ),
+    )
     return parser
 
 
@@ -378,9 +396,20 @@ def main(sys_argv: list[str] | None = None) -> int:
         hutches = ALL_HUTCHES
     else:
         hutches = [args.hutch]
+    if args.debug_ioc:
+        config = read_config(args.hutch)
+        ioc_proc = config.procs[args.debug_ioc]
+        print(ioc_proc)
+        result = IOCResult.from_ioc_proc(ioc_proc=ioc_proc)
+        print(result)
+        return 0
     results = SurveyResult.from_hutch_list(hutch_list=hutches)
     for hutch_res in results.hutch_results:
-        if args.include_disabled:
+        if args.debug_common:
+            for res in hutch_res.ioc_results:
+                if res.common_ioc == args.debug_common:
+                    print(res)
+        elif args.include_disabled:
             print(f"{hutch_res.hutch} results: (all iocs)")
             SurveyStats.from_results(hutch_res.ioc_results).print_data()
         else:
