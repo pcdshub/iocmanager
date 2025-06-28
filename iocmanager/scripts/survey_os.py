@@ -424,7 +424,7 @@ def get_supported_os(common_ioc: str) -> str:
     The input should be the path that contains the versioned subdirectories.
     """
     if common_ioc == "conda":
-        return "rhel9"
+        return "rocky9"
     elif common_ioc in ("pspkg", "python"):
         return "rhel7"
     latest_version = None
@@ -497,12 +497,16 @@ def main(sys_argv: list[str] | None = None) -> int:
                     print(res)
         elif args.include_disabled:
             print(f"{hutch_res.hutch} results: (all iocs)")
-            SurveyStats.from_results(hutch_res.ioc_results).print_data()
+            stats = SurveyStats.from_results(hutch_res.ioc_results)
+            stats.print_data()
+            logger.debug(stats)
         else:
             print(f"{hutch_res.hutch} results: (enabled only)")
-            SurveyStats.from_results(
+            stats = SurveyStats.from_results(
                 res for res in hutch_res.ioc_results if res.enabled
-            ).print_data()
+            )
+            stats.print_data()
+            logger.debug(stats)
         logger.debug(hutch_res)
     return 0
 
