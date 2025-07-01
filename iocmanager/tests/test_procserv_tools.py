@@ -413,6 +413,7 @@ def test_apply_config(
         port: int | None = None,
         disable: bool = False,
         directory: str | None = None,
+        hard: bool = False,
     ):
         return IOCProc(
             name=name,
@@ -420,6 +421,7 @@ def test_apply_config(
             host=host or f"ctl-pytest-{name}",
             path=directory or f"ioc/pytest/{name}",
             disable=disable,
+            hard=hard,
         )
 
     def basic_fake_status(
@@ -582,7 +584,7 @@ def test_apply_config(
         not_restart_args.append(restart_1_args)
 
     # Always include a hard ioc, it should be ignored
-    hioc_cfg = basic_fake_config(name="hioc-pytest", host="hioc-pytest")
+    hioc_cfg = basic_fake_config(name="hioc-pytest", host="hioc-pytest", hard=True)
     read_config_result.add_proc(hioc_cfg)
     not_start_args.append((hioc_cfg.host, hioc_cfg.port))
     not_kill_args.append((hioc_cfg.host, hioc_cfg.port))

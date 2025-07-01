@@ -100,8 +100,7 @@ def test_get_parent(monkeypatch: pytest.MonkeyPatch):
     # Not a real file
     name2 = "asdfasefef"
     assert not (common_path / "children" / f"{name2}.cfg").exists()
-    with pytest.raises(OSError):
-        get_parent(str(common_path), name2)
+    assert get_parent(str(common_path), name2) == ""
 
     # Set up fake epics_readlines for more specific regex testing
     release_line = ""

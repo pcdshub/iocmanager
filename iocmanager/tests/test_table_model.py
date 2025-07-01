@@ -361,6 +361,7 @@ def test_get_display_data(
             port=30001,
             host="hard_ioc",
             path="/such/path/wow",
+            hard=True,
         )
     )
     model.add_ioc(
@@ -832,6 +833,7 @@ def test_flags(
             port=40001,
             host="some_hioc",
             path="ioc/some/path",
+            hard=True,
         )
     )
     assert model.flags(index=model.index(row, column)) == expected

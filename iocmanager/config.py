@@ -81,10 +81,9 @@ class IOCProc:
         This will be automatically determined at object creation and
         does not need to be manually included.
     hard : bool, automatic
-        True if this is a hard ioc on some embedded non-linux system.
-        False if this is a soft ioc running on linux.
-        This will be automatically determined at object creation and
-        does not need to be manually included.
+        True if this is a hard ioc on some embedded system.
+        False if this is a soft ioc running on standard linux.
+        This must be manually included.
     """
 
     name: str

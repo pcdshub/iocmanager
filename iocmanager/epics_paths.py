@@ -163,7 +163,7 @@ def get_parent(directory: str, ioc_name: str) -> str:
         or an empty string if one could not be determined.
     """
     parent = _get_parent(directory=directory, ioc_name=ioc_name)
-    if os.pathsep in parent:
+    if os.sep in parent:
         return normalize_path(directory=parent, ioc_name=ioc_name)
     return parent
 
