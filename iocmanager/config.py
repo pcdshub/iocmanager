@@ -28,6 +28,7 @@ from tempfile import NamedTemporaryFile
 
 from .env_paths import env_paths
 from .epics_paths import get_parent
+from .hioc_tools import get_hard_ioc_dir_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -201,8 +202,6 @@ class Config:
 config_cache: dict[str, Config] = {}
 
 
-# TODO bring back hard ioc configuration somehow (through whole app)
-# TODO No IOCs in live config have the "hard" tag
 def read_config(cfgname: str) -> Config:
     """
     Read the configuration file for a given hutch.
@@ -272,17 +271,28 @@ def read_config(cfgname: str) -> Config:
     )
     for procmgr_cfg in cfg_env["procmgr_config"]:
         procmgr_cfg: dict
+        name = procmgr_cfg["id"]
+        hard = procmgr_cfg.get("hard", False)
+        if hard:
+            port = -1
+            host = name
+            path = get_hard_ioc_dir_for_display(name)
+        else:
+            port = procmgr_cfg["port"]
+            host = procmgr_cfg["host"]
+            path = procmgr_cfg["dir"]
         config.add_proc(
             IOCProc(
-                name=procmgr_cfg["id"],
-                port=procmgr_cfg["port"],
-                host=procmgr_cfg["host"],
-                path=procmgr_cfg["dir"],
+                name=name,
+                port=port,
+                host=host,
+                path=path,
                 alias=procmgr_cfg.get("alias", ""),
                 disable=procmgr_cfg.get("disable", False),
                 cmd=procmgr_cfg.get("cmd", ""),
                 delay=procmgr_cfg.get("delay", 0),
                 history=procmgr_cfg.get("history", []),
+                hard=hard,
             )
         )
 
@@ -348,10 +358,14 @@ def _cfg_file_lines(config: Config) -> list[str]:
 
     for ioc in sorted(config.procs.values(), key=lambda x: x.name):
         extra = ""
-        if ioc.disable:
+        if ioc.disable and not ioc.hard:
             extra += ", disable: True"
         if ioc.alias:
             extra += f", alias: '{ioc.alias}'"
+        if ioc.hard:
+            # hard ioc only track id, alias, hard
+            # id is also the hostname, port is irrelevant
+            lines.append(f" {{id:'{ioc.name}', hard: True{extra}}},")
         if ioc.history:
             extra += (
                 ",\n  history: ["
