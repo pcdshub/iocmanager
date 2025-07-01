@@ -385,7 +385,6 @@ def args_backcompat(args: list[str], commands: set[str]) -> list[str]:
     return new_args
 
 
-# TODO decide if this should be part of another module, may be useful in GUI
 def guess_hutch(host: str, ioc_name: str) -> str:
     """
     In cases where hutch is not provided, guess given the inputs.

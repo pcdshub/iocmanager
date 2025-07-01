@@ -165,7 +165,6 @@ class EnvPaths:
         This should contain the scripts that procmgrd needs to call.
         It is used as a backup for SCRIPTROOT if unset or empty.
         """
-        # TODO should this be removed in favor of setting SCRIPTROOT directly?
         return f"{self.CONFIG_DIR}/%s/iocmanager/scripts"
 
     @property

@@ -683,7 +683,6 @@ def apply_config(
             wanted[ioc_name] = ioc_proc
 
     # Camera recorders always seem to be in the wrong directory, so cheat!
-    # TODO evaluate what this does and consider for removal
     for iocproc in config.procs.values():
         if iocproc.path == env_paths.CAMRECORD_ROOT:
             try:

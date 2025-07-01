@@ -275,7 +275,6 @@ class ProcServHelper:
             self.toggle_autorestart()
             self.toggle_autorestart()
         # Wait 1s for status to stabilize
-        # TODO make helpers for robust waiting
         time.sleep(1)
 
     def telnet_when_procserv_started(self, timeout: float = 1.0) -> Telnet:

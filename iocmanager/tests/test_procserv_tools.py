@@ -640,9 +640,6 @@ def test_apply_config(
     # Last bit of prep, apply_config expects to be able to remove
     # the ioc status files associated with the IOCs it kills.
     # Let's place a fake status file for every running IOC here.
-    # TODO since I had to do this anyway, I can tear down the fake status dir stuff.
-    # We can just use this "real" mocked status dir.
-    # TODO add assert statement to verify these files existed and were removed
     for isf in read_status_dir_result:
         with open(isf.get_file_location(hutch=CFG), "w") as fd:
             fd.write(f"{isf.pid} {isf.host} {isf.port} {isf.path}")
