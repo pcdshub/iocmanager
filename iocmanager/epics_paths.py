@@ -283,6 +283,7 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
     with open(stcmd, "r") as fd:
         lines = fd.readlines()
     # We want to figure out if we're using PSPKG or pcds_conda and at which version?
+    package = "unknown"
     env_kind = "python"
     env_version = ""
     for line in lines:
@@ -304,12 +305,24 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
         elif "conda activate" in text:
             env_kind = "conda"
             env_version = text.split(" ")[-1]
+        # Special cases for queueserver
+        elif "start-re-manager" in text:
+            package = "queueserver"
+        elif "redis-server" in text:
+            package = "redis"
     if not env_version:
         env_version = "unknown"
-    # Check for a conda_env in the same dir
-    if os.path.exists(os.path.join(os.path.dirname(stcmd), "conda_env")):
-        env_kind = "conda"
-        env_version = "local"
+    for check_dir in (directory, os.path.dirname(stcmd)):
+        # Check for a conda_env in the same dir
+        if os.path.exists(os.path.join(check_dir, "conda_env")):
+            env_kind = "conda"
+            env_version = "local"
+            break
+        # Check for a venv in the same dir
+        elif os.path.exists(os.path.join(check_dir, ".venv")):
+            env_kind = "venv"
+            env_version = "local"
+            break
     # Check the python files in the same repo for some keywords
     python_ioc_frameworks = ("caproto", "pyioc", "pcaspy")
     for filepath in itertools.chain(
@@ -323,7 +336,7 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
             for line in lines:
                 if package in line:
                     return f"{package} {env_kind} {env_version}"
-    return f"unknown {env_kind} {env_version}"
+    return f"{package} {env_kind} {env_version}"
 
 
 def self_parent(directory: str) -> str:

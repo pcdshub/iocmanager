@@ -32,6 +32,8 @@ ALL_HUTCHES = [
     "mfx",
     "cxi",
     "mec",
+    "las",
+    "ued",
     "all",
 ]
 GOAL_OS = "rocky9"
@@ -187,6 +189,8 @@ class SurveyStats:
     python_upgrade: list[str]
     snowflakes: list[str]
     no_upgrade_needed: list[str]
+    iocs_common_ready: dict[str, list[str]]
+    iocs_other_ready: list[str]
 
     def print_data(self):
         print(f"There are {self.ioc_count} IOCs total.")
@@ -204,6 +208,27 @@ class SurveyStats:
             f"({self.ready_count}/{self.ioc_count}) "
             "of IOCs are migrated or migration-ready."
         )
+        if self.iocs_common_ready:
+            print(
+                f"The following {GOAL_OS}-ready common IOCs "
+                "support the following hutch IOCs:"
+            )
+            common_with_count = [
+                (common, len(hutch)) for common, hutch in self.iocs_common_ready.items()
+            ]
+            common_with_count.sort(key=lambda x: x[0])
+            common_with_count.sort(key=lambda x: x[1], reverse=True)
+            for common, count in common_with_count:
+                print(f"{common} supports {count} hutch IOCs:")
+                for ioc_name in self.iocs_common_ready[common]:
+                    print(ioc_name)
+        if self.iocs_other_ready:
+            print(
+                f"The following {len(self.iocs_other_ready)} IOCs "
+                "do not use common IOCs but are ready to be migrated:"
+            )
+            for name in sorted(self.iocs_other_ready):
+                print(name)
         print(
             f"{100 * self.waiting_for_common_count / self.ioc_count:.2f}% "
             f"({self.waiting_for_common_count}/{self.ioc_count}) "
@@ -268,10 +293,20 @@ class SurveyStats:
         python_upgrade = []
         snowflakes = []
         no_upgrade_needed = []
+        iocs_common_ready = defaultdict(list)
+        iocs_other_ready = []
         for res in results:
             ioc_count += 1
             if res.supported_os == GOAL_OS:
                 ready_count += 1
+                if (
+                    res.current_os != GOAL_OS
+                    and res.common_ioc != UNKNOWN
+                    and not res.snowflake
+                ):
+                    iocs_common_ready[res.common_ioc].append(res.name)
+                elif res.current_os != GOAL_OS:
+                    iocs_other_ready.append(res.name)
             elif res.supported_os in NEEDS_UPGRADE:
                 if res.common_ioc in ("pspkg", "python"):
                     python_upgrade.append(res.name)
@@ -303,6 +338,8 @@ class SurveyStats:
             python_upgrade=python_upgrade,
             snowflakes=snowflakes,
             no_upgrade_needed=no_upgrade_needed,
+            iocs_common_ready=dict(iocs_common_ready),
+            iocs_other_ready=iocs_other_ready,
         )
 
 
@@ -400,7 +437,7 @@ def get_common_ioc(parent_ioc: str) -> str:
     except RuntimeError:
         ...
     # Might not even be EPICS, check for python stuff
-    for option in ("conda", "pspkg", "python"):
+    for option in ("conda", "pspkg", "python", "queueserver", "redis"):
         if option in parent_ioc:
             return option
     # Fallback, e.g. no parent IOC
@@ -423,7 +460,7 @@ def get_supported_os(common_ioc: str) -> str:
 
     The input should be the path that contains the versioned subdirectories.
     """
-    if common_ioc == "conda":
+    if common_ioc in ("conda", "queueserver", "redis"):
         return "rocky9"
     elif common_ioc in ("pspkg", "python"):
         return "rhel7"
