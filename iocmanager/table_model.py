@@ -251,24 +251,27 @@ class IOCTableModel(QAbstractTableModel):
             config.delete_proc(ioc_name=ioc_name)
         return config
 
-    def reset_edits(self, needs_refresh: bool = False):
+    def reset_edits(self):
         """
         Removes pending configuration edits.
-
-        Call this after saving the config file, without refreshing.
-        Note that this doesn't ask for a model update, intentionally,
-        since that would cause the pending changes to disappear.
-        We'll update on the next poll, including the now-saved changes.
-
-        Call this with a refresh if the user specifically asked to
-        undo all of their changes.
         """
+        # Removes rows equal to the len of self.add_iocs
+        # Order is config, added, live
+        if self.add_iocs:
+            self.beginRemoveRows(
+                QModelIndex(),
+                len(self.config.procs),
+                len(self.config.procs) + len(self.add_iocs) - 1,
+            )
+            finish_remove = True
+        else:
+            finish_remove = False
         self.add_iocs.clear()
         self.edit_iocs.clear()
         self.delete_iocs.clear()
-        self.refresh_live_only_iocs()
-        if needs_refresh:
-            self._emit_all_changed()
+        if finish_remove:
+            self.endRemoveRows()
+        self.refresh_all()
 
     # Basic helpers
     def get_ioc_info(self, ioc: IOCModelIdentifier) -> IOCModelInfo:
@@ -844,11 +847,31 @@ class IOCTableModel(QAbstractTableModel):
         """
         if config.mtime <= self.config.mtime:
             return
+        # This might add or remove rows in the config section
+        # Order is config, added, live
+        old_size = len(self.config.procs)
+        new_size = len(config.procs)
+        delta = new_size - old_size
+        if delta > 0:
+            self.beginInsertRows(
+                QModelIndex(),
+                old_size,
+                new_size - 1,
+            )
+        elif delta < 0:
+            self.beginRemoveRows(
+                QModelIndex(),
+                new_size,
+                old_size - 1,
+            )
         self.config = config
+        if delta > 0:
+            self.endInsertRows()
+        elif delta < 0:
+            self.endRemoveRows()
         # It should be faster to tell most everything to update than to pick cells
         # Technically we could skip the status columns but it's ok
-        self._emit_all_changed()
-        self.refresh_live_only_iocs()
+        self._emit_config_changed()
 
     def update_from_status_file(self, status_file: IOCStatusFile):
         """
@@ -923,8 +946,8 @@ class IOCTableModel(QAbstractTableModel):
         - self.add_iocs
         - self.edit_iocs
         """
-        had_live_only_iocs = bool(self.live_only_iocs)
-        self.live_only_iocs.clear()
+        old_live_only = self.live_only_iocs
+        new_live_only = {}
         for ioc_name, ioc_live in self.status_live.items():
             if ioc_name in self.config.procs:
                 continue
@@ -934,16 +957,55 @@ class IOCTableModel(QAbstractTableModel):
                 continue
             # We were able to connect to it and get a status
             if ioc_live.status in ("RUNNING", "SHUTDOWN"):
-                self.live_only_iocs[ioc_name] = IOCProc(
+                new_live_only[ioc_name] = IOCProc(
                     name=ioc_name,
                     port=ioc_live.port,
                     host=ioc_live.host,
                     path=ioc_live.path,
                 )
-        if had_live_only_iocs and not self.live_only_iocs:
-            self._emit_all_changed()
-        elif self.live_only_iocs:
+        # This might add or remove rows
+        old_size = len(old_live_only)
+        new_size = len(new_live_only)
+        delta = new_size - old_size
+        if delta > 0:
+            self.beginInsertRows(
+                QModelIndex(),
+                self.rowCount(),
+                self.rowCount() + delta - 1,
+            )
+        elif delta < 0:
+            self.beginRemoveRows(
+                QModelIndex(),
+                self.rowCount() - delta,
+                self.rowCount() - 1,
+            )
+        self.live_only_iocs = new_live_only
+        if delta > 0:
+            self.endInsertRows()
+        elif delta < 0:
+            self.endRemoveRows()
+        if self.live_only_iocs:
             self._emit_live_only_changed()
+
+    def refresh_all(self):
+        """
+        Refresh all information in the table.
+
+        This includes:
+        - The config file information
+        - The live IOC information
+
+        Note: added IOCs only exist as items
+        in this application and do not need to
+        be refreshed.
+        """
+        try:
+            config = read_config(self.hutch)
+        except Exception:
+            ...
+        else:
+            self.update_from_config_file(config)
+        self.refresh_live_only_iocs()
 
     # User Dialogs
     def add_ioc_dialog(self):
@@ -1023,11 +1085,15 @@ class IOCTableModel(QAbstractTableModel):
     def add_ioc(self, ioc_proc: IOCProc):
         """
         Add a completely new IOC to the config.
-
-        Refreshes the bottom few rows of the table (the added IOCs section)
         """
+        add_row = len(self.config.procs) + len(self.add_iocs)
+        self.beginInsertRows(
+            QModelIndex(),
+            add_row,
+            add_row,
+        )
         self.add_iocs[ioc_proc.name] = ioc_proc
-        self._emit_added_changed()
+        self.endInsertRows()
         self.refresh_live_only_iocs()
 
     def delete_ioc(self, ioc: IOCModelIdentifier):
@@ -1039,7 +1105,6 @@ class IOCTableModel(QAbstractTableModel):
         ioc_info = self.get_ioc_info(ioc=ioc)
         self.delete_iocs.add(ioc_info.name)
         self._emit_row_changed(ioc_info.row)
-        self.refresh_live_only_iocs()
 
     def revert_ioc(self, ioc: IOCModelIdentifier):
         """
@@ -1051,6 +1116,12 @@ class IOCTableModel(QAbstractTableModel):
         ioc_info = self.get_ioc_info(ioc=ioc)
         ioc_name = ioc_info.name
         row = ioc_info.row
+        if ioc_name in self.add_iocs:
+            self.beginRemoveRows(
+                QModelIndex(),
+                row,
+                row,
+            )
         undo_add = self.add_iocs.pop(ioc_name, None)
         undo_edit = self.edit_iocs.pop(ioc_name, None)
         try:
@@ -1058,7 +1129,7 @@ class IOCTableModel(QAbstractTableModel):
         except KeyError:
             undo_delete = None
         if undo_add is not None:
-            self._emit_added_changed()
+            self.endRemoveRows()
         elif undo_edit is not None or undo_delete is not None:
             self._emit_row_changed(row=row)
         self.refresh_live_only_iocs()
@@ -1067,6 +1138,13 @@ class IOCTableModel(QAbstractTableModel):
         """Helper for causing a full table update."""
         self.dataChanged.emit(
             self.index(0, 0), self.index(self.rowCount() - 1, self.columnCount() - 1)
+        )
+
+    def _emit_config_changed(self):
+        """Helper for causing an update of only the config file IOCs."""
+        self.dataChanged.emit(
+            self.index(0, 0),
+            self.index(len(self.config.procs) - 1, self.columnCount() - 1),
         )
 
     def _emit_added_changed(self):

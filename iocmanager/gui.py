@@ -178,7 +178,7 @@ class IOCMainWindow(QMainWindow):
                         QMessageBox.Ok,
                     )
             write_config(cfgname=self.hutch, config=self.model.get_next_config())
-            self.model.reset_edits(needs_refresh=False)
+            self.model.reset_edits()
             if comment:
                 commit_config(hutch=self.hutch, comment=comment)
             return True
@@ -192,7 +192,7 @@ class IOCMainWindow(QMainWindow):
 
         Unconditionally discards all pending edits.
         """
-        self.model.reset_edits(needs_refresh=True)
+        self.model.reset_edits()
 
     def action_soft_reboot(self):
         """
