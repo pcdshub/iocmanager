@@ -56,10 +56,14 @@ def normalize_path(directory: str, ioc_name: str) -> str:
     directory = os.sep.join(part)
     # Force /reg or /cds to match user's EPICS_SITE_TOP
     if env_paths.EPICS_SITE_TOP.startswith(MIRROR_ROOTS[0]):
-        directory.replace(MIRROR_ROOTS[1], MIRROR_ROOTS[0], 1)
+        directory = directory.replace(MIRROR_ROOTS[1], MIRROR_ROOTS[0], 1)
     elif env_paths.EPICS_SITE_TOP.startswith(MIRROR_ROOTS[1]):
-        directory.replace(MIRROR_ROOTS[0], MIRROR_ROOTS[1], 1)
-    if directory.startswith(env_paths.EPICS_SITE_TOP):
+        directory = directory.replace(MIRROR_ROOTS[0], MIRROR_ROOTS[1], 1)
+    if (
+        os.path.isabs(directory)
+        and os.path.commonpath((directory, env_paths.EPICS_SITE_TOP))
+        == env_paths.EPICS_SITE_TOP
+    ):
         directory = os.path.relpath(directory, env_paths.EPICS_SITE_TOP)
     for pth in stpaths:
         ext = pth % ("", ioc_name)
