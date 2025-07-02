@@ -88,6 +88,8 @@ class IOCStatusLive:
         The name of the server that the procServ instance was running on.
     path : str
         The startup path of the IOC as reported by procServ.
+        This should essentially always be /tmp, unless we've
+        replaced it with the real path e.g. augmented by IOCStatusFile.
     pid : int | None
         The process id of the IOC process as reported by procServ,
         or None if no process is running.

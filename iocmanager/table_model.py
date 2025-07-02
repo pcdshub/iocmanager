@@ -399,9 +399,12 @@ class IOCTableModel(QAbstractTableModel):
                 autorestart_mode=AutoRestartMode.OFF,
             )
         if ioc_name in self.status_files:
-            for attr in ("port", "host", "path", "pid"):
+            st_file = self.status_files[ioc_name]
+            for attr in ("port", "host", "pid"):
                 if not getattr(live_info, attr):
-                    setattr(live_info, attr, getattr(self.status_files[ioc_name], attr))
+                    setattr(live_info, attr, getattr(st_file, attr))
+            # Replace tmp with the true path
+            live_info.path = st_file.path
         return live_info
 
     def get_ioc_row(self, ioc: IOCModelIdentifier) -> int:
@@ -621,10 +624,22 @@ class IOCTableModel(QAbstractTableModel):
                 ):
                     return Qt.blue
                 # Yellow has priority and means reality != configured (host, port, path)
+                try:
+                    proc_path = normalize_path(
+                        directory=ioc_proc.path, ioc_name=ioc_proc.name
+                    )
+                except Exception:
+                    proc_path = ioc_proc.path
+                try:
+                    live_path = normalize_path(
+                        directory=ioc_live.path, ioc_name=ioc_live.name
+                    )
+                except Exception:
+                    live_path = ioc_live.path
                 if (
                     ioc_proc.host != ioc_live.host
                     or ioc_proc.port != ioc_live.port
-                    or ioc_proc.path != ioc_live.path
+                    or proc_path != live_path
                 ):
                     return Qt.yellow
                 # Green is what we want to see (reality matches config)
