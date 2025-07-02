@@ -623,7 +623,10 @@ class IOCTableModel(QAbstractTableModel):
                     ioc_live.status == ProcServStatus.DOWN and not ioc_proc.disable
                 ):
                     return Qt.blue
-                if ioc_live.status == ProcServStatus.DOWN and ioc_proc.disable:
+                if (
+                    ioc_live.status in (ProcServStatus.DOWN, ProcServStatus.NOCONNECT)
+                    and ioc_proc.disable
+                ):
                     return Qt.green
                 # Yellow has priority and means reality != configured (host, port, path)
                 try:
