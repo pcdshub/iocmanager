@@ -149,7 +149,7 @@ def test_get_live_info(model: IOCTableModel):
             name=ioc_name,
             port=40001,
             host="file_host",
-            path="/ioc/file/path/haha",
+            path="/ioc/file/live",
             pid=12345,
         )
     )
@@ -157,7 +157,7 @@ def test_get_live_info(model: IOCTableModel):
     assert file_info.name == ioc_name
     assert file_info.port == 40001
     assert file_info.host == "file_host"
-    assert file_info.path == "/ioc/file/path/haha"
+    assert file_info.path == "/ioc/file/live"
     assert file_info.status == ProcServStatus.INIT
 
     # Yes status, but it's sparsely populated
@@ -176,7 +176,7 @@ def test_get_live_info(model: IOCTableModel):
     assert file_info2.name == ioc_name
     assert file_info2.port == 40001
     assert file_info2.host == "file_host"
-    assert file_info2.path == "/ioc/file/path/haha"
+    assert file_info2.path == "/ioc/file/live"
     assert file_info2.status == ProcServStatus.ERROR
 
     # Great status
@@ -185,7 +185,7 @@ def test_get_live_info(model: IOCTableModel):
             name=ioc_name,
             port=50001,
             host="live_host",
-            path="/ioc/file/live",
+            path="/tmp",
             pid=20000,
             status=ProcServStatus.RUNNING,
             autorestart_mode=AutoRestartMode.ON,
@@ -424,11 +424,11 @@ def test_get_display_data(
         ("ioc2", TableColumn.VERSION, Qt.red),
         ("ioc2", TableColumn.PARENT, Qt.red),
         ("ioc2", TableColumn.EXTRA, Qt.red),
-        # Added IOC is all blue
+        # Added IOC is all blue (except to avoid blue on blue)
         ("added", TableColumn.IOCNAME, Qt.blue),
         ("added", TableColumn.ID, Qt.blue),
         ("added", TableColumn.STATE, Qt.blue),
-        ("added", TableColumn.STATUS, Qt.blue),
+        ("added", TableColumn.STATUS, Qt.white),
         ("added", TableColumn.HOST, Qt.blue),
         ("added", TableColumn.OSVER, Qt.blue),
         ("added", TableColumn.PORT, Qt.blue),
@@ -1302,12 +1302,12 @@ def test_add_ioc(model: IOCTableModel):
     """
     model.add_ioc should add a pending IOC, adding a new row to the table.
     """
-    data_emits: list[tuple[QModelIndex, QModelIndex]] = []
+    data_emits: list[tuple[QModelIndex, int, int]] = []
 
-    def save_data_emit(index1: QModelIndex, index2: QModelIndex):
-        data_emits.append((index1, index2))
+    def save_data_emit(index: QModelIndex, start: int, end: int):
+        data_emits.append((index, start, end))
 
-    model.dataChanged.connect(save_data_emit)
+    model.rowsAboutToBeInserted.connect(save_data_emit)
 
     assert model.rowCount() == 10
     model.add_ioc(
@@ -1320,10 +1320,10 @@ def test_add_ioc(model: IOCTableModel):
     )
     assert model.rowCount() == 11
     assert len(data_emits) == 1
-    assert data_emits[0][0].row() == 10
-    assert data_emits[0][0].column() == 0
-    assert data_emits[0][1].row() == 10
-    assert data_emits[0][1].column() == model.columnCount() - 1
+    # You must pass an invalid index or it doesn't work
+    assert not data_emits[0][0].isValid()
+    assert data_emits[0][1] == 10
+    assert data_emits[0][2] == 10
     model.add_ioc(
         ioc_proc=IOCProc(
             name="added2",
@@ -1334,10 +1334,9 @@ def test_add_ioc(model: IOCTableModel):
     )
     assert model.rowCount() == 12
     assert len(data_emits) == 2
-    assert data_emits[1][0].row() == 10
-    assert data_emits[1][0].column() == 0
-    assert data_emits[1][1].row() == 11
-    assert data_emits[1][1].column() == model.columnCount() - 1
+    assert not data_emits[1][0].isValid()
+    assert data_emits[1][1] == 11
+    assert data_emits[1][2] == 11
 
     new_config = model.get_next_config()
     assert "added1" in new_config.procs

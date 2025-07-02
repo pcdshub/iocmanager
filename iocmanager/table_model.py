@@ -824,7 +824,7 @@ class IOCTableModel(QAbstractTableModel):
         """
         # Ensure an up-to-date config
         try:
-            config = read_config(self.hutch)
+            config = read_config(self.config.path)
         except Exception:
             ...
         else:
@@ -1031,7 +1031,7 @@ class IOCTableModel(QAbstractTableModel):
         be refreshed.
         """
         try:
-            config = read_config(self.hutch)
+            config = read_config(self.config.path)
         except Exception:
             ...
         else:
@@ -1118,6 +1118,12 @@ class IOCTableModel(QAbstractTableModel):
         Add a completely new IOC to the config.
         """
         add_row = len(self.config.procs) + len(self.add_iocs)
+        try:
+            ioc_proc.path = normalize_path(
+                directory=ioc_proc.path, ioc_name=ioc_proc.name
+            )
+        except Exception:
+            ...
         self.beginInsertRows(
             QModelIndex(),
             add_row,
