@@ -384,7 +384,7 @@ class IOCTableModel(QAbstractTableModel):
         """
         ioc_name = self.get_ioc_name(ioc=ioc)
         try:
-            live_info = self.status_live[ioc_name]
+            live_info = deepcopy(self.status_live[ioc_name])
         except KeyError:
             # This might get called too early,
             # use some default values for display purposes
@@ -525,11 +525,21 @@ class IOCTableModel(QAbstractTableModel):
         ioc_proc = ioc_info.ioc_proc
         file_proc = ioc_info.file_proc
 
+        # Default, contrast with background
+        bg_color = self.get_background_color(ioc=ioc_info, column=column)
+        if bg_color in (Qt.blue, Qt.red):
+            default = Qt.white
+        else:
+            default = Qt.black
+
         # Universal handling for pending deletion
         if ioc_proc.name in self.delete_iocs:
             return Qt.red
         # Universal handling for new ioc row
         if file_proc is None:
+            # Note: avoid blue on blue
+            if bg_color == Qt.blue:
+                return default
             return Qt.blue
 
         # Specific handling for modified (blue) and other
@@ -571,11 +581,7 @@ class IOCTableModel(QAbstractTableModel):
                 ...
             case _:
                 raise ValueError(f"Invalid column {column}")
-        # Default, contrast with background
-        bg_color = self.get_background_color(ioc=ioc_info, column=column)
-        if bg_color in (Qt.blue, Qt.red):
-            return Qt.white
-        return Qt.black
+        return default
 
     def get_background_color(
         self, ioc: IOCModelIdentifier, column: int
