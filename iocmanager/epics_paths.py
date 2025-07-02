@@ -11,6 +11,9 @@ import re
 
 from .env_paths import env_paths
 
+# Hardcoded equivalent paths for ECS at LCLS
+# Not sure how to parameterize this...
+MIRROR_ROOTS = ["/reg/g/pcds", "/cds/group/pcds"]
 # Search paths for st.cmd files
 stpaths = [
     "%s/children/build/iocBoot/%s/st.cmd",
@@ -51,6 +54,11 @@ def normalize_path(directory: str, ioc_name: str) -> str:
     """
     part = [pth for pth in directory.split(os.sep) if pth != ".."]
     directory = os.sep.join(part)
+    # Force /reg or /cds to match user's EPICS_SITE_TOP
+    if env_paths.EPICS_SITE_TOP.startswith(MIRROR_ROOTS[0]):
+        directory.replace(MIRROR_ROOTS[1], MIRROR_ROOTS[0], 1)
+    elif env_paths.EPICS_SITE_TOP.startswith(MIRROR_ROOTS[1]):
+        directory.replace(MIRROR_ROOTS[0], MIRROR_ROOTS[1], 1)
     if directory.startswith(env_paths.EPICS_SITE_TOP):
         directory = os.path.relpath(directory, env_paths.EPICS_SITE_TOP)
     for pth in stpaths:

@@ -36,6 +36,7 @@ from .config import (
 )
 from .dialog_add_ioc import AddIOCDialog
 from .dialog_edit_details import DetailsDialog
+from .epics_paths import normalize_path
 from .procserv_tools import (
     AutoRestartMode,
     IOCStatusLive,
@@ -470,6 +471,7 @@ class IOCTableModel(QAbstractTableModel):
         ioc_info = self.get_ioc_info(ioc=ioc)
         ioc_proc = ioc_info.ioc_proc
         ioc_live = ioc_info.ioc_live
+        norm_path = normalize_path(directory=ioc_proc.path, ioc_name=ioc_proc.name)
         match column:
             case TableColumn.IOCNAME:
                 return ioc_proc.alias or ioc_proc.name
@@ -478,9 +480,7 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.STATE:
                 if ioc_proc.disable:
                     return StateOption.OFF.value
-                elif ioc_proc.path.startswith("ioc/") or ioc_proc.path.endswith(
-                    "/camrecord"
-                ):
+                elif norm_path.startswith("ioc/") or norm_path.endswith("/camrecord"):
                     return StateOption.PROD.value
                 else:
                     return StateOption.DEV.value
@@ -493,7 +493,7 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.PORT:
                 return ioc_proc.port
             case TableColumn.VERSION:
-                return ioc_proc.path
+                return norm_path
             case TableColumn.PARENT:
                 return ioc_proc.parent
             case TableColumn.EXTRA:
