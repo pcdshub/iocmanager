@@ -189,6 +189,10 @@ def _get_parent(directory: str, ioc_name: str) -> str:
         return self_parent(directory=directory)
     except Exception:
         ...
+    try:
+        return shebang_parent(directory=directory, ioc_name=ioc_name)
+    except Exception:
+        ...
     return ""
 
 
@@ -283,8 +287,8 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
     with open(stcmd, "r") as fd:
         lines = fd.readlines()
     # We want to figure out if we're using PSPKG or pcds_conda and at which version?
-    package = "unknown"
-    env_kind = "python"
+    package = ""
+    env_kind = ""
     env_version = ""
     for line in lines:
         text = line.strip()
@@ -310,8 +314,6 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
             package = "queueserver"
         elif "redis-server" in text:
             package = "redis"
-    if not env_version:
-        env_version = "unknown"
     for check_dir in (directory, os.path.dirname(stcmd)):
         # Check for a conda_env in the same dir
         if os.path.exists(os.path.join(check_dir, "conda_env")):
@@ -335,8 +337,10 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
         for package in python_ioc_frameworks:
             for line in lines:
                 if package in line:
-                    return f"{package} {env_kind} {env_version}"
-    return f"{package} {env_kind} {env_version}"
+                    return " ".join((package, env_kind, env_version))
+    if not package and not env_kind:
+        raise RuntimeError("Not a Python IOC")
+    return " ".join((package, env_kind, env_version))
 
 
 def self_parent(directory: str) -> str:
@@ -348,6 +352,18 @@ def self_parent(directory: str) -> str:
     if os.path.exists(os.path.join(directory, "bin")):
         return directory
     raise RuntimeError(f"{directory} definitely not self parented")
+
+
+def shebang_parent(directory: str, ioc_name: str) -> str:
+    """
+    Check if we have a st.cmd file with a shebang, use the shebang as the parent.
+    """
+    stcmd = get_stcmd(directory=directory, ioc_name=ioc_name)
+    with open(stcmd, "r") as fd:
+        line = fd.readline()
+    if line.startswith("#!"):
+        return line[2:].strip()
+    raise RuntimeError("No shebang found!")
 
 
 def epics_readlines(filename: str) -> list[str]:
