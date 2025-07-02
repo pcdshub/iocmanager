@@ -433,7 +433,13 @@ class IOCMainWindow(QMainWindow):
                 self.ui.heartbeat.set_channel("")
                 self.ui.tod.set_channel("")
                 self.ui.boottime.set_channel("")
+                self.ui.heartbeat.setText("")
+                self.ui.tod.setText("")
+                self.ui.boottime.setText("")
             else:
+                self.ui.heartbeat.setText("")
+                self.ui.tod.setText("")
+                self.ui.boottime.setText("")
                 self.ui.heartbeat.set_channel(f"ca://{base}:HEARTBEAT")
                 self.ui.tod.set_channel(f"ca://{base}:TOD")
                 self.ui.boottime.set_channel(f"ca://{base}:STARTTOD")
