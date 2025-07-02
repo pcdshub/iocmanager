@@ -27,7 +27,7 @@ from .config import (
     read_config,
     write_config,
 )
-from .epics_paths import has_stcmd
+from .epics_paths import has_stcmd, normalize_path
 from .hioc_tools import restart_hioc
 from .ioc_info import get_base_name
 from .procserv_tools import ProcServStatus, apply_config, check_status, restart_proc
@@ -739,7 +739,10 @@ def upgrade_cmd(config: Config, ioc_name: str, hutch: str, upgrade_dir: str):
     if not has_stcmd(directory=upgrade_dir, ioc_name=ioc_name):
         raise RuntimeError(f"{upgrade_dir} does not have an st.cmd for {ioc_name}!")
     ioc_proc = get_proc(config=config, ioc_name=ioc_name)
-    ioc_proc.path = upgrade_dir
+    try:
+        ioc_proc.path = normalize_path(directory=upgrade_dir, ioc_name=ioc_name)
+    except Exception:
+        ioc_proc.path = upgrade_dir
     _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
 
 
@@ -821,6 +824,11 @@ def add_cmd(
         raise RuntimeError("Invalid codepath?")
 
     host, port = parse_host_port(config=config, host_port=add_loc)
+
+    try:
+        add_dir = normalize_path(directory=add_dir, ioc_name=ioc_name)
+    except Exception:
+        ...
 
     config.add_proc(
         IOCProc(

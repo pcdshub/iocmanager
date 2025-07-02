@@ -25,7 +25,7 @@ from qtpy.QtWidgets import (
 )
 
 from .config import IOCProc
-from .epics_paths import get_parent, standard_ioc_paths
+from .epics_paths import get_parent, normalize_path, standard_ioc_paths
 from .type_hints import ParentWidget
 
 if TYPE_CHECKING:
@@ -212,10 +212,15 @@ class AddIOCDialog(QFileDialog):
             host = name
         else:
             host = self.host_edit.text().strip()
+        path = self._get_selected_path()
+        try:
+            path = normalize_path(directory=path, ioc_name=name)
+        except Exception:
+            ...
         return IOCProc(
             name=name,
             port=port,
             host=host,
-            path=self._get_selected_path(),
+            path=path,
             alias=self.alias_edit.text().strip(),
         )
