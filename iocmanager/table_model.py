@@ -500,8 +500,16 @@ class IOCTableModel(QAbstractTableModel):
                 if ioc_proc.hard:
                     return "HARD IOC"
                 # Goal: summarize differences between configured and running
+                if ioc_live.status not in (
+                    ProcServStatus.RUNNING,
+                    ProcServStatus.SHUTDOWN,
+                    ProcServStatus.ERROR,
+                ):
+                    # There isn't a meaningful comparison to check
+                    return ""
                 desync_info = self.get_desync_info(ioc=ioc_info)
                 if not desync_info.has_diff:
+                    # There's nothing different
                     return ""
                 text_parts = []
                 if desync_info.path is not None:
