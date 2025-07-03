@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>815</width>
+    <width>1600</width>
     <height>525</height>
    </rect>
   </property>
@@ -347,7 +347,7 @@ border-style: solid;
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>815</width>
+     <width>1600</width>
      <height>20</height>
     </rect>
    </property>
