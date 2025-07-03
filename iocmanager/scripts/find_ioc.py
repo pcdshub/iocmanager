@@ -1,29 +1,27 @@
-#!/usr/bin/env python
-import sys
-
-from psp.options import Options
+import argparse
 
 from ..config import find_iocs
+from ..log_setup import add_verbose_arg, iocmanager_log_config
 
 if __name__ == "__main__":
-    options = Options(["name"], [], [])
-    try:
-        options.parse()
-    except Exception as msg:
-        options.usage(str(msg))
-        sys.exit(1)
-    iocs = find_iocs(id=options.name)
-    for ioc in iocs:
+    parser = argparse.ArgumentParser(
+        prog="find_ioc",
+        description=(
+            "Find IOCs with the given name in any hutch and show basic information."
+        ),
+    )
+    parser.add_argument("name", help="The IOC name to find.")
+    add_verbose_arg(parser)
+    args = parser.parse_args()
+    iocmanager_log_config(args)
+    found_iocs = find_iocs(name=args.name)
+    for hutch, ioc_proc in found_iocs:
         print(
-            "\tCONFIG:\t\t%s\n\tALIAS:\t\t%s\n\tDIR:\t\t%s\n\tCMD:\t\t%s\n\tHOST:\t\t%s\n\tPORT:\t\t%s\n\tENABLED:\t%s"
-            % (
-                ioc[0],
-                ioc[1].get("alias"),
-                ioc[1].get("dir"),
-                ioc[1].get("cmd"),
-                ioc[1].get("host"),
-                ioc[1].get("port"),
-                not ioc[1].get("disable"),
-            )
+            f"\tCONFIG:\t\t{hutch}\n"
+            f"\tALIAS:\t\t{ioc_proc.alias}\n"
+            f"\tDIR:\t\t{ioc_proc.path}\n"
+            f"\tCMD:\t\t{ioc_proc.cmd}\n"
+            f"\tHOST:\t\t{ioc_proc.host}\n"
+            f"\tPORT:\t\t{ioc_proc.port}\n"
+            f"\tENABLED:\t{not ioc_proc.disable}"
         )
-    sys.exit(0)

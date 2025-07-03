@@ -16,7 +16,6 @@ from getpass import getuser
 
 from epics import caput
 
-from . import log_setup
 from . import procserv_tools as pt
 from .config import (
     Config,
@@ -30,6 +29,7 @@ from .config import (
 from .epics_paths import has_stcmd, normalize_path
 from .hioc_tools import restart_hioc
 from .ioc_info import get_base_name
+from .log_setup import add_verbose_arg, iocmanager_log_config
 from .procserv_tools import ProcServStatus, apply_config, check_status, restart_proc
 from .version import version as version_str
 
@@ -118,17 +118,7 @@ def get_parser() -> tuple[argparse.ArgumentParser, set[str]]:
             "attempt to guess which hutch to use."
         ),
     )
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="count",
-        default=0,
-        help=(
-            "Increase debug verbosity. "
-            "-v or --verbose shows debug messages, "
-            "-vv shows spammy debug messages."
-        ),
-    )
+    add_verbose_arg(parser)
     subp = parser.add_subparsers(
         dest="command",
         title="commands",
@@ -990,12 +980,7 @@ def main(args: list[str] | None = None) -> int:
     if imgr_args.version:
         print(version_str)
         return 0
-    if not imgr_args.verbose:
-        logging.basicConfig(level=logging.INFO)
-    elif imgr_args.verbose == 1:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=log_setup.SPAM_LEVEL)
+    iocmanager_log_config(imgr_args)
     try:
         run_command(imgr_args)
     except Exception as exc:

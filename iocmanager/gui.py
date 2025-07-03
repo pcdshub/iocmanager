@@ -37,7 +37,7 @@ from .env_paths import env_paths
 from .hioc_tools import reboot_hioc
 from .imgr import ensure_auth, reboot_cmd
 from .ioc_info import get_base_name
-from .log_setup import SPAM_LEVEL
+from .log_setup import add_verbose_arg, iocmanager_log_config
 from .procserv_tools import apply_config
 from .server_tools import netconfig, reboot_server
 from .table_delegate import IOCTableDelegate
@@ -657,17 +657,7 @@ def get_parser():
         ),
     )
     parser.add_argument("--hutch", help="The area whose IOCs you'd like to manage.")
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="count",
-        default=0,
-        help=(
-            "Increase debug verbosity. "
-            "-v or --verbose shows debug messages, "
-            "-vv shows spammy debug messages."
-        ),
-    )
+    add_verbose_arg(parser)
     parser.add_argument(
         "--version", action="store_true", help="Show the version information and exit."
     )
@@ -712,14 +702,7 @@ def _main(args) -> int:
     if args.version:
         print(version_str)
         return 0
-    if not args.verbose:
-        log_level = logging.INFO
-    elif args.verbose == 1:
-        log_level = logging.DEBUG
-    else:
-        log_level = SPAM_LEVEL
-    logging.basicConfig(level=log_level)
-    logger = logging.getLogger(__name__)
+    iocmanager_log_config(args)
 
     app = QApplication([""])
     gui = IOCMainWindow(hutch=args.hutch.lower())

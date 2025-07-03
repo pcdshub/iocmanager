@@ -14,9 +14,9 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
 
+from log_setup import add_verbose_arg, iocmanager_log_config
 from packaging.version import InvalidVersion, Version
 
-from .. import log_setup
 from ..config import IOCProc, get_host_os, read_config
 from ..env_paths import env_paths
 
@@ -77,17 +77,7 @@ logger = logging.getLogger(__name__)
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="iocmanager survey-os")
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="count",
-        default=0,
-        help=(
-            "Increase debug verbosity. "
-            "-v or --verbose shows debug messages, "
-            "-vv shows spammy debug messages."
-        ),
-    )
+    add_verbose_arg(parser)
     parser.add_argument(
         "--hutch",
         default="all",
@@ -509,12 +499,7 @@ def get_one_host_os(hostname: str) -> str:
 def main(sys_argv: list[str] | None = None) -> int:
     parser = get_parser()
     args = parser.parse_args(sys_argv)
-    if not args.verbose:
-        logging.basicConfig(level=logging.INFO)
-    elif args.verbose == 1:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=log_setup.SPAM_LEVEL)
+    iocmanager_log_config(args)
     if args.hutch == "all":
         hutches = ALL_HUTCHES
     else:
