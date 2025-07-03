@@ -144,7 +144,6 @@ class IOCMainWindow(QMainWindow):
         # Don't load typhos, etc. plugins, wastes time
         pydm.config.ENTRYPOINT_DATA_PLUGIN += "_disable"
         # Force early load of the plugins
-        # TODO can this be done in a background thread?
         pydm.data_plugins.initialize_plugins_if_needed()
         self.pydm_ready.set()
 
