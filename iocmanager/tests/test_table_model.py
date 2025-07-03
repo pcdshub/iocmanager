@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
+from pytestqt.qtbot import QtBot
 from qtpy.QtCore import QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
 from qtpy.QtWidgets import QDialog, QMessageBox
@@ -839,7 +840,7 @@ def test_flags(
     assert model.flags(index=model.index(row, column)) == expected
 
 
-def test_poll(model: IOCTableModel, monkeypatch: pytest.MonkeyPatch):
+def test_poll(model: IOCTableModel, monkeypatch: pytest.MonkeyPatch, qtbot: QtBot):
     """
     The model's polling loop should get updated information.
 
@@ -903,13 +904,11 @@ def test_poll(model: IOCTableModel, monkeypatch: pytest.MonkeyPatch):
 
     model.poll_interval = 0.1
     model.start_poll_thread()
-    time.sleep(0.2)
     try:
-        assert_poll_works()
+        qtbot.wait_until(assert_poll_works)
         fake_host_os = "rhel7"
         fake_live_status = ProcServStatus.SHUTDOWN
-        time.sleep(0.2)
-        assert_poll_works()
+        qtbot.wait_until(assert_poll_works)
     finally:
         model.stop_poll_thread()
         model.poll_thread.join(timeout=1.0)

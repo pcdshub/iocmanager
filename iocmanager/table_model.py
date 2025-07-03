@@ -45,6 +45,13 @@ from .procserv_tools import (
 )
 from .type_hints import ParentWidget
 
+# Depends on the version, even pylance gets confused
+try:
+    from qtpy.QtCore import pyqtSignal as Signal
+except ImportError:
+    from qtpy.QtCore import Signal  # type: ignore
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -209,6 +216,10 @@ class IOCTableModel(QAbstractTableModel):
 
     config: Config
 
+    signal_new_config_file = Signal(Config)
+    signal_new_status_file = Signal(IOCStatusFile)
+    signal_new_status_live = Signal(IOCStatusLive)
+
     def __init__(self, config: Config, hutch: str, parent: ParentWidget = None):
         super().__init__(parent)
         self.config = config
@@ -227,6 +238,9 @@ class IOCTableModel(QAbstractTableModel):
         self.host_os: dict[str, str] = {}
         self.poll_interval = 10.0
         self.poll_stop_ev = threading.Event()
+        self.signal_new_config_file.connect(self.update_from_config_file)
+        self.signal_new_status_file.connect(self.update_from_status_file)
+        self.signal_new_status_live.connect(self.update_from_live_ioc)
 
     # Main external business logic
     def get_next_config(self) -> Config:
@@ -832,10 +846,10 @@ class IOCTableModel(QAbstractTableModel):
             ...
         else:
             self.host_os = get_host_os(config.hosts)
-            self.update_from_config_file(config)
+            self.signal_new_config_file.emit(config)
 
         for status_file in read_status_dir(self.hutch):
-            self.update_from_status_file(status_file=status_file)
+            self.signal_new_status_file.emit(status_file)
 
         # IO-bound task, use threads
         futures: list[concurrent.futures.Future[IOCStatusLive]] = []
@@ -862,7 +876,7 @@ class IOCTableModel(QAbstractTableModel):
 
         # Collect the thread results and apply them
         for fut in futures:
-            self.update_from_live_ioc(fut.result())
+            self.signal_new_status_live.emit(fut.result())
 
     def update_from_config_file(self, config: Config):
         """
