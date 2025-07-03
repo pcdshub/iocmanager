@@ -837,7 +837,10 @@ class IOCTableModel(QAbstractTableModel):
         One poll for updates to the IOC.
 
         This function exists to avoid deep nesting.
-        See _poll_loop
+        See _poll_loop.
+
+        This repeatedly checks if the poll has been stopped to help avoid
+        referencing cleaned up qt widgets.
         """
         # Ensure an up-to-date config
         try:
@@ -846,9 +849,13 @@ class IOCTableModel(QAbstractTableModel):
             ...
         else:
             self.host_os = get_host_os(config.hosts)
+            if self.poll_stop_ev.is_set():
+                return
             self.signal_new_config_file.emit(config)
 
         for status_file in read_status_dir(self.hutch):
+            if self.poll_stop_ev.is_set():
+                return
             self.signal_new_status_file.emit(status_file)
 
         # IO-bound task, use threads
@@ -876,7 +883,12 @@ class IOCTableModel(QAbstractTableModel):
 
         # Collect the thread results and apply them
         for fut in futures:
-            self.signal_new_status_live.emit(fut.result())
+            if self.poll_stop_ev.is_set():
+                return
+            try:
+                self.signal_new_status_live.emit(fut.result(timeout=1.0))
+            except TimeoutError:
+                ...
 
     def update_from_config_file(self, config: Config):
         """

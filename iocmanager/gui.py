@@ -20,6 +20,7 @@ from qtpy.QtCore import (
     QSortFilterProxyModel,
     Qt,
 )
+from qtpy.QtGui import QCloseEvent
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -159,7 +160,7 @@ class IOCMainWindow(QMainWindow):
         for host in self.model.config.hosts:
             self._get_netconfig(host)
 
-    def _get_netconfig(self, host: str):
+    def _get_netconfig(self, host: str) -> dict[str, str]:
         """
         Return the cached netconfig information if available, otherwise get it.
         """
@@ -169,6 +170,17 @@ class IOCMainWindow(QMainWindow):
             except Exception:
                 self.netconfig_cache[host] = {}
         return self.netconfig_cache[host]
+
+    def closeEvent(self, a0: QCloseEvent):
+        """
+        Override base closeEvent to also stop polling.
+
+        This avoids shutdown exceptions.
+        The strange signature makes pylance happy because it matches the base class 1:1.
+        """
+        self.model.stop_poll_thread()
+        self.model.poll_thread.join(timeout=1.0)
+        return super().closeEvent(a0)
 
     def action_write_and_apply_config(self, ioc: IOCModelIdentifier | None = None):
         """
