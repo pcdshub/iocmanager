@@ -92,7 +92,10 @@ class IOCMainWindow(QMainWindow):
         # Re-usable dialogs
         self.commit_dialog = CommitDialog(hutch=hutch, parent=self)
         self.find_pv_dialog = FindPVDialog(
-            model=self.model, view=self.ui.tableView, parent=self
+            model=self.model,
+            proxy_model=self.sort_model,
+            view=self.ui.tableView,
+            parent=self,
         )
         # Configuration menu
         self.ui.actionApply.triggered.connect(self.action_write_and_apply_config)

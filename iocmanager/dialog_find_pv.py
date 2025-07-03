@@ -11,7 +11,7 @@ The layout is defined in ui/find_pv.ui
 import logging
 import re
 
-from qtpy.QtCore import QItemSelectionModel
+from qtpy.QtCore import QItemSelectionModel, QSortFilterProxyModel
 from qtpy.QtWidgets import QAbstractItemView, QDialog, QTableView
 
 from . import ui_find_pv
@@ -39,12 +39,17 @@ class FindPVDialog(QDialog):
     process_next = Signal(int)
 
     def __init__(
-        self, model: IOCTableModel, view: QTableView, parent: ParentWidget = None
+        self,
+        model: IOCTableModel,
+        proxy_model: QSortFilterProxyModel,
+        view: QTableView,
+        parent: ParentWidget = None,
     ):
         super().__init__(parent)
         self.ui = ui_find_pv.Ui_Dialog()
         self.ui.setupUi(self)
         self.model = model
+        self.proxy_model = proxy_model
         self.view = view
         self.config = model.config
         self.ioc_names = []
@@ -111,8 +116,10 @@ class FindPVDialog(QDialog):
         elif self.found_count == 1:
             # We can jump to the IOC with that PV
             selection_model = self.view.selectionModel()
-            idx = self.model.index(
-                self.model.get_ioc_row_map().index(self.last_ioc_found), 0
+            idx = self.proxy_model.mapFromSource(
+                self.model.index(
+                    self.model.get_ioc_row_map().index(self.last_ioc_found), 0
+                )
             )
             selection_model.select(idx, QItemSelectionModel.SelectCurrent)
             self.view.scrollTo(idx, QAbstractItemView.PositionAtCenter)
