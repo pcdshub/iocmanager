@@ -77,10 +77,13 @@ def restart_hioc(host: str):
     if not console_port:
         raise RuntimeError(f"Console port not found in netconfig for {host}.")
     try:
-        tn = telnetlib.Telnet(host, console_port, 1)
+        tn = telnetlib.Telnet(console_host, console_port, 1)
     except Exception as exc:
         logger.debug("Telnet error", exc_info=True)
-        raise RuntimeError(f"Error making telnet connection to HIOC {host}!") from exc
+        raise RuntimeError(
+            f"Error making telnet connection to HIOC {host}'s "
+            f"console {console_host}:{console_port}!"
+        ) from exc
     tn.write(b"\x0a")
     tn.read_until(b"> ", 2)
     tn.write(b"exit\x0a")
