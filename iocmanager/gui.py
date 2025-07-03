@@ -64,11 +64,6 @@ class IOCMainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
-        # Performance quibbles, doing this in a thread saves a startup second
-        self.pydm_ready = threading.Event()
-        self.pydm_prep_thread = threading.Thread(target=self.prepare_pydm)
-        self.pydm_prep_thread.start()
-
         # Not sure how to do this in designer, so we put it randomly and move it now.
         self.ui.statusbar.addWidget(self.ui.userLabel)
         user = getpass.getuser()
@@ -131,6 +126,11 @@ class IOCMainWindow(QMainWindow):
 
         # Ready to go! Start checking ioc status!
         self.model.start_poll_thread()
+
+        # Performance quibbles, doing this in a thread saves a startup second
+        self.pydm_ready = threading.Event()
+        self.pydm_prep_thread = threading.Thread(target=self.prepare_pydm)
+        self.pydm_prep_thread.start()
 
     def prepare_pydm(self):
         """
