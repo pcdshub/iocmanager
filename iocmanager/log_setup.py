@@ -3,21 +3,19 @@ The log_setup module defines logging setup utilities and constants.
 """
 
 import argparse
-import functools
 import logging
 
 SPAM_LEVEL = 5
 
 
-def add_spam_level(lgr: logging.Logger):
+def log_spam(lgr: logging.Logger, *args, **kwargs):
     """
-    Patch a "spam" function onto a logger instance.
+    Helper for logging at the spam level.
 
-    This function will log a message at the spam level,
-    so that it won't appear in normal verbose mode but will appear
-    in double verbose mode.
+    Spam log messages won't appear in normal verbose mode
+    but will appear in double verbose mode.
     """
-    lgr.spam = functools.partial(lgr.log, SPAM_LEVEL)
+    lgr.log(SPAM_LEVEL, *args, **kwargs)
 
 
 def add_verbose_arg(parser: argparse.ArgumentParser):

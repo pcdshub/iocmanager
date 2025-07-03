@@ -31,10 +31,9 @@ def get_hard_ioc_dir(host: str) -> str:
         lines = fd.readlines()
     for ln in [ln.strip() for ln in lines]:
         if ln[:5] == "chdir":
-            try:
-                return "ioc/" + re.search('"/iocs/(.*)/iocBoot', ln).group(1)
-            except Exception:
-                ...
+            match = re.search('"/iocs/(.*)/iocBoot', ln)
+            if match is not None:
+                return "ioc/" + match.group(1)
     raise RuntimeError("Did not find chdir in startup file for {host}")
 
 
@@ -60,19 +59,25 @@ def restart_hioc(host: str):
 
     May raise if something goes wrong.
     """
+    console_host = ""
+    console_port = 0
     try:
         for line in netconfig(host)["console port dn"].split(","):
             if line[:7] == "cn=port":
-                port = 2000 + int(line[7:])
+                console_port = 2000 + int(line[7:])
             if line[:7] == "cn=digi":
-                host = line[3:]
+                console_host = line[3:]
     except Exception as exc:
         logger.debug("Netconfig error", exc_info=True)
         raise RuntimeError(
             f"Error parsing netconfig for HIOC {host} console info!"
         ) from exc
+    if not console_host:
+        raise RuntimeError(f"Console host not found in netconfig for {host}.")
+    if not console_port:
+        raise RuntimeError(f"Console port not found in netconfig for {host}.")
     try:
-        tn = telnetlib.Telnet(host, port, 1)
+        tn = telnetlib.Telnet(host, console_port, 1)
     except Exception as exc:
         logger.debug("Telnet error", exc_info=True)
         raise RuntimeError(f"Error making telnet connection to HIOC {host}!") from exc

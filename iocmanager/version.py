@@ -50,7 +50,7 @@ class VersionProxy(UserString):
         return None
 
     @property
-    def data(self) -> str:
+    def data(self) -> str:  # type: ignore
         # This is accessed by UserString to allow us to lazily fill in the
         # information
         if self._version is None:

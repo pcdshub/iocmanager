@@ -25,13 +25,12 @@ from enum import Enum, StrEnum
 from .config import IOCProc, IOCStatusFile, read_config, read_status_dir
 from .env_paths import env_paths
 from .epics_paths import normalize_path
-from .log_setup import add_spam_level
+from .log_setup import log_spam
 
 # For procmgrd
 BASEPORT = 39050
 
 logger = logging.getLogger(__name__)
-add_spam_level(logger)
 
 
 class ProcServStatus(StrEnum):
@@ -170,11 +169,14 @@ def read_port_banner(tn: telnetlib.Telnet) -> IOCStatusLive:
         ioc_status_live.status = ProcServStatus.SHUTDOWN
     else:
         ioc_status_live.status = ProcServStatus.RUNNING
-        ioc_status_live.pid = int(
-            re.search(b'@@@ Child "(.*)" PID: ([0-9]*)', response)
-            .group(2)
-            .decode("ascii")
-        )
+        try:
+            ioc_status_live.pid = int(
+                re.search(b'@@@ Child "(.*)" PID: ([0-9]*)', response)
+                .group(2)  # type: ignore
+                .decode("ascii")
+            )
+        except AttributeError:
+            ioc_status_live.pid = None
     match = re.search(b'@@@ Child "(.*)" start', response)
     if match:
         ioc_status_live.name = match.group(1).decode("ascii")
@@ -195,7 +197,7 @@ def read_port_banner(tn: telnetlib.Telnet) -> IOCStatusLive:
     return ioc_status_live
 
 
-pdict = {}
+pdict: dict[str, tuple[float, int]] = {}
 lockdict = collections.defaultdict(threading.RLock)
 
 
@@ -223,7 +225,7 @@ def check_status(host: str, port: int, name: str) -> IOCStatusLive:
     """
     # Lock to ensure only 1 ping at a time per host
     with lockdict[host]:
-        logger.spam(f"check_status({host}, {port}, {id})")
+        log_spam(logger, f"check_status({host}, {port}, {name})")
         now = time.monotonic()
         try:
             (last, pingrc) = pdict[host]
@@ -232,13 +234,13 @@ def check_status(host: str, port: int, name: str) -> IOCStatusLive:
             havestat = False
         if not havestat:
             # Ping the host to see if it is up!
-            logger.spam(f"Pinging {host}")
+            log_spam(logger, f"Pinging {host}")
             pingrc = os.system(
                 "ping -c 1 -w 1 -W 0.002 %s >/dev/null 2>/dev/null" % host
             )
             pdict[host] = (now, pingrc)
-    if pingrc != 0:
-        logger.spam(f"{host} is down")
+    if pingrc != 0:  # type: ignore
+        log_spam(logger, f"{host} is down")
         return IOCStatusLive(
             name=name,
             port=port,
@@ -248,12 +250,12 @@ def check_status(host: str, port: int, name: str) -> IOCStatusLive:
             status=ProcServStatus.DOWN,
             autorestart_mode=AutoRestartMode.OFF,
         )
-    logger.spam(f"Check telnet to {host}:{port}")
+    log_spam(logger, f"Check telnet to {host}:{port}")
     try:
         with telnetlib.Telnet(host, port, 1) as tn:
             status = read_port_banner(tn)
     except Exception:
-        logger.spam(f"{host}:{port} is down")
+        log_spam(logger, f"{host}:{port} is down")
         return IOCStatusLive(
             name=name,
             port=port,
@@ -263,7 +265,7 @@ def check_status(host: str, port: int, name: str) -> IOCStatusLive:
             status=ProcServStatus.NOCONNECT,
             autorestart_mode=AutoRestartMode.OFF,
         )
-    logger.spam(f"Done checking {host}:{port}")
+    log_spam(logger, f"Done checking {host}:{port}")
     # Fill in some aux info that read_port_banner doesn't know
     status.host = host
     status.port = port
