@@ -716,11 +716,5 @@ def _main(args) -> int:
 
     app = QApplication([""])
     gui = IOCMainWindow(hutch=args.hutch.lower())
-    try:
-        gui.show()
-        retval = app.exec_()
-    except KeyboardInterrupt:
-        logger.debug("KeyboardInterrupt", exc_info=True)
-        retval = 1
-        app.exit(retval)
-    return retval
+    gui.show()
+    return app.exec_()
