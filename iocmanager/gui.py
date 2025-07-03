@@ -9,10 +9,10 @@ import threading
 import time
 from functools import partial
 from importlib import import_module
+from importlib.util import find_spec
 
 import pydm.config
 import pydm.data_plugins
-from line_profiler import LineProfiler
 from pydm.exception import raise_to_operator
 from qtpy.QtCore import (
     QItemSelection,
@@ -661,11 +661,18 @@ def get_parser():
     parser.add_argument(
         "--version", action="store_true", help="Show the version information and exit."
     )
-    parser.add_argument(
-        "--profile",
-        action="store_true",
-        help="Run line profiling for iocmanager to find performance issues.",
-    )
+    try:
+        # Fastest way to check for package without importing it
+        lp_spec = find_spec("line_profiler")
+    except ValueError:
+        ...
+    else:
+        if lp_spec is not None:
+            parser.add_argument(
+                "--profile",
+                action="store_true",
+                help="Run line profiling for iocmanager to find performance issues.",
+            )
     return parser
 
 
@@ -675,6 +682,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.profile:
         print("Setting up profiler...")
         start = time.monotonic()
+        # Late import: optional dep
+        from line_profiler import LineProfiler
+
         profiler = LineProfiler()
         modules = set()
         for obj in globals().values():
