@@ -118,9 +118,12 @@ def run_in_xterm(
         title,
         "-geometry",
         "160x40",
-        "-hold",
         "-e",
-    ] + args
+    ]
+    # A trick: if the process crashes, keep xterm open
+    # Can also use -hold, but this results in us needing to click x twice
+    text_args = " ".join(args) + ";read"
+    subp_args.append(text_args)
     logger.debug(f"xterm command is {represent_command(subp_args)}")
     return subprocess.Popen(
         subp_args,
