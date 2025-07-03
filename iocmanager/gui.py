@@ -5,6 +5,7 @@ The gui module impelements the main window of the iocmanager GUI.
 import argparse
 import getpass
 import logging
+import threading
 import time
 from functools import partial
 from importlib import import_module
@@ -63,11 +64,10 @@ class IOCMainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
-        # Don't load typhos, etc. plugins, wastes time
-        pydm.config.ENTRYPOINT_DATA_PLUGIN += "_disable"
-        # Force early load of the plugins
-        # TODO can this be done in a background thread?
-        pydm.data_plugins.initialize_plugins_if_needed()
+        # Performance quibbles, doing this in a thread saves a startup second
+        self.pydm_ready = threading.Event()
+        self.pydm_prep_thread = threading.Thread(target=self.prepare_pydm)
+        self.pydm_prep_thread.start()
 
         # Not sure how to do this in designer, so we put it randomly and move it now.
         self.ui.statusbar.addWidget(self.ui.userLabel)
@@ -120,7 +120,6 @@ class IOCMainWindow(QMainWindow):
         self.ui.tableView.verticalHeader().setVisible(False)
         self.ui.tableView.horizontalHeader().setStretchLastSection(True)
         self.ui.tableView.resizeColumnsToContents()
-        self.ui.tableView.resizeRowsToContents()
         self.ui.tableView.setSortingEnabled(True)
         self.ui.tableView.sortByColumn(0, Qt.AscendingOrder)
         self.ui.tableView.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -132,6 +131,22 @@ class IOCMainWindow(QMainWindow):
 
         # Ready to go! Start checking ioc status!
         self.model.start_poll_thread()
+
+    def prepare_pydm(self):
+        """
+        Skip some pydm startup we don't care for, do the rest early and in a thread.
+
+        Saves 3-7s to do this at all (takes about 1s no matter what)
+        The final 1s is sort of saved by doing it in a thread because it can
+        start while the user is thinking about what to do without slowing down
+        the ui load.
+        """
+        # Don't load typhos, etc. plugins, wastes time
+        pydm.config.ENTRYPOINT_DATA_PLUGIN += "_disable"
+        # Force early load of the plugins
+        # TODO can this be done in a background thread?
+        pydm.data_plugins.initialize_plugins_if_needed()
+        self.pydm_ready.set()
 
     def action_write_and_apply_config(self, ioc: IOCModelIdentifier | None = None):
         """
@@ -451,6 +466,7 @@ class IOCMainWindow(QMainWindow):
                 self.ui.heartbeat.setText("")
                 self.ui.tod.setText("")
                 self.ui.boottime.setText("")
+                self.pydm_ready.wait(timeout=1.0)
                 self.ui.heartbeat.set_channel(f"ca://{base}:HEARTBEAT")
                 self.ui.tod.set_channel(f"ca://{base}:TOD")
                 self.ui.boottime.set_channel(f"ca://{base}:STARTTOD")
