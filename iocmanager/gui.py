@@ -5,9 +5,13 @@ The gui module impelements the main window of the iocmanager GUI.
 import argparse
 import getpass
 import logging
-import sys
+import time
 from functools import partial
+from importlib import import_module
 
+import pydm.config
+import pydm.data_plugins
+from line_profiler import LineProfiler
 from pydm.exception import raise_to_operator
 from qtpy.QtCore import (
     QItemSelection,
@@ -58,6 +62,13 @@ class IOCMainWindow(QMainWindow):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+
+        # Don't load typhos, etc. plugins, wastes time
+        pydm.config.ENTRYPOINT_DATA_PLUGIN += "_disable"
+        # Force early load of the plugins
+        # TODO can this be done in a background thread?
+        pydm.data_plugins.initialize_plugins_if_needed()
+
         # Not sure how to do this in designer, so we put it randomly and move it now.
         self.ui.statusbar.addWidget(self.ui.userLabel)
         user = getpass.getuser()
@@ -622,15 +633,47 @@ def get_parser():
     parser.add_argument(
         "--version", action="store_true", help="Show the version information and exit."
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Run line profiling for iocmanager to find performance issues.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = get_parser()
     args = parser.parse_args(argv)
+    if args.profile:
+        print("Setting up profiler...")
+        start = time.monotonic()
+        profiler = LineProfiler()
+        modules = set()
+        for obj in globals().values():
+            try:
+                module_name = obj.__module__
+                if "iocmanager" in module_name:
+                    modules.add(module_name)
+            except AttributeError:
+                ...
+        for mod in modules:
+            real_module = import_module(mod)
+            profiler.add_module(real_module)
+        print(f"Importing modules for profiler took {time.monotonic() - start}s")
+        profiler.enable_by_count()
+    else:
+        profiler = None
+    rval = _main(args)
+    if profiler is not None:
+        profiler.disable_by_count()
+        profiler.print_stats(stripzeros=True, sort=True)
+    return rval
+
+
+def _main(args) -> int:
     if args.version:
         print(version_str)
-        sys.exit(0)
+        return 0
     if not args.verbose:
         log_level = logging.INFO
     elif args.verbose == 1:
