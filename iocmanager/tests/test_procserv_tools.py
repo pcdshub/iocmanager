@@ -75,6 +75,7 @@ def test_read_port_banner(procserv: ProcServHelper):
 
     def basic_checks():
         assert info.status == ProcServStatus.RUNNING
+        assert info.pid is not None
         assert info.pid > 0
         assert info.name == procserv.proc_name
         assert info.path == startup_dir
@@ -177,6 +178,7 @@ def test_open_telnet_bad():
 
 def test_fix_telnet_shell(procmgrd: ProcServHelper):
     procmgrd.toggle_running()
+    assert procmgrd.tn is not None
     procmgrd.tn.read_until(pt.MSG_RESTART)
     fix_telnet_shell("localhost", procmgrd.port)
     with Telnet("localhost", procmgrd.port, 1) as tn:
@@ -239,11 +241,13 @@ def test_kill_proc_good(
     if running:
         assert status.status == ProcServStatus.RUNNING
         subproc_pid = status.pid
+        assert subproc_pid is not None
         assert subproc_pid > 0
         # Check that the pid is alive
         assert not subprocess.run(["ps", "--pid", str(subproc_pid)]).returncode
     else:
         assert status.status == ProcServStatus.SHUTDOWN
+        subproc_pid = 0
     kill_proc("localhost", procserv.port)
     # We need to wait again, gross
     time.sleep(1)
@@ -251,6 +255,7 @@ def test_kill_proc_good(
         # We expect the subprocess pid and the procserv to be dead.
         # Telnet should fail too.
         assert subprocess.run(["ps", "--pid", str(subproc_pid)]).returncode
+    assert procserv.proc is not None
     return_code = procserv.proc.poll()
     assert return_code is not None, "procserv still running"
     assert return_code == 0, "procserv errored out without our help"
@@ -326,6 +331,7 @@ def test_start_proc(procmgrd: ProcServHelper):
         # The process should be running and accessible via telnet like any other
         status = check_status("localhost", port, "")
         assert status.status == ProcServStatus.RUNNING
+        assert status.pid is not None
         assert status.pid > 0
         assert status.name == name
         assert status.autorestart_mode == AutoRestartMode.ON
@@ -405,7 +411,7 @@ def test_apply_config(
                 restart_list=[],
             )
     else:
-        verify = None
+        verify = None  # type: ignore
 
     def basic_fake_config(
         name: str,

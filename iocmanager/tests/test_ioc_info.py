@@ -20,7 +20,7 @@ def test_get_base_name(
     pv_base: str,
     exception: type[Exception] | None,
 ):
-    if not pv_base:
+    if exception is not None:
         with pytest.raises(exception):
             get_base_name(ioc_name)
     else:
