@@ -127,10 +127,15 @@ class IOCMainWindow(QMainWindow):
         # Ready to go! Start checking ioc status!
         self.model.start_poll_thread()
 
-        # Performance quibbles, doing this in a thread saves a startup second
+        # Performance quibbles
+        # Doing this in a thread saves a startup second
         self.pydm_ready = threading.Event()
         self.pydm_prep_thread = threading.Thread(target=self.prepare_pydm)
         self.pydm_prep_thread.start()
+        # Pre-loading the netconfig info makes the table snappier
+        self.netconfig_cache = {}
+        self.netconfig_prep_thread = threading.Thread(target=self.prepare_netconfig)
+        self.netconfig_prep_thread.start()
 
     def prepare_pydm(self):
         """
@@ -146,6 +151,24 @@ class IOCMainWindow(QMainWindow):
         # Force early load of the plugins
         pydm.data_plugins.initialize_plugins_if_needed()
         self.pydm_ready.set()
+
+    def prepare_netconfig(self):
+        """
+        Load netconfig info in the background to make the table feel snappier
+        """
+        for host in self.model.config.hosts:
+            self._get_netconfig(host)
+
+    def _get_netconfig(self, host: str):
+        """
+        Return the cached netconfig information if available, otherwise get it.
+        """
+        if host not in self.netconfig_cache:
+            try:
+                self.netconfig_cache[host] = netconfig(host=host)
+            except Exception:
+                self.netconfig_cache[host] = {}
+        return self.netconfig_cache[host]
 
     def action_write_and_apply_config(self, ioc: IOCModelIdentifier | None = None):
         """
@@ -470,7 +493,7 @@ class IOCMainWindow(QMainWindow):
                 self.ui.tod.set_channel(f"ca://{base}:TOD")
                 self.ui.boottime.set_channel(f"ca://{base}:STARTTOD")
             try:
-                host_info = netconfig(host)
+                host_info = self._get_netconfig(host)
             except Exception:
                 host_info = {}
             try:
