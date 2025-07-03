@@ -452,7 +452,7 @@ class IOCMainWindow(QMainWindow):
             if ioc_name == self.current_ioc:
                 return
             self.current_ioc = ioc_name
-            self.ui.IOCname.setText(ioc_name)
+            self.ui.iocname.setText(ioc_name)
             try:
                 base = get_base_name(ioc=ioc_name)
             except Exception:
