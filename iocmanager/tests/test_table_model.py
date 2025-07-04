@@ -1,3 +1,4 @@
+import concurrent.futures
 import dataclasses
 import time
 from copy import deepcopy
@@ -758,7 +759,11 @@ def test_set_data(
         # Return value
         assert success
         # dataChanged emits
-        assert len(data_emits) == 1
+        if column == TableColumn.HOST:
+            # Might update port too (color)
+            assert len(data_emits) == 2
+        else:
+            assert len(data_emits) == 1
         assert data_emits[0][0].row() == 0
         assert data_emits[0][1].row() == 0
         assert data_emits[0][0].column() == column
@@ -1034,7 +1039,9 @@ def test_update_from_live_ioc(model: IOCTableModel):
     assert data_emits[1][1].column() == TableColumn.EXTRA
 
 
-def test_live_only_iocs(model: IOCTableModel, monkeypatch: pytest.MonkeyPatch):
+def test_live_only_iocs(
+    model: IOCTableModel, monkeypatch: pytest.MonkeyPatch, qtbot: QtBot
+):
     """
     This is a general integration test for iocs that are live but not in the config.
 
@@ -1101,8 +1108,9 @@ def test_live_only_iocs(model: IOCTableModel, monkeypatch: pytest.MonkeyPatch):
     ]
 
     # Poll once
-    model.stop_poll_thread()
-    model._poll_loop()
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        model._inner_poll(executor=executor)
+    qtbot.wait_signal(model.signal_poll_done, timeout=1000)
 
     # Check that the correct iocs are or are not queryable
     for name in live_only_yes:

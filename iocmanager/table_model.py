@@ -17,6 +17,7 @@ import concurrent.futures
 import logging
 import threading
 import time
+from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
@@ -219,23 +220,29 @@ class IOCTableModel(QAbstractTableModel):
     signal_new_config_file = Signal(Config)
     signal_new_status_file = Signal(IOCStatusFile)
     signal_new_status_live = Signal(IOCStatusLive)
+    signal_poll_done = Signal()
 
     def __init__(self, config: Config, hutch: str, parent: ParentWidget = None):
         super().__init__(parent)
         self.config = config
         self.hutch = hutch
+        # Dialogs
         self.dialog_add = AddIOCDialog(hutch=hutch, model=self, parent=parent)
         self.dialog_details = DetailsDialog(parent=parent)
-        self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         # Local changes (not applied yet)
         self.add_iocs: dict[str, IOCProc] = {}
         self.edit_iocs: dict[str, IOCProc] = {}
         self.delete_iocs: set[str] = set()
+        # Performance caches
+        self.ports_taken: defaultdict[tuple[str, int], int]
+        self.refresh_ports_taken(self.config)
         # Live info, collected in poll_thread
         self.live_only_iocs: dict[str, IOCProc] = {}
         self.status_live: dict[str, IOCStatusLive] = {}
         self.status_files: dict[str, IOCStatusFile] = {}
         self.host_os: dict[str, str] = {}
+        # Polling resources
+        self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
         self.poll_interval = 10.0
         self.poll_stop_ev = threading.Event()
         self.signal_new_config_file.connect(self.update_from_config_file)
@@ -488,7 +495,6 @@ class IOCTableModel(QAbstractTableModel):
         ioc_info = self.get_ioc_info(ioc=ioc)
         ioc_proc = ioc_info.ioc_proc
         ioc_live = ioc_info.ioc_live
-        norm_path = normalize_path(directory=ioc_proc.path, ioc_name=ioc_proc.name)
         match column:
             case TableColumn.IOCNAME:
                 return ioc_proc.alias or ioc_proc.name
@@ -497,10 +503,12 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.STATE:
                 if ioc_proc.disable:
                     return StateOption.OFF.value
-                elif norm_path.startswith("ioc/") or norm_path.endswith("/camrecord"):
+                norm_path = normalize_path(
+                    directory=ioc_proc.path, ioc_name=ioc_proc.name
+                )
+                if norm_path.startswith("ioc/") or norm_path.endswith("/camrecord"):
                     return StateOption.PROD.value
-                else:
-                    return StateOption.DEV.value
+                return StateOption.DEV.value
             case TableColumn.STATUS:
                 return ioc_live.status.value
             case TableColumn.HOST:
@@ -510,7 +518,7 @@ class IOCTableModel(QAbstractTableModel):
             case TableColumn.PORT:
                 return ioc_proc.port
             case TableColumn.VERSION:
-                return norm_path
+                return normalize_path(directory=ioc_proc.path, ioc_name=ioc_proc.name)
             case TableColumn.PARENT:
                 return ioc_proc.parent
             case TableColumn.EXTRA:
@@ -672,14 +680,8 @@ class IOCTableModel(QAbstractTableModel):
                 ...
             case TableColumn.PORT:
                 # Port conflicts are bad! Red bad!
-                for other_proc in self.get_next_config().procs.values():
-                    if ioc_proc.name == other_proc.name:
-                        continue
-                    if (
-                        ioc_proc.host == other_proc.host
-                        and ioc_proc.port == other_proc.port
-                    ):
-                        return Qt.red
+                if self.ports_taken[(ioc_proc.host, ioc_proc.port)] > 1:
+                    return Qt.red
             case TableColumn.VERSION:
                 ...
             case TableColumn.PARENT:
@@ -754,7 +756,15 @@ class IOCTableModel(QAbstractTableModel):
                 return False
         # Write succeeded!
         self.edit_iocs[new_proc.name] = new_proc
+        # Port cache handling
+        if index.column() in (TableColumn.HOST, TableColumn.PORT):
+            self.ports_taken[(ioc_proc.host, ioc_proc.port)] -= 1
+            self.ports_taken[(new_proc.host, new_proc.port)] += 1
         self.dataChanged.emit(index, index)
+        if index.column() == TableColumn.HOST:
+            # Port color might have changed
+            port_idx = self.index(index.row(), TableColumn.PORT)
+            self.dataChanged.emit(port_idx, port_idx)
         return True
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlags:
@@ -890,6 +900,8 @@ class IOCTableModel(QAbstractTableModel):
             except TimeoutError:
                 ...
 
+        self.signal_poll_done.emit()
+
     def update_from_config_file(self, config: Config):
         """
         Update the GUI when the config file changes, e.g. from other users.
@@ -932,6 +944,7 @@ class IOCTableModel(QAbstractTableModel):
         # It should be faster to tell most everything to update than to pick cells
         # Technically we could skip the status columns but it's ok
         self._emit_config_changed()
+        self.refresh_ports_taken()
 
     def update_from_status_file(self, status_file: IOCStatusFile):
         """
@@ -1047,6 +1060,13 @@ class IOCTableModel(QAbstractTableModel):
         if self.live_only_iocs:
             self._emit_live_only_changed()
 
+    def refresh_ports_taken(self, config: Config | None = None):
+        if config is None:
+            config = self.get_next_config()
+        self.ports_taken = defaultdict(int)
+        for ioc_proc in config.procs.values():
+            self.ports_taken[(ioc_proc.host, ioc_proc.port)] += 1
+
     def refresh_all(self):
         """
         Refresh all information in the table.
@@ -1066,6 +1086,7 @@ class IOCTableModel(QAbstractTableModel):
         else:
             self.update_from_config_file(config)
         self.refresh_live_only_iocs()
+        self.refresh_ports_taken()
 
     # User Dialogs
     def add_ioc_dialog(self):
@@ -1137,6 +1158,8 @@ class IOCTableModel(QAbstractTableModel):
 
         if new_proc != ioc_proc:
             self.edit_iocs[new_proc.name] = new_proc
+            self.ports_taken[(ioc_proc.host, ioc_proc.port)] -= 1
+            self.ports_taken[(new_proc.host, new_proc.port)] += 1
         if new_proc.alias != ioc_proc.alias:
             index = self.index(ioc_info.row, TableColumn.IOCNAME)
             self.dataChanged.emit(index, index)
@@ -1159,6 +1182,7 @@ class IOCTableModel(QAbstractTableModel):
             add_row,
         )
         self.add_iocs[ioc_proc.name] = ioc_proc
+        self.ports_taken[(ioc_proc.host, ioc_proc.port)] += 1
         self.endInsertRows()
         self.refresh_live_only_iocs()
 
@@ -1170,6 +1194,7 @@ class IOCTableModel(QAbstractTableModel):
         """
         ioc_info = self.get_ioc_info(ioc=ioc)
         self.delete_iocs.add(ioc_info.name)
+        self.ports_taken[(ioc_info.ioc_proc.host, ioc_info.ioc_proc.port)] -= 1
         self._emit_row_changed(ioc_info.row)
 
     def revert_ioc(self, ioc: IOCModelIdentifier):
@@ -1199,6 +1224,7 @@ class IOCTableModel(QAbstractTableModel):
         elif undo_edit is not None or undo_delete is not None:
             self._emit_row_changed(row=row)
         self.refresh_live_only_iocs()
+        self.refresh_ports_taken()
 
     def _emit_all_changed(self):
         """Helper for causing a full table update."""
@@ -1294,6 +1320,7 @@ class IOCTableModel(QAbstractTableModel):
             edit_proc.path = ioc_live.path
         self.edit_iocs[ioc_info.name] = edit_proc
         self.refresh_live_only_iocs()
+        self.refresh_ports_taken()
 
     def get_unused_port(self, host: str, closed: bool) -> int:
         """
