@@ -110,27 +110,24 @@ class IOCTableDelegate(QStyledItemDelegate):
         https://doc.qt.io/qt-5/qstyleditemdelegate.html#sizeHint
         """
         index = self._source_index(index)
-        size = super().sizeHint(option, index)
 
         # Makes the table feel less cramped!
-        if size.height() < 25:
-            size.setHeight(25)
+        height = 25
 
         # Make sure there's enough room for incoming data/edits
         match index.column():
-            case TableColumn.HOST | TableColumn.VERSION | TableColumn.PARENT:
-                min_width = 150
-            case TableColumn.IOCNAME | TableColumn.ID:
-                min_width = 110
+            case TableColumn.VERSION | TableColumn.PARENT:
+                width = 250
+            case TableColumn.IOCNAME:
+                width = 200
+            case TableColumn.HOST | TableColumn.ID:
+                width = 150
             case TableColumn.STATUS:
-                min_width = 80
+                width = 110
             case _:
-                min_width = 50
+                width = 50
 
-        if size.width() < min_width:
-            size.setWidth(min_width)
-
-        return size
+        return QSize(width, height)
 
     def createEditor(
         self, parent: QWidget, option: QStyleOptionViewItem, index: QModelIndex
