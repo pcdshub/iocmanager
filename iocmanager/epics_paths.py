@@ -326,6 +326,8 @@ def pyioc_parent(directory: str, ioc_name: str) -> str:
             package = "queueserver"
         elif "redis-server" in text:
             package = "redis"
+        if env_kind and env_version:
+            break
     for check_dir in (directory, os.path.dirname(stcmd)):
         # Check for a conda_env in the same dir
         if os.path.exists(os.path.join(check_dir, "conda_env")):
