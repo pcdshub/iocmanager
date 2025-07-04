@@ -134,11 +134,13 @@ class IOCMainWindow(QMainWindow):
         # Performance quibbles
         # Doing this in a thread saves a startup second
         self.pydm_ready = threading.Event()
-        self.pydm_prep_thread = threading.Thread(target=self.prepare_pydm)
+        self.pydm_prep_thread = threading.Thread(target=self.prepare_pydm, daemon=True)
         self.pydm_prep_thread.start()
         # Pre-loading the netconfig info makes the table snappier
         self.netconfig_cache = {}
-        self.netconfig_prep_thread = threading.Thread(target=self.prepare_netconfig)
+        self.netconfig_prep_thread = threading.Thread(
+            target=self.prepare_netconfig, daemon=True
+        )
         self.netconfig_prep_thread.start()
 
     def prepare_pydm(self):
