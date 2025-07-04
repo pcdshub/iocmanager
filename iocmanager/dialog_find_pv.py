@@ -11,7 +11,7 @@ The layout is defined in ui/find_pv.ui
 import logging
 import re
 
-from qtpy.QtCore import QItemSelectionModel, QSortFilterProxyModel
+from qtpy.QtCore import QItemSelectionModel, QSortFilterProxyModel, Qt
 from qtpy.QtWidgets import QAbstractItemView, QDialog, QTableView
 
 from . import ui_find_pv
@@ -57,7 +57,7 @@ class FindPVDialog(QDialog):
         self.regexp = re.compile("")
         self.last_ioc_found = ""
         self.found_count = 0
-        self.process_next.connect(self._process_next_ioc)
+        self.process_next.connect(self._process_next_ioc, Qt.QueuedConnection)  # type: ignore
 
     def find_pv_and_exec(self, regex_text: str):
         """
