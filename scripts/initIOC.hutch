@@ -3,34 +3,32 @@
 BASEPORT=39050
 PROCMGRD_ROOT=procmgrd
 
-if [ -z "$IOC_COMMON" ]; then
-	IOC_COMMON=/cds/data/iocCommon
-fi
-if [ -z "$IOC_DATA" ]; then
-	IOC_DATA=/cds/data/iocData
-fi
 host="$(hostname -s)"
 PROCMGRD_LOG_DIR="${IOC_DATA}"/"${host}"/logs
 
 # Save our OS for later!
 echo "${T_A}" | cut -f 1 -d "-" > "${PYPS_ROOT}"/config/.host/"${host}"
 
-# Figure out the hutch configuration: fee, amo, sxr, xpp, ...
-cfg=`awk /$host/'{print $2;}'  $PYPS_ROOT/config/hosts.special`
-if [ "${cfg}X" == "X" ]; then
-    cfg=`echo $host | awk '{print substr($0,5,3);}' -`
+# Figure out the hutch configuration: lfe, tmo, rix, xpp, ...
+# Take the entry in hosts.special if it exists
+cfg="$(awk /"${host}"/'{print $2;}' "${PYPS_ROOT}"/config/hosts.special)"
+if [ -z "${cfg}" ]; then
+    # Otherwise, take the second part of ctl-kfe-mot-01, for example
+    cfg="$(echo "${host}" | cut -d "-" -f 2)"
 fi
 
-cfguser=${cfg}ioc
-if [ "$cfg" == "xrt" ]; then
+cfguser="${cfg}ioc"
+# Special case for xrt, ued to work around no xrtioc, uedioc accounts
+if [ "${cfg}" == "xrt" ]; then
     cfguser=feeioc
 fi
-if [ "$cfg" == "ued" ]; then
+if [ "${cfg}" == "ued" ]; then
     cfguser=feeioc
 fi
 
-# Setup the cfg environment.
-export IOC=${host}
+# Setup the hutch-specific cfg environment.
+# TODO resolve discrepencies between prod all folder and dev so all IOCs continue to work
+# TODO test this during summer down
 # CFG_ENV="${IOC_COMMON}"/All/"${cfg}_env.sh"
 CFG_ENV=/cds/group/pcds/epics-dev/zlentz/iocCommon-All/"${cfg}_env.sh"
 if [ ! -f "${CFG_ENV}" ]; then
@@ -38,20 +36,21 @@ if [ ! -f "${CFG_ENV}" ]; then
 	exit 1
 fi
 source "${CFG_ENV}"
-if [ -z ${IOC_USER} ]; then
-   export IOC_USER=${cfguser}
+if [ -z "${IOC_USER}" ]; then
+   export IOC_USER="${cfguser}"
 fi
 
 # Find the procmgrd bin directory via ${cfg}_env PROCSERV variable
-PROCSERV_WORDS=($PROCSERV)
-export PROCSERV_EXE=${PROCSERV_WORDS[0]}
-PROCMGRD_DIR=$(dirname $PROCSERV_EXE)
+# This variable contains a path to procServ and some args, e.g. /some/path/procServ --allow --logstamp
+export PROCSERV_EXE
+PROCSERV_EXE="$(echo "${PROCSERV}" | cut -d ' ' -f 1)"
+PROCMGRD_DIR="$(dirname "${PROCSERV_EXE}")"
 
 # Make sure we have a procmgrd log directory
-if [ ! -d $PROCMGRD_LOG_DIR ]; then
-	su $IOC_USER -s /bin/sh -c "mkdir -p  $PROCMGRD_LOG_DIR"
+if [ ! -d "${PROCMGRD_LOG_DIR}" ]; then
+	su "${IOC_USER}" -s /bin/sh -c "mkdir -p ${PROCMGRD_LOG_DIR}"
 fi
-su $IOC_USER -s /bin/sh -c "chmod g+rwx $PROCMGRD_LOG_DIR"
+su "${IOC_USER}" -s /bin/sh -c "chmod g+rwx ${PROCMGRD_LOG_DIR}"
 
 # Allow control connections from anywhere
 # ignore ^D so procmgrd doesn't terminate on ^D
@@ -69,20 +68,20 @@ launchProcMgrD()
     ctrlport=$3
     logport=$(( ctrlport + 1 ))
 	PROCMGRD_LOGFILE=$PROCMGRD_LOG_DIR/$2.log
-    su ${cfgduser} -s /bin/sh -c "$PROCMGRD_BIN $PROCMGRD_ARGS -l $logport --logfile $PROCMGRD_LOGFILE $ctrlport $PROCMGRD_SHELL"
-    fixTelnet $ctrlport
+    su "${cfgduser}" -s /bin/sh -c "${PROCMGRD_BIN} ${PROCMGRD_ARGS} -l ${logport} --logfile ${PROCMGRD_LOGFILE} ${ctrlport} ${PROCMGRD_SHELL}"
+    fixTelnet "${ctrlport}"
 }
 
 # Start up the procmgrd for the hutch IOC_USER
-if [ "$cfg" != "xrt" -a "$cfg" != "las" ]; then
-	launchProcMgrD $IOC_USER ${PROCMGRD_ROOT}0 $(( BASEPORT ))
+if [ "$cfg" != "xrt" ] && [ "$cfg" != "las" ]; then
+	launchProcMgrD "${IOC_USER}" "${PROCMGRD_ROOT}0" $(( BASEPORT ))
 fi
 
 # Start up the procmgrd for feeioc
-launchProcMgrD feeioc ${PROCMGRD_ROOT}1 $(( BASEPORT + 2 ))
+launchProcMgrD feeioc "${PROCMGRD_ROOT}1" $(( BASEPORT + 2 ))
 
 # Start up the procmgrd for lasioc
-launchProcMgrD lasioc ${PROCMGRD_ROOT}2 $(( BASEPORT + 4 ))
+launchProcMgrD lasioc "${PROCMGRD_ROOT}2" $(( BASEPORT + 4 ))
 
 # Driver stuff.
 # TODO: Remove reliance on iocmanager for driver initialization
@@ -98,18 +97,18 @@ fi
 # At one point, the TPR load script deleted the *EVR* driver.  Just
 # in case this gets reverted, let's do the TPR *first*...
 export TPR_DRIVER=/reg/g/pcds/package/slaclab/pcieTprDriver/latest/
-if [ ! -e /dev/tpra -a -e $TPR_DRIVER/`uname -r`/tpr.ko ]; then
-       (cd $TPR_DRIVER/`uname -r`; $TPR_DRIVER/src/load_module.sh)
+if [ ! -e /dev/tpra ] && [ -e "${TPR_DRIVER}/$(uname -r)/tpr.ko" ]; then
+       (cd "${TPR_DRIVER}/$(uname -r)" || exit; $TPR_DRIVER/src/load_module.sh)
        if [ ! -e /dev/tpra ]
        then
            /sbin/rmmod tpr
        fi
 fi
 
-if [ ! -e /dev/era0 -a -e $IOC_ROOT/../modules/ev2_driver/latest/driver/evr_load_module ]; then
+if [ ! -e /dev/era0 ] && [ -e "${IOC_ROOT}"/../modules/ev2_driver/latest/driver/evr_load_module ]; then
         # Load EVR module on startup
         # Must be run as root
-        $IOC_ROOT/../modules/ev2_driver/latest/driver/evr_load_module
+        "${IOC_ROOT}"/../modules/ev2_driver/latest/driver/evr_load_module
 	if [ ! -e /dev/era0 ]
         then
 	    /sbin/rmmod evr_device
@@ -120,7 +119,7 @@ if [ ! -e /dev/era0 -a -e $IOC_ROOT/../modules/ev2_driver/latest/driver/evr_load
         fi
 fi
 
-if [ ! -e /dev/edt0 -a -e /opt/EDTpdv/edtinit ]; then
+if [ ! -e /dev/edt0 ] && [ -e /opt/EDTpdv/edtinit ]; then
         # Install EDT driver on startup
         # Must be run as root
         /opt/EDTpdv/edtinit start
@@ -129,15 +128,15 @@ fi
 # Add any extra driver initialization before this comment.
 
 # Setup the IOC user environment.
-export IOC=$host
+export IOC="${host}"
 
 # Start caRepeater.
-su $IOC_USER -s /bin/sh -c "$PROCSERV --logfile $IOC_DATA/$IOC_HOST/iocInfo/caRepeater.log --name caRepeater 30000 $SCRIPTROOT/runRepeater"
+su "${IOC_USER}" -s /bin/sh -c "${PROCSERV} --logfile ${IOC_DATA}/${IOC_HOST}/iocInfo/caRepeater.log --name caRepeater 30000 ${SCRIPTROOT}/runRepeater"
 sleep 5
 
 # Start all of our processes.
-if [ "$cfg" != "xrt" -a "$cfg" != "las" ]; then
-    startAll $cfg $host
+if [ "$cfg" != "xrt" ] && [ "$cfg" != "las" ]; then
+    startAll "${cfg}" "${host}"
 fi
-startAll xrt $host
-startAll las $host
+startAll xrt "${host}"
+startAll las "${host}"

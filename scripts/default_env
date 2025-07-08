@@ -1,5 +1,4 @@
 #!/usr/bin/bash
-# TODO: find a consistent way to get procServ available without pkgmgr
 if [ -x /etc/pathinit ]; then
     # TODO: figure out if this is actually used anywhere
     source /etc/pathinit
