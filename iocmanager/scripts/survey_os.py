@@ -14,11 +14,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
 
-from log_setup import add_verbose_arg, iocmanager_log_config
 from packaging.version import InvalidVersion, Version
 
 from ..config import IOCProc, get_host_os, read_config
 from ..env_paths import env_paths
+from ..log_setup import add_verbose_arg, iocmanager_log_config
 
 ALL_HUTCHES = [
     "lfe",
@@ -113,6 +113,14 @@ def get_parser() -> argparse.ArgumentParser:
             "iocs."
         ),
     )
+    parser.add_argument(
+        "--debug-host",
+        default="",
+        help=(
+            "Pass a host name to check just that host and do a debug print "
+            "instead of the nice user-facing print."
+        ),
+    )
     return parser
 
 
@@ -168,6 +176,7 @@ class IOCResult:
 
 @dataclasses.dataclass
 class SurveyStats:
+    raw_results: list[IOCResult]
     ioc_count: int
     ready_count: int
     waiting_for_common_count: int
@@ -269,9 +278,38 @@ class SurveyStats:
                 "The following hosts' live OSes could not be found: "
                 f"{self.hosts_with_unk_os}"
             )
+        print(
+            "The following is a per-host breakdown of "
+            "per-ioc-type migration readiness to paste into the google sheet:"
+        )
+        host_to_common_progress = {}
+        host_snowflakes = set()
+        for res in self.raw_results:
+            if res.current_os not in NEEDS_UPGRADE:
+                continue
+            if res.hostname not in host_to_common_progress:
+                host_to_common_progress[res.hostname] = {}
+            if res.common_ioc not in host_to_common_progress[res.hostname]:
+                host_to_common_progress[res.hostname][res.common_ioc] = (
+                    res.supported_os == GOAL_OS
+                )
+            if res.snowflake:
+                host_snowflakes.add(res.common_ioc)
+        for host in sorted(host_to_common_progress):
+            ready = 0
+            total = 0
+            snowflakes = 0
+            for common_ioc, status in host_to_common_progress[host].items():
+                if status:
+                    ready += 1
+                total += 1
+                if common_ioc in host_snowflakes:
+                    snowflakes += 1
+            print(f"{host} {ready} {total} {snowflakes}")
 
     @classmethod
     def from_results[T: SurveyStats](cls: type[T], results: Iterable[IOCResult]) -> T:
+        raw_results = list(results)
         ioc_count = 0
         ready_count = 0
         waiting_for_common_count = 0
@@ -285,7 +323,7 @@ class SurveyStats:
         no_upgrade_needed = []
         iocs_common_ready = defaultdict(list)
         iocs_other_ready = []
-        for res in results:
+        for res in raw_results:
             ioc_count += 1
             if res.supported_os == GOAL_OS:
                 ready_count += 1
@@ -317,6 +355,7 @@ class SurveyStats:
         if ioc_count == 0:
             raise RuntimeError("No IOCs in results!")
         return cls(
+            raw_results=raw_results,
             ioc_count=ioc_count,
             ready_count=ready_count,
             waiting_for_common_count=waiting_for_common_count,
@@ -511,6 +550,17 @@ def main(sys_argv: list[str] | None = None) -> int:
         result = IOCResult.from_ioc_proc(ioc_proc=ioc_proc)
         print(result)
         return 0
+    if args.debug_host:
+        configs = [read_config(hutch) for hutch in hutches if hutch != "all"]
+        results = []
+        for cfg in configs:
+            for proc in cfg.procs.values():
+                if proc.host == args.debug_host:
+                    results.append(IOCResult.from_ioc_proc(proc))
+        for res in results:
+            print(res)
+        return 0
+
     results = SurveyResult.from_hutch_list(hutch_list=hutches)
     for hutch_res in results.hutch_results:
         if args.debug_common:
