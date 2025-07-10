@@ -83,50 +83,6 @@ launchProcMgrD feeioc "${PROCMGRD_ROOT}1" $(( BASEPORT + 2 ))
 # Start up the procmgrd for lasioc
 launchProcMgrD lasioc "${PROCMGRD_ROOT}2" $(( BASEPORT + 4 ))
 
-# Driver stuff.
-# TODO: Remove reliance on iocmanager for driver initialization
-# Should be handled in a generic way by a common host startup script w/
-# optional override of default driver versions via host specific files.
-
-if [ -x /sbin/service ]; then
-        /sbin/service hyperthreading-disable start
-fi
-
-# TPR driver
-#
-# At one point, the TPR load script deleted the *EVR* driver.  Just
-# in case this gets reverted, let's do the TPR *first*...
-export TPR_DRIVER=/reg/g/pcds/package/slaclab/pcieTprDriver/latest/
-if [ ! -e /dev/tpra ] && [ -e "${TPR_DRIVER}/$(uname -r)/tpr.ko" ]; then
-       (cd "${TPR_DRIVER}/$(uname -r)" || exit; $TPR_DRIVER/src/load_module.sh)
-       if [ ! -e /dev/tpra ]
-       then
-           /sbin/rmmod tpr
-       fi
-fi
-
-if [ ! -e /dev/era0 ] && [ -e "${IOC_ROOT}"/../modules/ev2_driver/latest/driver/evr_load_module ]; then
-        # Load EVR module on startup
-        # Must be run as root
-        "${IOC_ROOT}"/../modules/ev2_driver/latest/driver/evr_load_module
-	if [ ! -e /dev/era0 ]
-        then
-	    /sbin/rmmod evr_device
-        fi
-	if [ ! -e /dev/ega0 ]
-        then
-	    /sbin/rmmod pci_mrfevg
-        fi
-fi
-
-if [ ! -e /dev/edt0 ] && [ -e /opt/EDTpdv/edtinit ]; then
-        # Install EDT driver on startup
-        # Must be run as root
-        /opt/EDTpdv/edtinit start
-fi
-
-# Add any extra driver initialization before this comment.
-
 # Setup the IOC user environment.
 export IOC="${host}"
 
