@@ -673,7 +673,7 @@ def get_parser():
             "running inside procServ on your servers."
         ),
     )
-    parser.add_argument("--hutch", help="The area whose IOCs you'd like to manage.")
+    parser.add_argument("hutch", help="The area whose IOCs you'd like to manage.")
     add_verbose_arg(parser)
     parser.add_argument(
         "--version", action="store_true", help="Show the version information and exit."
