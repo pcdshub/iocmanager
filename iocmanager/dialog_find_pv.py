@@ -36,6 +36,7 @@ class FindPVDialog(QDialog):
     """
 
     process_next = Signal(int)
+    process_done = Signal()
 
     def __init__(
         self,
@@ -122,3 +123,4 @@ class FindPVDialog(QDialog):
             )
             selection_model.select(idx, QItemSelectionModel.SelectCurrent)
             self.view.scrollTo(idx, QAbstractItemView.PositionAtCenter)
+        self.process_done.emit()

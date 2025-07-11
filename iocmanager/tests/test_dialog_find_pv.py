@@ -40,31 +40,25 @@ def test_find_pv(find_pv_dialog: FindPVDialog, model: IOCTableModel, qtbot: QtBo
     # for match sources
 
     # No matches -> expect the text to say no matches
-    def no_matches():
-        assert "produced no matches" in find_pv_dialog.ui.found_pvs.toPlainText()
-
-    find_pv_dialog.find_pv_and_exec("definitely_not_a_match")
-    qtbot.wait_until(no_matches, timeout=1000)
+    with qtbot.wait_signal(find_pv_dialog.process_done):
+        find_pv_dialog.find_pv_and_exec("definitely_not_a_match")
+    assert "produced no matches" in find_pv_dialog.ui.found_pvs.toPlainText()
     assert exec_mock.call_count == 1
 
     # A few matches -> should all be in the text
-    def a_few_matches():
-        for text in ("TST:FLOAT", "TST:INT", "TST:STRING"):
-            assert text in find_pv_dialog.ui.found_pvs.toPlainText()
-        assert "ioc1" in find_pv_dialog.ui.found_pvs.toPlainText()
-        assert "iocbad" not in find_pv_dialog.ui.found_pvs.toPlainText()
-
-    find_pv_dialog.find_pv_and_exec("TST:.*")
-    qtbot.wait_until(a_few_matches, timeout=1000)
+    with qtbot.wait_signal(find_pv_dialog.process_done):
+        find_pv_dialog.find_pv_and_exec("TST:.*")
+    for text in ("TST:FLOAT", "TST:INT", "TST:STRING"):
+        assert text in find_pv_dialog.ui.found_pvs.toPlainText()
+    assert "ioc1" in find_pv_dialog.ui.found_pvs.toPlainText()
+    assert "iocbad" not in find_pv_dialog.ui.found_pvs.toPlainText()
     assert exec_mock.call_count == 2
 
     # One match -> the view stuff shouldn't error out, this one has an alias too
-    def one_match():
-        assert "What:An:IOC" in find_pv_dialog.ui.found_pvs.toPlainText()
-        assert "ioc1" not in find_pv_dialog.ui.found_pvs.toPlainText()
-        assert "iocbad" in find_pv_dialog.ui.found_pvs.toPlainText()
-        assert "Bad!" in find_pv_dialog.ui.found_pvs.toPlainText()
-
-    find_pv_dialog.find_pv_and_exec("What:An:IOC")
-    qtbot.wait_until(one_match, timeout=1000)
+    with qtbot.wait_signal(find_pv_dialog.process_done):
+        find_pv_dialog.find_pv_and_exec("What:An:IOC")
+    assert "What:An:IOC" in find_pv_dialog.ui.found_pvs.toPlainText()
+    assert "ioc1" not in find_pv_dialog.ui.found_pvs.toPlainText()
+    assert "iocbad" in find_pv_dialog.ui.found_pvs.toPlainText()
+    assert "Bad!" in find_pv_dialog.ui.found_pvs.toPlainText()
     assert exec_mock.call_count == 3
