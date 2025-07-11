@@ -17,16 +17,8 @@ if [ -z "${cfg}" ]; then
     cfg="$(echo "${host}" | cut -d "-" -f 2)"
 fi
 
-cfguser="${cfg}ioc"
-# Special case for xrt, ued to work around no xrtioc, uedioc accounts
-if [ "${cfg}" == "xrt" ]; then
-    cfguser=feeioc
-fi
-if [ "${cfg}" == "ued" ]; then
-    cfguser=feeioc
-fi
-
 # Setup the hutch-specific cfg environment.
+# This should override settings, e.g. IOC_USER as needed.
 # TODO resolve discrepencies between prod all folder and dev so all IOCs continue to work
 # TODO test this during summer down
 # CFG_ENV="${IOC_COMMON}"/All/"${cfg}_env.sh"
@@ -37,7 +29,7 @@ if [ ! -f "${CFG_ENV}" ]; then
 fi
 source "${CFG_ENV}"
 if [ -z "${IOC_USER}" ]; then
-   export IOC_USER="${cfguser}"
+   export IOC_USER="${cfg}ioc"
 fi
 
 # Find the procmgrd bin directory via ${cfg}_env PROCSERV variable
