@@ -673,9 +673,12 @@ def get_parser():
             "running inside procServ on your servers."
         ),
     )
-    parser.add_argument("hutch", help="The area whose IOCs you'd like to manage.")
     add_verbose_arg(parser)
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "hutch", nargs="?", help="The area whose IOCs you'd like to manage."
+    )
+    group.add_argument(
         "--version", action="store_true", help="Show the version information and exit."
     )
     try:
