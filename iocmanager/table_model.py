@@ -25,7 +25,7 @@ from typing import Any
 
 from qtpy.QtCore import QAbstractTableModel, QModelIndex, Qt, QVariant
 from qtpy.QtGui import QBrush
-from qtpy.QtWidgets import QDialog, QMessageBox
+from qtpy.QtWidgets import QDialog, QMessageBox, QWidget
 
 from .config import (
     Config,
@@ -44,7 +44,6 @@ from .procserv_tools import (
     ProcServStatus,
     check_status,
 )
-from .type_hints import ParentWidget
 
 # Depends on the version, even pylance gets confused
 try:
@@ -222,7 +221,7 @@ class IOCTableModel(QAbstractTableModel):
     signal_new_status_live = Signal(IOCStatusLive)
     signal_poll_done = Signal()
 
-    def __init__(self, config: Config, hutch: str, parent: ParentWidget = None):
+    def __init__(self, config: Config, hutch: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.config = config
         self.hutch = hutch

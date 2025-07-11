@@ -26,7 +26,6 @@ from qtpy.QtWidgets import (
 
 from .config import IOCProc
 from .epics_paths import get_parent, standard_ioc_paths
-from .type_hints import ParentWidget
 
 if TYPE_CHECKING:
     from .table_model import IOCTableModel
@@ -40,7 +39,7 @@ class AddIOCDialog(QFileDialog):
     - Helpers for port selection
     """
 
-    def __init__(self, hutch: str, model: IOCTableModel, parent: ParentWidget):
+    def __init__(self, hutch: str, model: IOCTableModel, parent: QWidget | None):
         standard_paths = standard_ioc_paths(hutch=hutch)
         default_dir = standard_paths[0]
         for pth in standard_paths:

@@ -9,10 +9,9 @@ The CommitDialog's layout is defined in ui/commit.ui
 
 from enum import IntEnum
 
-from qtpy.QtWidgets import QDialog, QDialogButtonBox
+from qtpy.QtWidgets import QDialog, QDialogButtonBox, QWidget
 
 from . import ui_commit
-from .type_hints import ParentWidget
 
 
 class CommitOption(IntEnum):
@@ -35,7 +34,7 @@ class CommitDialog(QDialog):
     and right before we save the file.
     """
 
-    def __init__(self, hutch: str, parent: ParentWidget = None):
+    def __init__(self, hutch: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.ui = ui_commit.Ui_Dialog()
         self.ui.setupUi(self)

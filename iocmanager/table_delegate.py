@@ -33,7 +33,6 @@ from . import ui_hostname
 from .env_paths import env_paths
 from .epics_paths import get_parent, normalize_path, standard_ioc_paths
 from .table_model import IOCTableModel, TableColumn
-from .type_hints import ParentWidget
 
 STATECOMBOLIST = ["Off", "Dev/Prod"]
 logger = logging.getLogger(__name__)
@@ -48,7 +47,7 @@ class HostnameDialog(QDialog):
     the "New Host" option when editing IOC hosts in the table.
     """
 
-    def __init__(self, parent: ParentWidget = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.ui = ui_hostname.Ui_Dialog()
         self.ui.setupUi(self)
@@ -81,7 +80,7 @@ class IOCTableDelegate(QStyledItemDelegate):
         hutch: str,
         model: IOCTableModel,
         proxy_model: QSortFilterProxyModel | None = None,
-        parent: ParentWidget = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.hutch = hutch

@@ -12,12 +12,11 @@ import logging
 import re
 
 from qtpy.QtCore import QItemSelectionModel, QSortFilterProxyModel, Qt
-from qtpy.QtWidgets import QAbstractItemView, QDialog, QTableView
+from qtpy.QtWidgets import QAbstractItemView, QDialog, QTableView, QWidget
 
 from . import ui_find_pv
 from .ioc_info import find_pv
 from .table_model import IOCTableModel
-from .type_hints import ParentWidget
 
 # Depends on the version, even pylance gets confused
 try:
@@ -43,7 +42,7 @@ class FindPVDialog(QDialog):
         model: IOCTableModel,
         proxy_model: QSortFilterProxyModel,
         view: QTableView,
-        parent: ParentWidget = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.ui = ui_find_pv.Ui_Dialog()

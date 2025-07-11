@@ -9,11 +9,10 @@ The DetailsDialog's layout is defined in ui/details.ui
 
 from copy import deepcopy
 
-from qtpy.QtWidgets import QDialog
+from qtpy.QtWidgets import QDialog, QWidget
 
 from . import ui_details
 from .config import IOCProc
-from .type_hints import ParentWidget
 
 
 class DetailsDialog(QDialog):
@@ -26,7 +25,7 @@ class DetailsDialog(QDialog):
     on "Edit Details".
     """
 
-    def __init__(self, parent: ParentWidget = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.ui = ui_details.Ui_Dialog()
         self.ui.setupUi(self)

@@ -7,11 +7,10 @@ allowing the user to check which IOCs they'd like to apply changes to.
 
 from functools import partial
 
-from qtpy.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QMessageBox
+from qtpy.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QMessageBox, QWidget
 
 from . import ui_apply_verify
 from .procserv_tools import ApplyConfigContext, VerifyPlan
-from .type_hints import ParentWidget
 
 
 def verify_dialog(context: ApplyConfigContext, plan: VerifyPlan) -> VerifyPlan:
@@ -49,7 +48,7 @@ class ApplyVerifyDialog(QDialog):
         self,
         context: ApplyConfigContext,
         plan: VerifyPlan,
-        parent: ParentWidget = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.ui = ui_apply_verify.Ui_Dialog()
