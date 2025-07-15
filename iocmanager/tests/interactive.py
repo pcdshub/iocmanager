@@ -20,11 +20,13 @@ from tempfile import TemporaryDirectory
 from pytest import MonkeyPatch
 from qtpy.QtWidgets import QApplication, QDialog
 
-from ..config import Config
+from ..cli import main as cli_main
+from ..config import Config, IOCProc, IOCStatusFile
 from ..dialog_add_ioc import AddIOCDialog
+from ..dialog_apply_verify import verify_dialog
 from ..env_paths import env_paths
 from ..gui import main as gui_main
-from ..imgr import main as imgr_main
+from ..procserv_tools import ApplyConfigContext, VerifyPlan
 from ..table_model import IOCTableModel
 from ..terminal import run_in_floating_terminal, run_in_gnome_terminal, run_in_xterm
 from .conftest import setup_test_env
@@ -37,6 +39,70 @@ def add_ioc_dialog() -> int:
     dialog = AddIOCDialog(hutch="pytest", model=model, parent=None)
     while dialog.exec_() == QDialog.Accepted:
         print(dialog.get_ioc_proc())
+    return 0
+
+
+def apply_verify_dialog() -> int:
+    app = QApplication([])  # noqa: F841
+    status_files = {}
+    proc_config = {}
+    kill = []
+    start = []
+    restart = []
+    # Normal kill ioc, but not present in status/config
+    kill.append("ioc_to_kill_1")
+    # Normal start ioc, has a status file
+    start.append("ioc_to_start_1")
+    status_files["ioc_to_start_1"] = IOCStatusFile(
+        name="ioc_to_start_1",
+        port=30001,
+        host="host1",
+        path="/some/path/1",
+        pid=12345,
+    )
+    # A second start ioc, has a proc config
+    start.append("ioc_to_start_2")
+    proc_config["ioc_to_start_2"] = IOCProc(
+        name="ioc_to_start_2",
+        port=30002,
+        host="host1",
+        path="/some/path/2",
+    )
+    # Normal restart ioc, has both status file and proc config
+    restart.append("ioc_to_restart_1")
+    status_files["ioc_to_restart_1"] = IOCStatusFile(
+        name="ioc_to_restart_1",
+        port=30001,
+        host="host2",
+        path="/some/path/3",
+        pid=12345,
+    )
+    proc_config["ioc_to_start_2"] = IOCProc(
+        name="ioc_to_restart_1",
+        port=30001,
+        host="host2",
+        path="/some/path/3",
+    )
+    # Normal kill and start, has a proc config with an alias
+    kill.append("ioc_to_kill_and_start_1")
+    start.append("ioc_to_kill_and_start_1")
+    proc_config["ioc_to_kill_and_start_1"] = IOCProc(
+        name="ioc_to_kill_and_start_1",
+        port=30001,
+        host="host2",
+        path="/some/path/3",
+        alias="Cool Fourth Category IOC",
+    )
+    starting_plan = VerifyPlan(kill_list=kill, start_list=start, restart_list=restart)
+    print(starting_plan)
+    new_plan = verify_dialog(
+        context=ApplyConfigContext(
+            status_files=status_files,
+            proc_config=proc_config,
+        ),
+        plan=starting_plan,
+    )
+    print(new_plan)
     return 0
 
 
@@ -62,9 +128,11 @@ def main() -> int:
                 case "gui":
                     return gui_main(args)
                 case "imgr":
-                    return imgr_main(args)
+                    return cli_main(args)
                 case "add_ioc_dialog":
                     return add_ioc_dialog()
+                case "apply_verify_dialog":
+                    return apply_verify_dialog()
                 case "floating_terminal":
                     shell_cmd = " ".join(args)
                     proc = run_in_floating_terminal(
