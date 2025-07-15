@@ -31,6 +31,7 @@ def verify_dialog(context: ApplyConfigContext, plan: VerifyPlan) -> VerifyPlan:
         )
         return VerifyPlan(kill_list=[], start_list=[], restart_list=[])
     dialog = ApplyVerifyDialog(context=context, plan=plan)
+    dialog.resize_with_max()
     if dialog.exec_() == QDialog.Accepted:
         return dialog.get_verify_result()
     else:
@@ -133,4 +134,14 @@ class ApplyVerifyDialog(QDialog):
             restart_list=[
                 name for name in self.plan.restart_list if name in verified_iocs
             ],
+        )
+
+    def resize_with_max(self):
+        """
+        Use qt built-in to pick the "best" starting size with a maximum.
+        """
+        self.adjustSize()
+        self.resize(
+            min(self.width(), 600),
+            min(self.height(), 600),
         )
