@@ -80,7 +80,7 @@ class ApplyVerifyDialog(QDialog):
             # Alias is only in the desired ioc config
             # For host and port, the status file needs priority
             # Defaults
-            name = "no_name"
+            name = ioc
             alias = ""
             host = "no_host"
             port = 0
@@ -93,7 +93,7 @@ class ApplyVerifyDialog(QDialog):
                 name = ioc_proc.name
                 alias = ioc_proc.alias
                 host = ioc_proc.host
-                port = ioc_proc.host
+                port = ioc_proc.port
             # Override with the live values if present
             try:
                 ioc_file = self.context.status_files[ioc]

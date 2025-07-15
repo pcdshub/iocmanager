@@ -77,7 +77,7 @@ def apply_verify_dialog() -> int:
         path="/some/path/3",
         pid=12345,
     )
-    proc_config["ioc_to_start_2"] = IOCProc(
+    proc_config["ioc_to_restart_1"] = IOCProc(
         name="ioc_to_restart_1",
         port=30001,
         host="host2",
@@ -90,7 +90,7 @@ def apply_verify_dialog() -> int:
         name="ioc_to_kill_and_start_1",
         port=30001,
         host="host2",
-        path="/some/path/3",
+        path="/some/path/4",
         alias="Cool Fourth Category IOC",
     )
     starting_plan = VerifyPlan(kill_list=kill, start_list=start, restart_list=restart)
