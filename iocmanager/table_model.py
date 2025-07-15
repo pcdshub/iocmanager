@@ -570,7 +570,16 @@ class IOCTableModel(QAbstractTableModel):
                 text_parts = []
                 if desync_info.disable is not None:
                     if desync_info.disable:
-                        text_parts.append("Offline")
+                        if ioc_live.status == ProcServStatus.SHUTDOWN:
+                            if ioc_live.autorestart_mode in (
+                                AutoRestartMode.OFF,
+                                AutoRestartMode.ONESHOT,
+                            ):
+                                text_parts.append("Idle procServ")
+                            else:
+                                text_parts.append("Restarting")
+                        else:
+                            text_parts.append("Offline")
                     else:
                         text_parts.append("Running")
                 if desync_info.path is not None:
