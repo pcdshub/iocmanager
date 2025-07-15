@@ -168,7 +168,7 @@ class DesyncInfo:
             has_diff = True
         else:
             host = None
-        if ioc_proc.path != status_live.path:
+        if ioc_proc.path != status_live.path and status_live.path != "/tmp":
             path = status_live.path
             has_diff = True
         else:
