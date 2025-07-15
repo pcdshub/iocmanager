@@ -21,6 +21,7 @@ import typing
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum, StrEnum
+from itertools import chain
 
 from .config import IOCProc, IOCStatusFile, read_config, read_status_dir
 from .env_paths import env_paths
@@ -665,14 +666,21 @@ def apply_config(
     status_files = read_status_dir(cfg)
 
     running: dict[str, IOCStatusFile] = {}
+    shutdown: dict[str, IOCStatusFile] = {}
     not_running: dict[str, IOCStatusFile] = {}
+    all_status: dict[str, IOCStatusFile] = {}
     for ioc_status in status_files:
         if ioc is None or ioc == ioc_status.name:
             result = check_status(ioc_status.host, ioc_status.port, ioc_status.name)
             if result.status == ProcServStatus.RUNNING:
                 running[ioc_status.name] = ioc_status
+            elif result.status == ProcServStatus.SHUTDOWN:
+                # We either want to kill or restart these always
+                # Depending on config context
+                shutdown[ioc_status.name] = ioc_status
             else:
                 not_running[ioc_status.name] = ioc_status
+            all_status[ioc_status.name] = ioc_status
 
     wanted: dict[str, IOCProc] = {}
     not_wanted: dict[str, IOCProc] = {}
@@ -701,51 +709,33 @@ def apply_config(
     # Kill anyone who we don't want, or is running on the wrong host or port
     kill_list = [
         ioc_name
-        for ioc_name, running_status in running.items()
+        for ioc_name, running_status in chain(running.items(), shutdown.items())
         if ioc_name not in wanted
         or running_status.host != desired_iocs[ioc_name].host
         or running_status.port != desired_iocs[ioc_name].port
     ]
 
-    #
-    # There is a problem if an IOC is bad and repeatedly crashing.  The running
-    # state may not be accurate, as it is oscillating between RUNNING and SHUTDOWN.
-    # If it's enabled, not much we can do but let it spin... but if it's disabled, we
-    # need to be certain to kill it.
-    #
-    # We don't want to just add *everything* though... this makes the screen too
-    # verbose!  So, we compromise... if the status file is *new*, then maybe it's
-    # crashing and needs to be killed again.  If it's old though, let's assume that
-    # it's dead and we can leave it alone...
-    #
-    now = time.time()
-    for ioc_name in not_wanted:
-        try:
-            if ioc_name not in running and now - not_running[ioc_name].mtime < 600:
-                kill_list.append(ioc_name)
-        except KeyError:
-            # Not in either running or not_running = no status file
-            # No need to kill, it must not be running
-            pass
-
-    # Start anyone who wasn't running, or was running on the wrong host or port,
+    # Start anyone who wasn't running, or was running on the wrong host or port
     start_list = [
         ioc_name
         for ioc_name, wanted_proc in wanted.items()
-        if ioc_name not in running
-        or wanted_proc.host != running[ioc_name].host
-        or wanted_proc.port != running[ioc_name].port
+        if ioc_name not in chain(running, shutdown)
+        or wanted_proc.host != all_status[ioc_name].host
+        or wanted_proc.port != all_status[ioc_name].port
     ]
 
-    # Anyone running the wrong version, on the right host and port
-    # just needs a restart.
+    # Anyone running the wrong version, on the right host and port needs a restart.
+    # IOCs in shutdown state also need a restart if we're not killing them.
     restart_list = [
         ioc_name
         for ioc_name, wanted_proc in wanted.items()
-        if ioc_name in running
-        and wanted_proc.host == running[ioc_name].host
-        and wanted_proc.port == running[ioc_name].port
-        and wanted_proc.path != running[ioc_name].path
+        if (
+            ioc_name in running
+            and wanted_proc.host == running[ioc_name].host
+            and wanted_proc.port == running[ioc_name].port
+            and wanted_proc.path != running[ioc_name].path
+        )
+        or (ioc_name in shutdown and ioc_name not in kill_list)
     ]
 
     if verify is not None:
@@ -768,13 +758,13 @@ def apply_config(
 
     for ioc_name in kill_list:
         try:
-            kill_proc(running[ioc_name].host, int(running[ioc_name].port))
+            kill_proc(all_status[ioc_name].host, int(all_status[ioc_name].port))
         except Exception as exc:
             errors.append(exc)
         try:
             # This is dead, so get rid of the status file!
             # TODO this fails if cfg given as full path, needs fix
-            os.remove(running[ioc_name].get_file_location(hutch=cfg))
+            os.remove(all_status[ioc_name].get_file_location(hutch=cfg))
         except Exception as exc:
             errors.append(exc)
 
@@ -786,7 +776,7 @@ def apply_config(
 
     for ioc_name in restart_list:
         try:
-            restart_proc(running[ioc_name].host, int(running[ioc_name].port))
+            restart_proc(all_status[ioc_name].host, int(all_status[ioc_name].port))
         except Exception as exc:
             errors.append(exc)
 

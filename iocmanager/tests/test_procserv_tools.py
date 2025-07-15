@@ -369,6 +369,7 @@ def test_apply_config(
     # We don't want to mess around with real processes in this test
     read_config_result = Config(path="")
     read_status_dir_result: list[IOCStatusFile] = []
+    special_live_status: dict[str, ProcServStatus] = {}
 
     def fake_read_config(*args, **kwargs) -> Config:
         return read_config_result
@@ -377,12 +378,15 @@ def test_apply_config(
         return read_status_dir_result
 
     def fake_check_status(host: str, port: int, name: str) -> IOCStatusLive:
-        # Simplify: presume status dir is correct, all hosts up
-        status = ProcServStatus.SHUTDOWN
-        for res in read_status_dir_result:
-            if (res.host, res.port) == (host, port):
-                status = ProcServStatus.RUNNING
-                break
+        try:
+            status = special_live_status[name]
+        except KeyError:
+            # Simplify: presume status dir is correct, all hosts up
+            status = ProcServStatus.SHUTDOWN
+            for res in read_status_dir_result:
+                if (res.host, res.port) == (host, port):
+                    status = ProcServStatus.RUNNING
+                    break
         return IOCStatusLive(
             name=name,
             port=port,
@@ -435,7 +439,10 @@ def test_apply_config(
         host: str | None = None,
         port: int | None = None,
         directory: str | None = None,
+        status: ProcServStatus | None = None,
     ):
+        if status is not None:
+            special_live_status[name] = status
         return IOCStatusFile(
             name=name,
             port=port or 20000,
@@ -457,6 +464,7 @@ def test_apply_config(
 
     # Set up IOCs that we expect to kill
     kill_1_args = ("ctl-pytest-kill_1", 20000)
+    kill_4_args = ("ctl-pytest-kill_4", 20000)
     if do_kill:
         # Disabled, do kill
         read_config_result.add_proc(
@@ -471,6 +479,20 @@ def test_apply_config(
             )
         )
         kill_args.append(kill_1_args)
+        # Disabled and shutdown, do kill
+        read_config_result.add_proc(
+            basic_fake_config(
+                name="kill_4",
+                disable=True,
+            )
+        )
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="kill_4",
+                status=ProcServStatus.SHUTDOWN,
+            )
+        )
+        kill_args.append(kill_4_args)
     else:
         # Enabled, don't kill
         read_config_result.add_proc(
@@ -484,6 +506,8 @@ def test_apply_config(
             )
         )
         not_kill_args.append(kill_1_args)
+        # Skip kill_4, incurs an extra restart
+        # Confusing and redundant test case
 
     # Set up IOCs that we expect to kill and then start somewhere else
     kill_2_args = ("kill_2_old_server", 20000)
@@ -563,6 +587,7 @@ def test_apply_config(
 
     # Set up IOCs that we expect to restart
     restart_1_args = ("ctl-pytest-restart_1", 20000)
+    restart_2_args = ("ctl-pytest-restart_2", 20000)
     if do_restart:
         # New version, do restart
         read_config_result.add_proc(
@@ -575,6 +600,15 @@ def test_apply_config(
             )
         )
         restart_args.append(restart_1_args)
+        # Shutdown and enabled, do restart
+        read_config_result.add_proc(basic_fake_config(name="restart_2"))
+        read_status_dir_result.append(
+            basic_fake_status(
+                name="restart_2",
+                status=ProcServStatus.SHUTDOWN,
+            )
+        )
+        restart_args.append(restart_2_args)
     else:
         # Same version, no need to restart
         read_config_result.add_proc(
@@ -588,6 +622,8 @@ def test_apply_config(
             )
         )
         not_restart_args.append(restart_1_args)
+        # Skip restart_2, incurs an extra kill
+        # Confusing and redundant test case
 
     # Always include a hard ioc, it should be ignored
     hioc_cfg = basic_fake_config(name="hioc-pytest", host="hioc-pytest", hard=True)
