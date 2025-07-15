@@ -147,33 +147,59 @@ class DesyncInfo:
     port: int | None = None
     host: str | None = None
     path: str | None = None
+    disable: bool | None = None
     has_diff: bool = False
 
     @classmethod
     def from_info[T: DesyncInfo](
         cls: type[T], ioc_proc: IOCProc, status_live: IOCStatusLive
     ) -> T:
-        if not all((status_live.path, status_live.host, status_live.port)):
-            # Exit now if any of the status info is e.g. 0, empty str
-            # This means we don't know where the IOC is running
-            return cls()
         has_diff = False
-        if ioc_proc.port != status_live.port:
-            port = status_live.port
-            has_diff = True
+        if all((status_live.path, status_live.host, status_live.port)):
+            # IOC proc is generally well-formed, we can trust it
+            if ioc_proc.port != status_live.port:
+                port = status_live.port
+                has_diff = True
+            else:
+                port = None
+            if ioc_proc.host != status_live.host:
+                host = status_live.host
+                has_diff = True
+            else:
+                host = None
+            if ioc_proc.path != status_live.path and status_live.path != "/tmp":
+                path = status_live.path
+                has_diff = True
+            else:
+                path = None
         else:
+            # Skip first part if any of the status info is e.g. 0, empty str
+            # This means we don't know where the IOC is running
             port = None
-        if ioc_proc.host != status_live.host:
-            host = status_live.host
-            has_diff = True
-        else:
             host = None
-        if ioc_proc.path != status_live.path and status_live.path != "/tmp":
-            path = status_live.path
-            has_diff = True
-        else:
             path = None
-        return cls(port=port, host=host, path=path, has_diff=has_diff)
+        # Covers enable/disable (if the server is up)
+        match status_live.status:
+            case ProcServStatus.INIT | ProcServStatus.DOWN | ProcServStatus.ERROR:
+                # Cannot be determined
+                disable = None
+            case ProcServStatus.NOCONNECT | ProcServStatus.SHUTDOWN:
+                # IOC is not up, but could be.
+                # This is a desync if the config wants the IOC enabled.
+                if ioc_proc.disable:
+                    disable = None
+                else:
+                    disable = True
+                    has_diff = True
+            case ProcServStatus.RUNNING:
+                # IOC is up
+                # This is a desync if the config wants the IOC disabled.
+                if ioc_proc.disable:
+                    disable = False
+                    has_diff = True
+                else:
+                    disable = None
+        return cls(port=port, host=host, path=path, disable=disable, has_diff=has_diff)
 
 
 class IOCTableModel(QAbstractTableModel):
@@ -536,6 +562,11 @@ class IOCTableModel(QAbstractTableModel):
                     # There's nothing different
                     return ""
                 text_parts = []
+                if desync_info.disable is not None:
+                    if desync_info.disable:
+                        text_parts.append("Offline")
+                    else:
+                        text_parts.append("Running")
                 if desync_info.path is not None:
                     text_parts.append(desync_info.path)
                 if desync_info.host is not None or desync_info.port is not None:

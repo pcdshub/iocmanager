@@ -19,7 +19,157 @@ from ..procserv_tools import (
     IOCStatusLive,
     ProcServStatus,
 )
-from ..table_model import IOCTableModel, StateOption, TableColumn, table_headers
+from ..table_model import (
+    DesyncInfo,
+    IOCTableModel,
+    StateOption,
+    TableColumn,
+    table_headers,
+)
+
+
+@pytest.mark.parametrize(
+    "cfg_disable,live_port,live_host,live_path,status,expected_port,expected_host,expected_path,expected_disable,expected_has_diff",
+    # Use a mostly fixed config, modulate the live parameters
+    (
+        # No diff case
+        (
+            False,
+            30001,
+            "host",
+            "/correct/path",
+            ProcServStatus.RUNNING,
+            None,
+            None,
+            None,
+            None,
+            False,
+        ),
+        # Invalid status
+        (False, 0, "", "", ProcServStatus.INIT, None, None, None, None, False),
+        # Different port
+        (
+            False,
+            39000,
+            "host",
+            "/correct/path",
+            ProcServStatus.RUNNING,
+            39000,
+            None,
+            None,
+            None,
+            True,
+        ),
+        # Different host
+        (
+            False,
+            30001,
+            "roast",
+            "/correct/path",
+            ProcServStatus.RUNNING,
+            None,
+            "roast",
+            None,
+            None,
+            True,
+        ),
+        # Different path
+        (
+            False,
+            30001,
+            "host",
+            "/wrong/path",
+            ProcServStatus.RUNNING,
+            None,
+            None,
+            "/wrong/path",
+            None,
+            True,
+        ),
+        # Noconnect when should be enabled
+        (
+            False,
+            30001,
+            "host",
+            "/correct/path",
+            ProcServStatus.NOCONNECT,
+            None,
+            None,
+            None,
+            True,
+            True,
+        ),
+        # Shutdown when should be enabled
+        (
+            False,
+            30001,
+            "host",
+            "/correct/path",
+            ProcServStatus.SHUTDOWN,
+            None,
+            None,
+            None,
+            True,
+            True,
+        ),
+        # Running when should be disabled
+        (
+            True,
+            30001,
+            "host",
+            "/correct/path",
+            ProcServStatus.RUNNING,
+            None,
+            None,
+            None,
+            False,
+            True,
+        ),
+    ),
+)
+def test_desync_info(
+    cfg_disable: bool,
+    live_port: int,
+    live_host: str,
+    live_path: str,
+    status: ProcServStatus,
+    expected_port: int | None,
+    expected_host: str | None,
+    expected_path: str | None,
+    expected_disable: bool | None,
+    expected_has_diff: bool,
+):
+    """
+    DesyncInfo should compare a saved IOC config with the live status.
+
+    If there are any differences, has_diff should be True and the specific
+    conflicting live value should be non-None.
+    """
+    ioc_proc = IOCProc(
+        name="ioc",
+        port=30001,
+        host="host",
+        path="/correct/path",
+        disable=cfg_disable,
+    )
+    status_live = IOCStatusLive(
+        name="ioc",
+        port=live_port,
+        host=live_host,
+        path=live_path,
+        pid=None,
+        status=status,
+        autorestart_mode=AutoRestartMode.ON,
+    )
+    desync_info = DesyncInfo.from_info(
+        ioc_proc=ioc_proc,
+        status_live=status_live,
+    )
+    assert desync_info.port == expected_port
+    assert desync_info.host == expected_host
+    assert desync_info.path == expected_path
+    assert desync_info.disable == expected_disable
+    assert desync_info.has_diff == expected_has_diff
 
 
 def test_get_next_config_and_reset_edits(model: IOCTableModel):

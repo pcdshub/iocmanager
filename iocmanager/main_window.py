@@ -570,17 +570,18 @@ class IOCMainWindow(QMainWindow):
             del_ioc = menu.addAction("Delete IOC")
             del_ioc.triggered.connect(partial(self.model.delete_ioc, ioc=ioc_proc))
             if not ioc_proc.hard:
+                desync_info = self.model.get_desync_info(ioc=ioc_proc)
                 if ioc_proc.name in self.model.live_only_iocs:
                     add_running = menu.addAction("Add Running to Config")
                     add_running.triggered.connect(
                         partial(self.action_add_running, ioc=ioc_proc)
                     )
-                elif self.model.get_desync_info(ioc=ioc_proc).has_diff:
+                elif desync_info.has_diff:
                     set_running = menu.addAction("Set from Running")
                     set_running.triggered.connect(
                         partial(self.action_set_from_running, ioc=ioc_proc)
                     )
-                if self.model.pending_edits(ioc_proc.name):
+                if desync_info.has_diff or self.model.pending_edits(ioc_proc.name):
                     apply_config = menu.addAction("Apply Configuration")
                     apply_config.triggered.connect(
                         partial(self.action_write_and_apply_config, ioc=ioc_proc)
