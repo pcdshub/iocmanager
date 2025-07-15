@@ -198,7 +198,7 @@ def test_parse_host_port(
     assert port_range[0] <= port <= port_range[1]
     # Make sure that the automatically chosen port doesn't
     # conflict with existing ports
-    assert config.validate()
+    config.validate()
 
 
 def test_status_cmd(procserv: ProcServHelper, capsys: pytest.CaptureFixture):
@@ -703,29 +703,26 @@ def test_move_cmd(
 
 
 @pytest.mark.parametrize(
-    "user,add_enable,add_disable,same_port,same_name,should_run",
+    "user,add_enable,add_disable,same_name,should_run",
     (
         # The normal good cases
-        ("imgr_test", True, False, False, False, True),
-        ("imgr_test", False, True, False, False, True),
+        ("imgr_test", True, False, False, True),
+        ("imgr_test", False, True, False, True),
         # Each possible bad case in isolation
         # Everything is right except the user
-        ("bad_user", True, False, False, False, False),
+        ("bad_user", True, False, False, False),
         # Neither enable nor disable
-        ("imgr_test", False, False, False, False, False),
+        ("imgr_test", False, False, False, False),
         # Both enable and disable
-        ("imgr_test", True, True, False, False, False),
-        # Port conflict
-        ("imgr_test", True, False, True, False, False),
+        ("imgr_test", True, True, False, False),
         # Name conflict
-        ("imgr_test", True, False, False, True, False),
+        ("imgr_test", True, False, True, False),
     ),
 )
 def test_add_cmd(
     user: str,
     add_enable: bool,
     add_disable: bool,
-    same_port: bool,
     same_name: bool,
     should_run: bool,
     monkeypatch: pytest.MonkeyPatch,
@@ -737,9 +734,15 @@ def test_add_cmd(
 
     This should fail for various inputs, such as:
     - ambiguous enable/disable
-    - re-using an existing host/port combination
     - adding something without a stcmd
-    - addding the same name again
+    - adding the same name again
+
+    There is an additional case we'll gloss over here,
+    re-using an existing host/port combination,
+    because this is enforced on file write.
+    Since we don't write a file in this test,
+    (due to the monkeypatch/mocking)
+    we won't test for this case.
     """
 
     setup_user(username=user, monkeypatch=monkeypatch)
@@ -750,10 +753,7 @@ def test_add_cmd(
     hutch = "pytest"
     host = "test_host"
     other_port = 30001
-    if same_port:
-        new_port = other_port
-    else:
-        new_port = other_port + 1
+    new_port = other_port + 1
     if same_name:
         other_name = ioc_name
     else:

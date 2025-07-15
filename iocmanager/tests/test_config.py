@@ -9,6 +9,7 @@ import pytest
 
 from ..config import (
     Config,
+    DuplicatePortError,
     IOCProc,
     IOCStatusFile,
     check_auth,
@@ -124,6 +125,33 @@ def test_write_config(tmp_path: Path):
     assert actual == expected
 
 
+def test_write_config_invalid(tmp_path: Path):
+    config = read_config("pytest")
+    # Add a two new procs with a duplicate host/port, should error
+    port = 30010
+    host = "some_host"
+    config.add_proc(
+        proc=IOCProc(
+            name="bad_proc1",
+            port=port,
+            host=host,
+            path="",
+        )
+    )
+    config.add_proc(
+        proc=IOCProc(
+            name="bad_proc2",
+            port=port,
+            host=host,
+            path="",
+        )
+    )
+    with pytest.raises(DuplicatePortError):
+        write_config(cfgname=str(tmp_path / "iocmanager.cfg"), config=config)
+
+    assert not (tmp_path / "iocmanager.cfg").exists()
+
+
 def test_check_auth():
     assert check_auth("user_for_test_check_auth", "pytest")
     assert not check_auth("some_rando", "pytest")
@@ -176,8 +204,9 @@ def test_validate_config():
     bad_config.add_proc(IOCProc(name="one", host="host1", port=10000, path=""))
     bad_config.add_proc(IOCProc(name="two", host="host1", port=10000, path=""))
     bad_config.add_proc(IOCProc(name="thr", host="host2", port=20000, path=""))
-    assert good_config.validate()
-    assert not bad_config.validate()
+    good_config.validate()
+    with pytest.raises(DuplicatePortError):
+        bad_config.validate()
 
 
 def test_read_status_dir():

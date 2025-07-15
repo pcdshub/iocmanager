@@ -148,6 +148,8 @@ class Config:
     def add_proc(self, proc: IOCProc) -> None:
         """Include a new IOC process in the config."""
         if proc.name in self.procs:
+            # We key on name, so we can't have a duplicate even for a moment.
+            # Other errors can be validated later, e.g. so the user can revise them.
             raise ValueError(f"IOC named {proc.name} already exists!")
         self.update_proc(proc)
 
@@ -162,16 +164,21 @@ class Config:
         """Remove an IOC from the config."""
         del self.procs[ioc_name]
 
-    def validate(self) -> bool:
+    def validate(self) -> None:
         """
-        Returns True if the configuration looks valid.
+        Raises if the configuration is invalid.
 
         Currently, just checks if there is a duplicate host/port combination.
+        If there is, a DuplicatePortError will be raised.
         """
-        host_ports = set()
+        host_ports = {}
         for proc in self.procs.values():
-            host_ports.add((proc.host, proc.port))
-        return len(host_ports) == len(self.procs)
+            hp = (proc.host, proc.port)
+            if hp in host_ports:
+                raise DuplicatePortError(
+                    host=proc.host, port=proc.port, ioc1=host_ports[hp], ioc2=proc.name
+                )
+            host_ports[hp] = proc.name
 
     def get_unused_port(self, host: str, closed: bool):
         """
@@ -197,6 +204,22 @@ class Config:
             if new_port not in used_ports:
                 return new_port
         raise RuntimeError("No unused ports found in range!")
+
+
+class DuplicatePortError(Exception):
+    """
+    Exception class for a config that is invalid due to duplicate ports.
+    """
+
+    def __init__(self, host: str, port: int, ioc1: str, ioc2: str):
+        self.host = host
+        self.port = port
+        self.ioc1 = ioc1
+        self.ioc2 = ioc2
+        super().__init__(
+            "Invalid config: duplicate ports. "
+            f"{ioc1} and {ioc2} are both configured for {host}:{port}"
+        )
 
 
 config_cache: dict[str, Config] = {}
@@ -397,6 +420,8 @@ def write_config(cfgname: str, config: Config) -> None:
     Writes to a temp file first, then copies over to the prod location
     to give us an atomic write.
 
+    Raises if the configuration is invalid.
+
     Parameters
     ----------
     cfgname : str
@@ -404,6 +429,7 @@ def write_config(cfgname: str, config: Config) -> None:
     config : Config
         The configuration data to write.
     """
+    config.validate()
     # Check if we have a file or a hutch name
     cfgfn = env_paths.CONFIG_FILE % cfgname
     if not os.path.exists(os.path.dirname(cfgfn)):

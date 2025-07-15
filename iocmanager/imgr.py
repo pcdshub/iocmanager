@@ -367,7 +367,7 @@ def enable_cmd(config: Config, ioc_name: str, hutch: str):
     Parameters
     ----------
     config : Config
-        The parsed iocmanager configuration
+        The parsed iocmanager configuration. Note that this may be mutated.
     ioc_name : str
         The name of the ioc to check
     hutch : str
@@ -385,7 +385,7 @@ def disable_cmd(config: Config, ioc_name: str, hutch: str):
     Parameters
     ----------
     config : Config
-        The parsed iocmanager configuration
+        The parsed iocmanager configuration. Note that this may be mutated.
     ioc_name : str
         The name of the ioc to check
     hutch : str
@@ -404,7 +404,7 @@ def upgrade_cmd(config: Config, ioc_name: str, hutch: str, upgrade_dir: str):
     Parameters
     ----------
     config : Config
-        The parsed iocmanager configuration
+        The parsed iocmanager configuration. Note that this may be mutated.
     ioc_name : str
         The name of the ioc to check
     hutch : str
@@ -436,7 +436,7 @@ def move_cmd(config: Config, ioc_name: str, hutch: str, move_host_port: str):
     Parameters
     ----------
     config : Config
-        The parsed iocmanager configuration
+        The parsed iocmanager configuration. Note that this may be mutated.
     ioc_name : str
         The name of the ioc to check
     hutch : str
@@ -450,10 +450,6 @@ def move_cmd(config: Config, ioc_name: str, hutch: str, move_host_port: str):
     ioc_proc = get_proc(config=config, ioc_name=ioc_name)
     ioc_proc.host = host
     ioc_proc.port = port
-    if not config.validate():
-        raise RuntimeError(
-            f"Port conflict when moving {ioc_name} to {host}:{port}, not moved."
-        )
     _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
 
 
@@ -474,7 +470,7 @@ def add_cmd(
     Parameters
     ----------
     config : Config
-        The parsed iocmanager configuration
+        The parsed iocmanager configuration. Note that this may be mutated.
     ioc_name : str
         The name of the ioc to check
     hutch : str
@@ -522,11 +518,6 @@ def add_cmd(
             history=[],
         )
     )
-    if not config.validate():
-        del config.procs[ioc_name]
-        raise RuntimeError(
-            f"Port conflict when adding {ioc_name} at {host}:{port}, aborting."
-        )
     _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
 
 
