@@ -112,6 +112,7 @@ class ApplyVerifyDialog(QDialog):
                 checkbox.setText(f"{action} {name} on {host}:{port}")
             self.checkboxes.append(checkbox)
             self.checkbox_ioc_names.append(name)
+            self.ui.scroll_contents.layout().addWidget(checkbox)
 
     def set_state_all(self, checked: bool):
         """Slot to check or uncheck all the checkboxes."""
