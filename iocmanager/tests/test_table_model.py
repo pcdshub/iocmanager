@@ -99,6 +99,19 @@ from ..table_model import (
             True,
             True,
         ),
+        # Running when should be disabled
+        (
+            True,
+            30001,
+            "host",
+            "/correct/path",
+            ProcServStatus.RUNNING,
+            None,
+            None,
+            None,
+            False,
+            True,
+        ),
         # Shutdown when should be enabled
         (
             False,
@@ -112,13 +125,13 @@ from ..table_model import (
             True,
             True,
         ),
-        # Running when should be disabled
+        # Shutdown when should be disabled
         (
             True,
             30001,
             "host",
             "/correct/path",
-            ProcServStatus.RUNNING,
+            ProcServStatus.SHUTDOWN,
             None,
             None,
             None,

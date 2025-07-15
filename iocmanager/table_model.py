@@ -183,7 +183,7 @@ class DesyncInfo:
             case ProcServStatus.INIT | ProcServStatus.DOWN | ProcServStatus.ERROR:
                 # Cannot be determined
                 disable = None
-            case ProcServStatus.NOCONNECT | ProcServStatus.SHUTDOWN:
+            case ProcServStatus.NOCONNECT:
                 # IOC is not up, but could be.
                 # This is a desync if the config wants the IOC enabled.
                 if ioc_proc.disable:
@@ -199,6 +199,12 @@ class DesyncInfo:
                     has_diff = True
                 else:
                     disable = None
+            case ProcServStatus.SHUTDOWN:
+                # This is never correct.
+                # Either we need to restart or we need to fully kill the procServ.
+                # Report disable is exactly what it shouldn't be
+                disable = not ioc_proc.disable
+                has_diff = True
         return cls(port=port, host=host, path=path, disable=disable, has_diff=has_diff)
 
 
