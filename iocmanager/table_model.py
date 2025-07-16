@@ -1385,6 +1385,8 @@ class IOCTableModel(QAbstractTableModel):
             edit_proc.host = ioc_live.host
         if ioc_live.path:
             edit_proc.path = ioc_live.path
+        # If setting from running, it must not be disabled
+        edit_proc.disable = False
         self.edit_iocs[ioc_info.name] = edit_proc
         self.refresh_live_only_iocs()
         self.refresh_ports_taken()
