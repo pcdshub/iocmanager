@@ -414,7 +414,7 @@ class IOCMainWindow(QMainWindow):
         if not self._check_selected():
             return
         try:
-            ioc_proc = self.model.get_next_config().procs[self.current_ioc]
+            ioc_proc = self.model.get_ioc_proc(ioc=self.current_ioc)
             run_in_floating_terminal(
                 title=f"{self.current_ioc} telnet session",
                 cmd=f"telnet {ioc_proc.host} {ioc_proc.port}",
