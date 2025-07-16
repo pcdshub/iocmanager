@@ -200,6 +200,7 @@ class AddIOCDialog(QFileDialog):
         self.selectFile(str(self.default_path.name))
         # Then, move into the (default) dir we selected
         self.setDirectory(str(self.default_path))
+        self.adjustSize()
 
     def get_ioc_proc(self) -> IOCProc:
         """
