@@ -563,6 +563,8 @@ class IOCTableModel(QAbstractTableModel):
                 ):
                     # There isn't a meaningful comparison to check
                     return ""
+                if ioc_info.name in self.live_only_iocs:
+                    return "Untracked IOC: Not in config!"
                 desync_info = self.get_desync_info(ioc=ioc_info)
                 if not desync_info.has_diff:
                     # There's nothing different
@@ -603,6 +605,10 @@ class IOCTableModel(QAbstractTableModel):
         ioc_proc = ioc_info.ioc_proc
         file_proc = ioc_info.file_proc
 
+        # Universal handling for pending deletion or live only
+        if ioc_proc.name in self.delete_iocs or ioc_proc.name in self.live_only_iocs:
+            return Qt.red
+
         # Default, contrast with background
         bg_color = self.get_background_color(ioc=ioc_info, column=column)
         if bg_color in (Qt.blue, Qt.red):
@@ -610,9 +616,6 @@ class IOCTableModel(QAbstractTableModel):
         else:
             default = Qt.black
 
-        # Universal handling for pending deletion
-        if ioc_proc.name in self.delete_iocs:
-            return Qt.red
         # Universal handling for new ioc row
         if file_proc is None:
             # Note: avoid blue on blue
@@ -913,10 +916,17 @@ class IOCTableModel(QAbstractTableModel):
                 return
             self.signal_new_config_file.emit(config)
 
+        # Due to signal/slot timing, if we don't track these locally
+        # we might not check status-only IOCs until next poll
+        status_files_to_check = {}
         for status_file in read_status_dir(self.hutch):
             if self.poll_stop_ev.is_set():
                 return
             self.signal_new_status_file.emit(status_file)
+            status_files_to_check[status_file.name] = status_file
+        # Include the old status files too if we haven't overriden them
+        # very rarely this is important to do, usually a no-op
+        status_files_to_check.update(self.status_files)
 
         # IO-bound task, use threads
         futures: list[concurrent.futures.Future[IOCStatusLive]] = []
@@ -930,7 +940,7 @@ class IOCTableModel(QAbstractTableModel):
                     name=ioc_proc.name,
                 )
             )
-        for ioc_name, ioc_file in self.status_files.items():
+        for ioc_name, ioc_file in status_files_to_check.items():
             if ioc_name not in next_config.procs:
                 futures.append(
                     executor.submit(
@@ -1080,11 +1090,16 @@ class IOCTableModel(QAbstractTableModel):
                 continue
             # We were able to connect to it and get a status
             if ioc_live.status in ("RUNNING", "SHUTDOWN"):
+                # IOC live never has a useful path, use status file instead
+                if ioc_name in self.status_files:
+                    path = self.status_files[ioc_name].path
+                else:
+                    path = ioc_live.path
                 new_live_only[ioc_name] = IOCProc(
                     name=ioc_name,
                     port=ioc_live.port,
                     host=ioc_live.host,
-                    path=ioc_live.path,
+                    path=path,
                 )
         # This might add or remove rows
         old_size = len(old_live_only)
