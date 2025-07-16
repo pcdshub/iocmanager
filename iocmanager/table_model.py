@@ -1090,16 +1090,18 @@ class IOCTableModel(QAbstractTableModel):
         old_size = len(old_live_only)
         new_size = len(new_live_only)
         delta = new_size - old_size
+        # Add rows to the end
         if delta > 0:
             self.beginInsertRows(
                 QModelIndex(),
                 self.rowCount(),
                 self.rowCount() + delta - 1,
             )
+        # Remove rows from the end
         elif delta < 0:
             self.beginRemoveRows(
                 QModelIndex(),
-                self.rowCount() - delta,
+                self.rowCount() + delta,
                 self.rowCount() - 1,
             )
         self.live_only_iocs = new_live_only
