@@ -679,13 +679,6 @@ def test_apply_config(
                 not_restart_args.append(args)
         restart_args = new_restart_args
 
-    # Last bit of prep, apply_config expects to be able to remove
-    # the ioc status files associated with the IOCs it kills.
-    # Let's place a fake status file for every running IOC here.
-    for isf in read_status_dir_result:
-        with open(isf.get_file_location(hutch=CFG), "w") as fd:
-            fd.write(f"{isf.pid} {isf.host} {isf.port} {isf.path}")
-
     # The situation is set up. Let's run the function.
     apply_config(CFG, verify=verify, ioc=ioc)
 

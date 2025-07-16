@@ -804,13 +804,6 @@ def apply_config(
                 kill_proc(host, int(port))
             except Exception as exc:
                 errors.append(exc)
-        if ioc_name in all_status:
-            try:
-                # This is dead, so get rid of the status file!
-                # TODO this fails if cfg given as full path, needs fix
-                os.remove(all_status[ioc_name].get_file_location(hutch=cfg))
-            except Exception as exc:
-                errors.append(exc)
 
     for ioc_name in start_list:
         try:
