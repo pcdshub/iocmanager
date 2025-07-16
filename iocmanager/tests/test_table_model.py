@@ -710,8 +710,8 @@ def test_get_foreground_color(
         ("ioc1", TableColumn.STATE, Qt.yellow),
         # Status green if running and enabled
         ("ioc2", TableColumn.STATUS, Qt.green),
-        # Status green if shutdown and disabled
-        ("ioc3", TableColumn.STATUS, Qt.green),
+        # Status red if shutdown and disabled
+        ("ioc3", TableColumn.STATUS, Qt.red),
         # Status red if running and disabled
         ("ioc4", TableColumn.STATUS, Qt.red),
         # Status red if shutdown and enabled

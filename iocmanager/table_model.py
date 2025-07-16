@@ -711,13 +711,18 @@ class IOCTableModel(QAbstractTableModel):
                 if (
                     ioc_proc.host != ioc_live.host
                     or ioc_proc.port != ioc_live.port
-                    or (proc_path != live_path and live_path != "/tmp")
+                    or (proc_path != live_path and live_path not in ("/tmp", ""))
                 ):
                     return Qt.yellow
+                # Shutdown is always red
+                # If we're enabled, we should be RUNNING
+                # If we're disabled, we should be NOCONNECT
+                if ioc_live.status == ProcServStatus.SHUTDOWN:
+                    return Qt.red
                 # Green is what we want to see (reality matches config)
                 if (ioc_live.status == ProcServStatus.RUNNING) ^ ioc_proc.disable:
                     return Qt.green
-                # Red is the other bad cases
+                # Default red for other bad cases
                 return Qt.red
             case TableColumn.HOST:
                 ...
