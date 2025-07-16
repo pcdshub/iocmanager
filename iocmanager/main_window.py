@@ -331,7 +331,7 @@ class IOCMainWindow(QMainWindow):
             else:
                 all_names = []
                 for ioc_name, ioc_proc in config.procs.items():
-                    if ioc_proc.host == this_proc.host:
+                    if ioc_proc.host == this_proc.host and not ioc_proc.disable:
                         all_names.append(ioc_name)
                 self._sioc_server_reboot(host=this_proc.host, ioc_names=all_names)
         except Exception as exc:
@@ -362,7 +362,7 @@ class IOCMainWindow(QMainWindow):
         """
         msg = f"Confirm: reboot ioc server {host}?"
         if ioc_names:
-            msg += f"Rebooting {host} will temporarily stop the following IOCs:"
+            msg += f"\nRebooting {host} will temporarily stop the following IOCs:"
             for name in ioc_names:
                 ioc_proc = self.model.get_next_config().procs[name]
                 if ioc_proc.alias:
