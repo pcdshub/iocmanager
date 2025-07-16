@@ -711,7 +711,7 @@ class IOCTableModel(QAbstractTableModel):
                 if (
                     ioc_proc.host != ioc_live.host
                     or ioc_proc.port != ioc_live.port
-                    or proc_path != live_path
+                    or (proc_path != live_path and live_path != "/tmp")
                 ):
                     return Qt.yellow
                 # Green is what we want to see (reality matches config)
