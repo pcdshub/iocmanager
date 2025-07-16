@@ -183,7 +183,9 @@ class IOCMainWindow(QMainWindow):
         self.model.poll_thread.join(timeout=1.0)
         return super().closeEvent(a0)
 
-    def action_write_and_apply_config(self, ioc: IOCModelIdentifier | None = None):
+    def action_write_and_apply_config(
+        self, checked: bool, ioc: IOCModelIdentifier | None = None
+    ):
         """
         Action when the user clicks "Apply".
 
@@ -194,6 +196,8 @@ class IOCMainWindow(QMainWindow):
         This may also be called from the context menu "Apply Configuration"
         action, which will pass an ioc to use (so we only apply to one ioc).
         Note that this will still save all pending edits.
+
+        There is a dummy unused "checked" parameter because QAction provides it.
         """
         if ioc is None:
             ioc_name = None
