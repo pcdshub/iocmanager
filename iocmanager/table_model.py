@@ -581,7 +581,7 @@ class IOCTableModel(QAbstractTableModel):
                         else:
                             text_parts.append("Offline")
                     else:
-                        text_parts.append("Running")
+                        text_parts.append("Enabled")
                 if desync_info.path is not None:
                     text_parts.append(desync_info.path)
                 if desync_info.host is not None or desync_info.port is not None:

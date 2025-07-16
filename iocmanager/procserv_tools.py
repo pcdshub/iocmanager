@@ -735,7 +735,7 @@ def apply_config(
         or running_status.host != desired_iocs[ioc_name].host
         or running_status.port != desired_iocs[ioc_name].port
     ]
-    # Additionally, kill and start iocs that don't have existing/correct status files
+    # Additionally, kill iocs that don't have existing/correct status files
     for ioc_name in chain(missing_status_file, conflict_status_file):
         if ioc_name not in kill_list:
             kill_list.append(ioc_name)
@@ -748,9 +748,10 @@ def apply_config(
         or wanted_proc.host != all_status[ioc_name].host
         or wanted_proc.port != all_status[ioc_name].port
     ]
-    # Additionally, kill and start iocs that don't have existing/correct status files
+    # Additionally, start iocs that don't have existing/correct status files
+    # (if we want them)
     for ioc_name in chain(missing_status_file, conflict_status_file):
-        if ioc_name not in start_list:
+        if ioc_name in wanted and ioc_name not in start_list:
             start_list.append(ioc_name)
 
     # Anyone running the wrong version, on the right host and port needs a restart.
