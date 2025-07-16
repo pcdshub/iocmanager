@@ -382,7 +382,7 @@ def test_apply_config(
             status = special_live_status[name]
         except KeyError:
             # Simplify: presume status dir is correct, all hosts up
-            status = ProcServStatus.SHUTDOWN
+            status = ProcServStatus.NOCONNECT
             for res in read_status_dir_result:
                 if (res.host, res.port) == (host, port):
                     status = ProcServStatus.RUNNING

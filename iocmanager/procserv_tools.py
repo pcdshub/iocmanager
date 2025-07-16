@@ -665,6 +665,7 @@ def apply_config(
 
     status_files = read_status_dir(cfg)
 
+    # Sort all status files appropriately
     running: dict[str, IOCStatusFile] = {}
     shutdown: dict[str, IOCStatusFile] = {}
     not_running: dict[str, IOCStatusFile] = {}
@@ -681,6 +682,26 @@ def apply_config(
             else:
                 not_running[ioc_status.name] = ioc_status
             all_status[ioc_status.name] = ioc_status
+    # Catch IOCs with no status file, or a status file that conflicts with the config.
+    # These need to be killed, and possibly started (to make a new file).
+    missing_status_file: dict[str, IOCProc] = {}
+    conflict_status_file: dict[str, IOCProc] = {}
+    for ioc_name, ioc_proc in desired_iocs.items():
+        if ioc_proc.hard:
+            continue
+        if (
+            ioc_name not in all_status
+            or ioc_proc.host != all_status[ioc_name].host
+            or ioc_proc.port != all_status[ioc_name].port
+        ):
+            # We have a new host/port to check
+            result = check_status(ioc_proc.host, ioc_proc.port, ioc_proc.name)
+            if result.status in (ProcServStatus.RUNNING, ProcServStatus.SHUTDOWN):
+                # e.g. procServ is running at all
+                if ioc_name in all_status:
+                    conflict_status_file[ioc_name] = ioc_proc
+                else:
+                    missing_status_file[ioc_name] = ioc_proc
 
     wanted: dict[str, IOCProc] = {}
     not_wanted: dict[str, IOCProc] = {}
@@ -714,6 +735,10 @@ def apply_config(
         or running_status.host != desired_iocs[ioc_name].host
         or running_status.port != desired_iocs[ioc_name].port
     ]
+    # Additionally, kill and start iocs that don't have existing/correct status files
+    for ioc_name in chain(missing_status_file, conflict_status_file):
+        if ioc_name not in kill_list:
+            kill_list.append(ioc_name)
 
     # Start anyone who wasn't running, or was running on the wrong host or port
     start_list = [
@@ -723,6 +748,10 @@ def apply_config(
         or wanted_proc.host != all_status[ioc_name].host
         or wanted_proc.port != all_status[ioc_name].port
     ]
+    # Additionally, kill and start iocs that don't have existing/correct status files
+    for ioc_name in chain(missing_status_file, conflict_status_file):
+        if ioc_name not in start_list:
+            start_list.append(ioc_name)
 
     # Anyone running the wrong version, on the right host and port needs a restart.
     # IOCs in shutdown state also need a restart if we're not killing them.
@@ -737,6 +766,10 @@ def apply_config(
         )
         or (ioc_name in shutdown and ioc_name not in kill_list)
     ]
+    # Strip out restarts that are in both kill and start
+    for ioc_name in list(restart_list):
+        if ioc_name in kill_list and ioc_name in start_list:
+            restart_list.remove(ioc_name)
 
     if verify is not None:
         verify_result = verify(
@@ -757,16 +790,26 @@ def apply_config(
     errors = []
 
     for ioc_name in kill_list:
-        try:
-            kill_proc(all_status[ioc_name].host, int(all_status[ioc_name].port))
-        except Exception as exc:
-            errors.append(exc)
-        try:
-            # This is dead, so get rid of the status file!
-            # TODO this fails if cfg given as full path, needs fix
-            os.remove(all_status[ioc_name].get_file_location(hutch=cfg))
-        except Exception as exc:
-            errors.append(exc)
+        host_ports = set()
+        # There could be two IOCs running, for example.
+        for source in running, shutdown, missing_status_file, conflict_status_file:
+            try:
+                data_obj = source[ioc_name]
+            except KeyError:
+                continue
+            host_ports.add((data_obj.host, data_obj.port))
+        for host, port in host_ports:
+            try:
+                kill_proc(host, int(port))
+            except Exception as exc:
+                errors.append(exc)
+        if ioc_name in all_status:
+            try:
+                # This is dead, so get rid of the status file!
+                # TODO this fails if cfg given as full path, needs fix
+                os.remove(all_status[ioc_name].get_file_location(hutch=cfg))
+            except Exception as exc:
+                errors.append(exc)
 
     for ioc_name in start_list:
         try:
