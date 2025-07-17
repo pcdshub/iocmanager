@@ -76,7 +76,9 @@ class IOCMainWindow(QMainWindow):
         self.sort_model = QSortFilterProxyModel()
         self.sort_model.setSourceModel(self.model)
         self.delegate = IOCTableDelegate(
-            hutch=hutch, model=self.model, proxy_model=self.sort_model
+            hutch=hutch,
+            model=self.model,
+            proxy_model=self.sort_model,
         )
 
         # User state

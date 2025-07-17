@@ -87,7 +87,6 @@ class IOCTableDelegate(QStyledItemDelegate):
         self.model = model
         self.proxy_model = proxy_model
         self.hostdialog = HostnameDialog(parent)
-        self.editor_opened = False
 
     def _source_index(self, index: QModelIndex) -> QModelIndex:
         """If we have a proxy model, convert to source model."""
@@ -140,7 +139,6 @@ class IOCTableDelegate(QStyledItemDelegate):
 
         https://doc.qt.io/qt-5/qstyleditemdelegate.html#createEditor
         """
-        self.editor_opened = True
         index = self._source_index(index)
         col = index.column()
         if col in (TableColumn.STATE, TableColumn.HOST, TableColumn.VERSION):
@@ -194,6 +192,8 @@ class IOCTableDelegate(QStyledItemDelegate):
                 editor.setCurrentIndex(editor.count() - 1)
                 # If there's a match, match it (otherwise this is a no-op)
                 editor.setCurrentText(str(self.model.data(index)))
+                # Clear the host from last time
+                self.hostdialog.ui.hostname.setText("")
             case TableColumn.VERSION:
                 # We don't have anything to do here.  It is created pointing to 0
                 # (the newest setting)
@@ -214,10 +214,6 @@ class IOCTableDelegate(QStyledItemDelegate):
         if not isinstance(editor, QComboBox):
             return super().setModelData(editor, model, index)
 
-        if not self.editor_opened:
-            # Prevent re-opening a dialog an extra time after close
-            return
-
         idx = editor.currentIndex()
 
         match index.column():
@@ -228,8 +224,17 @@ class IOCTableDelegate(QStyledItemDelegate):
                     # Pick a new hostname!
                     if self.hostdialog.exec_() == QDialog.Accepted:
                         value = self.hostdialog.ui.hostname.text()
+                        hosts = [
+                            editor.itemText(idy) for idy in range(editor.count() - 1)
+                        ]
+                        if value not in hosts:
+                            # Rebuild the comobox since the user can re-select it
+                            hosts.insert(-1, value)
+                            editor.clear()
+                            for host in hosts:
+                                editor.addItem(host)
+                        editor.setCurrentText(value)
                         model.setData(index, value)
-                    self.close_editor(editor=editor)
                 else:
                     model.setData(index, editor.currentText())
             case TableColumn.VERSION:
@@ -284,20 +289,20 @@ class IOCTableDelegate(QStyledItemDelegate):
                         except Exception:
                             ...
                         else:
+                            vers = [
+                                editor.itemText(idy)
+                                for idy in range(editor.count() - 1)
+                            ]
+                            if directory not in vers:
+                                # Rebuild the combobox since the user can re-select it
+                                vers.insert(-1, directory)
+                                editor.clear()
+                                for ver in vers:
+                                    editor.addItem(ver)
+                            editor.setCurrentText(directory)
                             model.setData(index, directory)
-                    self.close_editor(editor=editor)
                 else:
                     model.setData(index, editor.currentText())
-
-    def close_editor(self, editor: QComboBox):
-        """
-        Helper for forcing the delegate editor to close once we're done.
-
-        This needs to be done manually when we open dialogs from the combobox editors.
-        Otherwise, the dialog opens repeatedly until we cancel the edit.
-        """
-        editor.close()
-        self.editor_opened = False
 
     def set_ioc_parent(self, gui: QLineEdit, ioc: str, directory: str):
         """Slot to update the "parent" value in the new version selection dialog."""
