@@ -49,7 +49,11 @@ class AddIOCDialog(QFileDialog):
         super().__init__(parent, "Add New IOC", default_dir)
         self.default_path = Path(default_dir)
         self.setFileMode(QFileDialog.Directory)
-        self.setOptions(QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog)
+        self.setOptions(
+            QFileDialog.ShowDirsOnly
+            | QFileDialog.DontUseNativeDialog
+            | QFileDialog.ReadOnly
+        )
         self.setSidebarUrls(QUrl("file://" + pth) for pth in standard_paths)
 
         self.model = model
