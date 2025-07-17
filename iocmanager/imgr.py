@@ -439,6 +439,9 @@ def move_cmd(config: Config, ioc_name: str, hutch: str, move_host_port: str):
     This command moves an IOC to a new location, possibly on a different
     host, stopping the old IOC and starting the new one if necessary.
 
+    If host is not provided, we'll use the same host again.
+    If port is not provided, we'll use the same port again.
+
     Parameters
     ----------
     config : Config
@@ -452,10 +455,21 @@ def move_cmd(config: Config, ioc_name: str, hutch: str, move_host_port: str):
     """
     ensure_iocname(ioc_name)
     ensure_auth(hutch=hutch, ioc_name=ioc_name, special_ok=False)
-    host, port = parse_host_port(config=config, host_port=move_host_port)
+    try:
+        host, port = parse_host_port(config=config, host_port=move_host_port)
+    except ValueError:
+        if ":" in move_host_port:
+            raise
+        try:
+            port = int(move_host_port)
+            host = None
+        except ValueError:
+            host = move_host_port
+            port = None
+
     ioc_proc = get_proc(config=config, ioc_name=ioc_name)
-    ioc_proc.host = host
-    ioc_proc.port = port
+    ioc_proc.host = host or ioc_proc.host
+    ioc_proc.port = port or ioc_proc.port
     _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
 
 

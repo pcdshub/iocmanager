@@ -152,7 +152,8 @@ def get_parser() -> tuple[argparse.ArgumentParser, set[str]]:
         description=(
             "Move an IOC to a different host, "
             "or to a different port on the same host. "
-            "Expects either a HOST or a HOST:PORT specification. "
+            "Expects one of a HOST:PORT, HOST, or PORT. "
+            "If no host is provided, keep the same host as before. "
             "If no port is provided, keep the same port as before. "
             f"{port_help_text}"
         ),
