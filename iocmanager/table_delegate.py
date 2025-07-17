@@ -87,6 +87,7 @@ class IOCTableDelegate(QStyledItemDelegate):
         self.model = model
         self.proxy_model = proxy_model
         self.hostdialog = HostnameDialog(parent)
+        self.editor_opened = False
 
     def _source_index(self, index: QModelIndex) -> QModelIndex:
         """If we have a proxy model, convert to source model."""
@@ -139,6 +140,7 @@ class IOCTableDelegate(QStyledItemDelegate):
 
         https://doc.qt.io/qt-5/qstyleditemdelegate.html#createEditor
         """
+        self.editor_opened = True
         index = self._source_index(index)
         col = index.column()
         if col in (TableColumn.STATE, TableColumn.HOST, TableColumn.VERSION):
@@ -212,6 +214,10 @@ class IOCTableDelegate(QStyledItemDelegate):
         if not isinstance(editor, QComboBox):
             return super().setModelData(editor, model, index)
 
+        if not self.editor_opened:
+            # Prevent re-opening a dialog an extra time after close
+            return
+
         idx = editor.currentIndex()
 
         match index.column():
@@ -223,9 +229,7 @@ class IOCTableDelegate(QStyledItemDelegate):
                     if self.hostdialog.exec_() == QDialog.Accepted:
                         value = self.hostdialog.ui.hostname.text()
                         model.setData(index, value)
-                    else:
-                        # Revert the widget, else it stays on "new"
-                        self.setEditorData(editor, index)
+                    self.close_editor(editor=editor)
                 else:
                     model.setData(index, editor.currentText())
             case TableColumn.VERSION:
@@ -273,17 +277,27 @@ class IOCTableDelegate(QStyledItemDelegate):
                     else:
                         logger.error("Qt API changed, QFileDialog not QGridLayout")
 
-                    if dlg.exec_() == QDialog.Rejected:
-                        editor.setCurrentIndex(0)
-                        return
-                    try:
-                        directory = str(dlg.selectedFiles()[0])
-                        directory = normalize_path(directory, ioc_name)
-                    except Exception:
-                        return
-                    model.setData(index, directory)
+                    if dlg.exec_() == QDialog.Accepted:
+                        try:
+                            directory = str(dlg.selectedFiles()[0])
+                            directory = normalize_path(directory, ioc_name)
+                        except Exception:
+                            ...
+                        else:
+                            model.setData(index, directory)
+                    self.close_editor(editor=editor)
                 else:
                     model.setData(index, editor.currentText())
+
+    def close_editor(self, editor: QComboBox):
+        """
+        Helper for forcing the delegate editor to close once we're done.
+
+        This needs to be done manually when we open dialogs from the combobox editors.
+        Otherwise, the dialog opens repeatedly until we cancel the edit.
+        """
+        editor.close()
+        self.editor_opened = False
 
     def set_ioc_parent(self, gui: QLineEdit, ioc: str, directory: str):
         """Slot to update the "parent" value in the new version selection dialog."""
