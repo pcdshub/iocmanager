@@ -14,6 +14,7 @@ import pydm.data_plugins
 from pydm.exception import raise_to_operator
 from qtpy.QtCore import (
     QItemSelection,
+    QItemSelectionModel,
     QPoint,
     QSortFilterProxyModel,
     Qt,
@@ -91,10 +92,9 @@ class IOCMainWindow(QMainWindow):
         self.commit_dialog = CommitDialog(hutch=hutch, parent=self)
         self.find_pv_dialog = FindPVDialog(
             model=self.model,
-            proxy_model=self.sort_model,
-            view=self.ui.tableView,
             parent=self,
         )
+        self.find_pv_dialog.request_scroll.connect(self.scroll_to_ioc)
         # Configuration menu
         self.ui.actionApply.triggered.connect(self.action_write_and_apply_config)
         self.ui.actionSave.triggered.connect(self.action_write_config)
@@ -614,9 +614,12 @@ class IOCMainWindow(QMainWindow):
         fields and all of the commonly used normal fields needed for an IOC.
         """
         try:
-            self.model.add_ioc_dialog()
+            ioc_name = self.model.add_ioc_dialog()
         except Exception as exc:
             raise_to_operator(exc)
+            return
+        if ioc_name:
+            self.scroll_to_ioc(ioc=ioc_name)
 
     def action_add_running(self, ioc: IOCModelIdentifier):
         """
@@ -663,5 +666,18 @@ class IOCMainWindow(QMainWindow):
         """
         try:
             self.model.revert_ioc(ioc=ioc)
+        except Exception as exc:
+            raise_to_operator(exc)
+
+    def scroll_to_ioc(self, ioc: IOCModelIdentifier):
+        """
+        Helper to scroll the view to an IOC.
+        """
+        try:
+            row = self.model.get_ioc_row(ioc=ioc)
+            selection_model = self.ui.tableView.selectionModel()
+            idx = self.sort_model.mapFromSource(self.model.index(row, 0))
+            selection_model.select(idx, QItemSelectionModel.SelectCurrent)
+            self.ui.tableView.scrollTo(idx, QAbstractItemView.PositionAtCenter)
         except Exception as exc:
             raise_to_operator(exc)

@@ -11,8 +11,8 @@ The layout is defined in ui/find_pv.ui
 import logging
 import re
 
-from qtpy.QtCore import QItemSelectionModel, QSortFilterProxyModel, Qt
-from qtpy.QtWidgets import QAbstractItemView, QDialog, QTableView, QWidget
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import QDialog, QWidget
 
 from . import ui_find_pv
 from .ioc_info import find_pv
@@ -37,20 +37,17 @@ class FindPVDialog(QDialog):
 
     process_next = Signal(int)
     process_done = Signal()
+    request_scroll = Signal(str)
 
     def __init__(
         self,
         model: IOCTableModel,
-        proxy_model: QSortFilterProxyModel,
-        view: QTableView,
         parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.ui = ui_find_pv.Ui_Dialog()
         self.ui.setupUi(self)
         self.model = model
-        self.proxy_model = proxy_model
-        self.view = view
         self.config = model.config
         self.ioc_names = []
         self.regex_text = ""
@@ -114,13 +111,6 @@ class FindPVDialog(QDialog):
                 f"Searching for '{self.regex_text}' produced no matches."
             )
         elif self.found_count == 1:
-            # We can jump to the IOC with that PV
-            selection_model = self.view.selectionModel()
-            idx = self.proxy_model.mapFromSource(
-                self.model.index(
-                    self.model.get_ioc_row_map().index(self.last_ioc_found), 0
-                )
-            )
-            selection_model.select(idx, QItemSelectionModel.SelectCurrent)
-            self.view.scrollTo(idx, QAbstractItemView.PositionAtCenter)
+            # We should jump to the IOC with that PV
+            self.request_scroll.emit(self.last_ioc_found)
         self.process_done.emit()

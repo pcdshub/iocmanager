@@ -1163,21 +1163,29 @@ class IOCTableModel(QAbstractTableModel):
         self.refresh_ports_taken()
 
     # User Dialogs
-    def add_ioc_dialog(self):
+    def add_ioc_dialog(self) -> str:
         """
-        Open the add ioc dialog to create a new IOC and add it to the table
+        Open the add ioc dialog to create a new IOC and add it to the table.
+
+        Returns the name of the new ioc, or an empty string if nothing was added.
         """
         self.dialog_add.reset()
 
-        while self._add_ioc_dialog_again():
-            ...
+        again = True
+        name = ""
+        while again:
+            again, name = self._add_ioc_dialog_again()
+        return name
 
-    def _add_ioc_dialog_again(self) -> bool:
+    def _add_ioc_dialog_again(self) -> tuple[bool, str]:
         """
-        Subloop of add_ioc_dialog, return True if we should try again.
+        Subloop of add_ioc_dialog.
+
+        Returns True if we should try again, and the name of the IOC we added
+        or an empty string if nothing was added.
         """
         if self.dialog_add.exec_() != QDialog.Accepted:
-            return False
+            return (False, "")
         if not self.dialog_add.port_is_valid:
             QMessageBox.critical(
                 None,
@@ -1191,7 +1199,7 @@ class IOCTableModel(QAbstractTableModel):
                 QMessageBox.Ok,
                 QMessageBox.Ok,
             )
-            return True
+            return (True, "")
         ioc_proc = self.dialog_add.get_ioc_proc()
         if not ioc_proc.name or (
             not ioc_proc.hard
@@ -1204,7 +1212,7 @@ class IOCTableModel(QAbstractTableModel):
                 QMessageBox.Ok,
                 QMessageBox.Ok,
             )
-            return True
+            return (True, "")
         if ioc_proc.name in self.get_next_config().procs:
             QMessageBox.critical(
                 None,
@@ -1213,9 +1221,9 @@ class IOCTableModel(QAbstractTableModel):
                 QMessageBox.Ok,
                 QMessageBox.Ok,
             )
-            return True
+            return (True, "")
         self.add_ioc(ioc_proc=ioc_proc)
-        return False
+        return (False, ioc_proc.name)
 
     def edit_details_dialog(self, ioc: IOCModelIdentifier):
         """
