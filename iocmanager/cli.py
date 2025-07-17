@@ -356,7 +356,7 @@ def main(args: list[str] | None = None) -> int:
         if imgr_args.verbose:
             raise
         else:
-            print(exc)
+            logger.error(exc)
             return 1
     else:
         return 0
