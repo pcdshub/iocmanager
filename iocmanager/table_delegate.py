@@ -195,10 +195,9 @@ class IOCTableDelegate(QStyledItemDelegate):
                 # Clear the host from last time
                 self.hostdialog.ui.hostname.setText("")
             case TableColumn.VERSION:
-                # We don't have anything to do here.  It is created pointing to 0
-                # (the newest setting)
-                # And after setModelData, it is pointing to what we just added.
-                ...
+                # Reset to index 0 (the last one the user picked)
+                # Often not needed except if resetting the widget later
+                editor.setCurrentIndex(0)
 
     def setModelData(
         self, editor: QWidget, model: QAbstractItemModel, index: QModelIndex
@@ -235,6 +234,9 @@ class IOCTableDelegate(QStyledItemDelegate):
                                 editor.addItem(host)
                         editor.setCurrentText(value)
                         model.setData(index, value)
+                    else:
+                        # Reset to avoid triggering the dialog again
+                        self.setEditorData(editor, index)
                 else:
                     model.setData(index, editor.currentText())
             case TableColumn.VERSION:
@@ -301,6 +303,9 @@ class IOCTableDelegate(QStyledItemDelegate):
                                     editor.addItem(ver)
                             editor.setCurrentText(directory)
                             model.setData(index, directory)
+                    else:
+                        # Reset to avoid triggering the dialog again
+                        self.setEditorData(editor, index)
                 else:
                     model.setData(index, editor.currentText())
 

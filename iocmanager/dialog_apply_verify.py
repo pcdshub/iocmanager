@@ -13,7 +13,9 @@ from . import ui_apply_verify
 from .procserv_tools import ApplyConfigContext, VerifyPlan
 
 
-def verify_dialog(context: ApplyConfigContext, plan: VerifyPlan) -> VerifyPlan:
+def verify_dialog(
+    context: ApplyConfigContext, plan: VerifyPlan, parent: QWidget | None = None
+) -> VerifyPlan:
     """
     Allow the user to select which IOCs to apply config to.
 
@@ -30,7 +32,7 @@ def verify_dialog(context: ApplyConfigContext, plan: VerifyPlan) -> VerifyPlan:
             None, "Warning", "Nothing to apply!", QMessageBox.Ok, QMessageBox.Ok
         )
         return VerifyPlan(kill_list=[], start_list=[], restart_list=[])
-    dialog = ApplyVerifyDialog(context=context, plan=plan)
+    dialog = ApplyVerifyDialog(context=context, plan=plan, parent=parent)
     dialog.resize_with_max()
     if dialog.exec_() == QDialog.Accepted:
         return dialog.get_verify_result()

@@ -73,13 +73,14 @@ class IOCMainWindow(QMainWindow):
         # Data interfaces
         self.hutch = hutch
         config = read_config(hutch)
-        self.model = IOCTableModel(config=config, hutch=hutch)
+        self.model = IOCTableModel(config=config, hutch=hutch, parent=self)
         self.sort_model = QSortFilterProxyModel()
         self.sort_model.setSourceModel(self.model)
         self.delegate = IOCTableDelegate(
             hutch=hutch,
             model=self.model,
             proxy_model=self.sort_model,
+            parent=self,
         )
 
         # User state
@@ -208,7 +209,9 @@ class IOCMainWindow(QMainWindow):
         try:
             if not self.action_write_config():
                 return
-            apply_config(cfg=self.hutch, verify=verify_dialog, ioc=ioc_name)
+            apply_config(
+                cfg=self.hutch, verify=partial(verify_dialog, parent=self), ioc=ioc_name
+            )
         except Exception as exc:
             raise_to_operator(exc)
 
