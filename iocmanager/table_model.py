@@ -918,7 +918,7 @@ class IOCTableModel(QAbstractTableModel):
 
         # Due to signal/slot timing, if we don't track these locally
         # we might not check status-only IOCs until next poll
-        status_files_to_check = {}
+        status_files_to_check: dict[str, IOCStatusFile] = {}
         for status_file in read_status_dir(self.hutch):
             if self.poll_stop_ev.is_set():
                 return
@@ -928,28 +928,35 @@ class IOCTableModel(QAbstractTableModel):
         # very rarely this is important to do, usually a no-op
         status_files_to_check.update(self.status_files)
 
-        # IO-bound task, use threads
-        futures: list[concurrent.futures.Future[IOCStatusLive]] = []
-        next_config = self.get_next_config()
-        for ioc_proc in next_config.procs.values():
-            futures.append(
-                executor.submit(
-                    check_status,
-                    host=ioc_proc.host,
-                    port=ioc_proc.port,
-                    name=ioc_proc.name,
-                )
-            )
+        # For each named IOC, pick one host/port to try
+        # Tracking multiple host/port per ioc is possible but not implemented yet
+        # Source priority:
+        # 1. Config file, so with pending edits we check the original host/port
+        # 2. Status file, so if we add from live and pend an edit, we check live
+        # 3. Next config, so we also include new IOCs
+        iocs_included: set[str] = set()
+        host_port_name: list[tuple[str, int, str]] = []
+        # 1. Config file
+        for ioc_name, ioc_proc in self.config.procs.items():
+            if ioc_name not in iocs_included:
+                iocs_included.add(ioc_name)
+                host_port_name.append((ioc_proc.host, ioc_proc.port, ioc_name))
+        # 2. Status file
         for ioc_name, ioc_file in status_files_to_check.items():
-            if ioc_name not in next_config.procs:
-                futures.append(
-                    executor.submit(
-                        check_status,
-                        host=ioc_file.host,
-                        port=ioc_file.port,
-                        name=ioc_file.name,
-                    )
-                )
+            if ioc_name not in iocs_included:
+                iocs_included.add(ioc_name)
+                host_port_name.append((ioc_file.host, ioc_file.port, ioc_name))
+        # 3. Next config
+        for ioc_name, ioc_proc in self.get_next_config().procs.items():
+            if ioc_name not in iocs_included:
+                iocs_included.add(ioc_name)
+                host_port_name.append((ioc_proc.host, ioc_proc.port, ioc_name))
+        # IO-bound task, use threads via concurrent.futures module
+        futures: list[concurrent.futures.Future[IOCStatusLive]] = []
+        for host, port, name in host_port_name:
+            futures.append(
+                executor.submit(check_status, host=host, port=port, name=name)
+            )
 
         # Collect the thread results and apply them
         for fut in futures:
