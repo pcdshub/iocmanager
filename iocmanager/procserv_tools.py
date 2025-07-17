@@ -423,6 +423,9 @@ def kill_proc(host: str, port: int) -> None:
             tn.write(b"\x18")
             # wait for killed message
             tn.read_until(MSG_KILLED, 1)
+        # Hack: sometimes procserv isn't ready to accept ctrl+Q yet
+        # TODO figure out the right conditions to know we are ready to finish the kill
+        time.sleep(0.1)
         logger.debug("kill_proc: Sending Ctrl-Q to %s port %s", host, port)
         # send ^Q to ask procServ to quit
         tn.write(b"\x11")
