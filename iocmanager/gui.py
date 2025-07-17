@@ -91,6 +91,6 @@ def _main(args) -> int:
     from .main_window import IOCMainWindow
 
     app = QApplication([""])
-    gui = IOCMainWindow(hutch=args.hutch.lower())
+    gui = IOCMainWindow(hutch=args.hutch.lower(), verbose=args.verbose)
     gui.show()
     return app.exec_()

@@ -57,7 +57,7 @@ class IOCMainWindow(QMainWindow):
     It loads from the pyuic-compiled ui/ioc.ui file.
     """
 
-    def __init__(self, hutch: str):
+    def __init__(self, hutch: str, verbose: int = 0):
         super().__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
@@ -70,8 +70,11 @@ class IOCMainWindow(QMainWindow):
         else:
             self.ui.userLabel.setText(f"User: {user}  (Limited Auth)")
 
-        # Data interfaces
+        # Init args
         self.hutch = hutch
+        self.verbose = verbose
+
+        # Data interfaces
         config = read_config(hutch)
         self.model = IOCTableModel(config=config, hutch=hutch, parent=self)
         self.sort_model = QSortFilterProxyModel()
@@ -250,7 +253,9 @@ class IOCMainWindow(QMainWindow):
             write_config(cfgname=self.hutch, config=self.model.get_next_config())
             self.model.reset_edits()
             if comment:
-                commit_config(hutch=self.hutch, comment=comment)
+                commit_config(
+                    hutch=self.hutch, comment=comment, show_output=bool(self.verbose)
+                )
             return True
         except Exception as exc:
             raise_to_operator(exc)

@@ -26,7 +26,9 @@ from .env_paths import env_paths
 COMMIT_SCRIPT = str(Path(__file__).parent / "commit.sh")
 
 
-def commit_config(hutch: str, comment: str) -> subprocess.CompletedProcess:
+def commit_config(
+    hutch: str, comment: str, show_output=True
+) -> subprocess.CompletedProcess:
     """
     Open a connection to COMMITHOST and commit the iocmanager.cfg file.
 
@@ -40,6 +42,8 @@ def commit_config(hutch: str, comment: str) -> subprocess.CompletedProcess:
         The name of the hutch to commit, such as xpp or tmo
     comment : str
         The commit message
+    show_output : bool
+        If True, show the command output in terminal. Otherwise, hide it.
 
     Returns
     -------
@@ -53,7 +57,13 @@ def commit_config(hutch: str, comment: str) -> subprocess.CompletedProcess:
         cmd = [COMMIT_SCRIPT, config_file, comment]
     else:
         cmd = ["ssh", commit_host, f"{COMMIT_SCRIPT} {config_file} '{comment}'"]
-    return subprocess.run(cmd, universal_newlines=True, check=True)
+    if show_output:
+        output_opt = None
+    else:
+        output_opt = subprocess.DEVNULL
+    return subprocess.run(
+        cmd, universal_newlines=True, check=True, stdout=output_opt, stderr=output_opt
+    )
 
 
 def get_commithost(hutch: str) -> str:
