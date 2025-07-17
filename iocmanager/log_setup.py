@@ -42,9 +42,19 @@ def iocmanager_log_config(args):
     It is assumed that add_verbose_arg has been applied to the
     parses before parsing user arguments.
     """
+    logging.addLevelName(level=SPAM_LEVEL, levelName="SPAM")
     if not args.verbose:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(levelname)s: %(message)s",
+        )
     elif args.verbose == 1:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s %(levelname)s:%(name)s %(message)s",
+        )
     else:
-        logging.basicConfig(level=SPAM_LEVEL)
+        logging.basicConfig(
+            level=SPAM_LEVEL,
+            format="%(asctime)s %(levelname)s:%(name)s:%(lineno)d %(message)s",
+        )
