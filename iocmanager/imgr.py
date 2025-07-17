@@ -354,6 +354,12 @@ def _apply_disable(config: Config, ioc_name: str, hutch: str, disable: bool):
     ensure_iocname(ioc_name)
     ensure_auth(hutch=hutch, ioc_name=ioc_name, special_ok=True)
     ioc_proc = get_proc(config=config, ioc_name=ioc_name)
+    if ioc_proc.disable == disable:
+        if disable:
+            logger.warning(f"{ioc_name} is already disabled.")
+        else:
+            logger.warning(f"{ioc_name} is already enabled.")
+        return
     ioc_proc.disable = disable
     _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
 
