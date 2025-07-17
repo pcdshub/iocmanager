@@ -2,7 +2,6 @@ from unittest.mock import Mock
 
 import pytest
 from pytestqt.qtbot import QtBot
-from qtpy.QtCore import QSortFilterProxyModel
 from qtpy.QtWidgets import QTableView
 
 from ..config import IOCProc
@@ -14,9 +13,7 @@ from ..table_model import IOCTableModel
 def find_pv_dialog(model: IOCTableModel, qtbot: QtBot):
     table_view = QTableView()
     table_view.setModel(model)
-    dialog = FindPVDialog(
-        model=model, proxy_model=QSortFilterProxyModel(), view=table_view
-    )
+    dialog = FindPVDialog(model=model)
     qtbot.add_widget(dialog)
     return dialog
 

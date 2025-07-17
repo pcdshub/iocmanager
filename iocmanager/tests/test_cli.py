@@ -242,10 +242,10 @@ def test_main(verbosity: int, succeed: bool, monkeypatch: pytest.MonkeyPatch):
         assert main() > 0
 
     if verbosity == 0:
-        basic_config_mock.assert_called_with(level=logging.INFO)
+        assert basic_config_mock.call_args.kwargs["level"] == logging.INFO
     elif verbosity == 1:
-        basic_config_mock.assert_called_with(level=logging.DEBUG)
+        assert basic_config_mock.call_args.kwargs["level"] == logging.DEBUG
     elif verbosity == 2:
-        basic_config_mock.assert_called_with(level=log_setup.SPAM_LEVEL)
+        assert basic_config_mock.call_args.kwargs["level"] == log_setup.SPAM_LEVEL
     else:
         raise RuntimeError("Test writer error")
