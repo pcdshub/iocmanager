@@ -356,9 +356,9 @@ def _apply_disable(config: Config, ioc_name: str, hutch: str, disable: bool):
     ioc_proc = get_proc(config=config, ioc_name=ioc_name)
     if ioc_proc.disable == disable:
         if disable:
-            logger.warning(f"{ioc_name} is already disabled.")
+            logger.info(f"{ioc_name} is already disabled.")
         else:
-            logger.warning(f"{ioc_name} is already enabled.")
+            logger.info(f"{ioc_name} is already enabled.")
         return
     ioc_proc.disable = disable
     _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
@@ -468,8 +468,13 @@ def move_cmd(config: Config, ioc_name: str, hutch: str, move_host_port: str):
             port = None
 
     ioc_proc = get_proc(config=config, ioc_name=ioc_name)
-    ioc_proc.host = host or ioc_proc.host
-    ioc_proc.port = port or ioc_proc.port
+    new_host = host or ioc_proc.host
+    new_port = port or ioc_proc.port
+    if new_host == ioc_proc.host and new_port == ioc_proc.port:
+        logger.info(f"{ioc_name} is already configured for {new_host}:{new_port}")
+        return
+    ioc_proc.host = new_host
+    ioc_proc.port = new_port
     _write_apply(config=config, ioc_name=ioc_name, hutch=hutch)
 
 
