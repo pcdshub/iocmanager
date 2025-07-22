@@ -19,10 +19,7 @@ fi
 
 # Setup the hutch-specific cfg environment.
 # This should override settings, e.g. IOC_USER as needed.
-# TODO resolve discrepencies between prod all folder and dev so all IOCs continue to work
-# TODO test this during summer down
-# CFG_ENV="${IOC_COMMON}"/All/"${cfg}_env.sh"
-CFG_ENV=/cds/group/pcds/epics-dev/zlentz/iocCommon-All/"${cfg}_env.sh"
+CFG_ENV="${IOC_COMMON}/All/${cfg}_env.sh"
 if [ ! -f "${CFG_ENV}" ]; then
 	echo "${CFG_ENV}"  not found!
 	exit 1
