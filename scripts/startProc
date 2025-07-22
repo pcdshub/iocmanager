@@ -1,0 +1,61 @@
+#!/usr/bin/bash
+# shellcheck disable=SC2164
+# Usage: startProc IOCNAME PORT HUTCH
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+cd "${THIS_DIR}/.." || exit
+source "${THIS_DIR}"/default_env
+
+ioc=$1
+port=$2
+cfg=$3
+shift;shift;shift
+if test X"$SCRIPTROOT" == X; then export SCRIPTROOT=$PYPS_ROOT/config/$cfg/iocmanager; fi
+
+# Start a new log if running procServ-2.6.0-SLAC.
+if test X"$PROCSERVPID" != X; then kill -HUP "$PROCSERVPID"; fi
+
+# Setup the IOC user environment.
+export IOC="$ioc"
+# source "$IOC_COMMON"/All/"${cfg}"_env.sh
+source /cds/group/pcds/epics-dev/zlentz/iocCommon-All/"${cfg}_env.sh"
+
+dir="$("$SCRIPTROOT"/getDirectory "$ioc" "$cfg")"
+if test "$dir" == NO_DIRECTORY; then
+    if test X"$PROCSERVPID" != X; then
+        kill -9 "$PROCSERVPID";
+	exit 0;
+    else
+        while test 1 == 1; do sleep 3600; done;
+    fi
+fi
+cd "$IOC_ROOT"/..
+if test -d "$dir"; then cd "$dir"; fi
+if test -f env.sh; then source ./env.sh; fi
+if test -d children/build/iocBoot/"$ioc"; then cd children/build/iocBoot/"$ioc"; fi
+if test -d build/iocBoot/"$ioc"; then cd build/iocBoot/"$ioc"; fi
+if test -d iocBoot/"$ioc"; then cd iocBoot/"$ioc"; fi
+if test -f env.sh; then source ./env.sh; fi
+umask 2
+echo $$ "$(hostname -s)" "$port" "$dir" >"$PYPS_ROOT"/config/.status/"$cfg"/"$ioc"
+chmod g+rw "$PYPS_ROOT"/config/.status/"$cfg"/"$ioc"
+
+# Force an updated timestamp on the archive request file each time
+# so we know when they're stale
+if test -f ../../archive/"$ioc".archive; then
+    mkdir -p "$IOC_DATA"/"$ioc"/archive
+    cp -f  ../../archive/"$ioc".archive "$IOC_DATA"/"$ioc"/archive/"$ioc".archive;
+fi
+cmd=$1
+shift
+if [ "$EPICS_HOST_ARCH" == "linux-arm-apalis" ]; then
+	exec $cmd "$@"
+else
+	# Fix T_A if needed in #!/path/to/bin/T_A/iocApp
+	file=$(echo "$cmd" | awk '{print $1;}' -)
+	if test "$(head -c 2 "$file" | cat -v)" == '#!'; then
+		prog=$(head -1 "$file" | sed -e 's/#!//' -e "s/[-a-z0-9]\+-x86_64/$EPICS_HOST_ARCH/")
+		exec $prog "$cmd" "$@"
+	else
+		exec $cmd "$@"
+	fi
+fi

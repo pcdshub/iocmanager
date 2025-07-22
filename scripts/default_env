@@ -1,0 +1,30 @@
+#!/usr/bin/bash
+if [ -x /etc/pathinit ]; then
+    # TODO: figure out if this is actually used anywhere
+    source /etc/pathinit
+fi
+if [ -z "${SCRIPTROOT}" ]; then
+    SCRIPTROOT="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+    export SCRIPTROOT
+fi
+if [ -z "${IOCMAN_PY_BIN}" ]; then
+    export IOCMAN_PY_BIN=/cds/group/pcds/pyps/conda/py312/envs/pcds-6.0.1/bin
+fi
+if [ -z "${PYPS_ROOT}" ]; then
+    export PYPS_ROOT=/cds/group/pcds/pyps
+fi
+if [ -z "${PACKAGE_SITE_TOP}" ]; then
+    export PACKAGE_SITE_TOP=/cds/group/pcds/package
+fi
+if [ -z "${IOC_ROOT}" ]; then
+    export IOC_ROOT="${PACKAGE_SITE_TOP}"/epics/ioc
+fi
+if [ -z "${CAMRECORD_ROOT}" ]; then
+    export CAMRECORD_ROOT=/cds/group/pcds/controls/camrecord
+fi
+if [ -z "${IOC_DATA}" ]; then
+    export IOC_DATA=/cds/data/iocData
+fi
+if [ -z "${IOC_COMMON}" ]; then
+    export IOC_COMMON=/cds/data/iocCommon
+fi

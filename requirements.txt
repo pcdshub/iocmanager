@@ -1,0 +1,4 @@
+packaging
+pydm
+pyepics
+qtpy

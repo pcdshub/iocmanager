@@ -1,0 +1,87 @@
+#!/usr/bin/bash
+
+BASEPORT=39050
+PROCMGRD_ROOT=procmgrd
+
+host="$(hostname -s)"
+PROCMGRD_LOG_DIR="${IOC_DATA}"/"${host}"/logs
+
+# Save our OS for later!
+echo "${T_A}" | cut -f 1 -d "-" > "${PYPS_ROOT}"/config/.host/"${host}"
+
+# Figure out the hutch configuration: lfe, tmo, rix, xpp, ...
+# Take the entry in hosts.special if it exists
+cfg="$(awk /"${host}"/'{print $2;}' "${PYPS_ROOT}"/config/hosts.special)"
+if [ -z "${cfg}" ]; then
+    # Otherwise, take the second part of ctl-kfe-mot-01, for example
+    cfg="$(echo "${host}" | cut -d "-" -f 2)"
+fi
+
+# Setup the hutch-specific cfg environment.
+# This should override settings, e.g. IOC_USER as needed.
+CFG_ENV="${IOC_COMMON}/All/${cfg}_env.sh"
+if [ ! -f "${CFG_ENV}" ]; then
+	echo "${CFG_ENV}"  not found!
+	exit 1
+fi
+source "${CFG_ENV}"
+if [ -z "${IOC_USER}" ]; then
+   export IOC_USER="${cfg}ioc"
+fi
+
+# Find the procmgrd bin directory via ${cfg}_env PROCSERV variable
+# This variable contains a path to procServ and some args, e.g. /some/path/procServ --allow --logstamp
+export PROCSERV_EXE
+PROCSERV_EXE="$(echo "${PROCSERV}" | cut -d ' ' -f 1)"
+PROCMGRD_DIR="$(dirname "${PROCSERV_EXE}")"
+
+# Make sure we have a procmgrd log directory
+if [ ! -d "${PROCMGRD_LOG_DIR}" ]; then
+	su "${IOC_USER}" -s /bin/sh -c "mkdir -p ${PROCMGRD_LOG_DIR}"
+fi
+su "${IOC_USER}" -s /bin/sh -c "chmod g+rwx ${PROCMGRD_LOG_DIR}"
+
+# Allow control connections from anywhere
+# ignore ^D so procmgrd doesn't terminate on ^D
+# No max on coresize
+# Start child processes from /tmp
+PROCMGRD_ARGS="--allow --ignore '^D' --coresize 0 -c /tmp"
+
+# Disable readline and filename expansion
+PROCMGRD_SHELL="/bin/sh --noediting -f"
+
+launchProcMgrD()
+{
+	cfgduser=$1
+    PROCMGRD_BIN=$PROCMGRD_DIR/$2
+    ctrlport=$3
+    logport=$(( ctrlport + 1 ))
+	PROCMGRD_LOGFILE=$PROCMGRD_LOG_DIR/$2.log
+    su "${cfgduser}" -s /bin/sh -c "${PROCMGRD_BIN} ${PROCMGRD_ARGS} -l ${logport} --logfile ${PROCMGRD_LOGFILE} ${ctrlport} ${PROCMGRD_SHELL}"
+    fixTelnet "${ctrlport}"
+}
+
+# Start up the procmgrd for the hutch IOC_USER
+if [ "$cfg" != "xrt" ] && [ "$cfg" != "las" ]; then
+	launchProcMgrD "${IOC_USER}" "${PROCMGRD_ROOT}0" $(( BASEPORT ))
+fi
+
+# Start up the procmgrd for feeioc
+launchProcMgrD feeioc "${PROCMGRD_ROOT}1" $(( BASEPORT + 2 ))
+
+# Start up the procmgrd for lasioc
+launchProcMgrD lasioc "${PROCMGRD_ROOT}2" $(( BASEPORT + 4 ))
+
+# Setup the IOC user environment.
+export IOC="${host}"
+
+# Start caRepeater.
+su "${IOC_USER}" -s /bin/sh -c "${PROCSERV} --logfile ${IOC_DATA}/${IOC_HOST}/iocInfo/caRepeater.log --name caRepeater 30000 ${SCRIPTROOT}/runRepeater"
+sleep 5
+
+# Start all of our processes.
+if [ "$cfg" != "xrt" ] && [ "$cfg" != "las" ]; then
+    startAll "${cfg}" "${host}"
+fi
+startAll xrt "${host}"
+startAll las "${host}"
