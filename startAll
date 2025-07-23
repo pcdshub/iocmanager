@@ -16,4 +16,7 @@ source $PSPKG_ROOT/etc/set_env.sh
 if [ X$SCRIPTROOT == X ]; then
     export SCRIPTROOT=/reg/g/pcds/pyps/config/$1/iocmanager
 fi
+if [ ! -f "$SCRIPTROOT"/startAll.py ]; then
+    export SCRIPTROOT="$(dirname "$(realpath "${0}")")"
+fi
 python $SCRIPTROOT/startAll.py "$@"

@@ -18,6 +18,9 @@ fi
 echo Using configuration $cfg.
 
 export SCRIPTROOT=$PYPS_ROOT/config/$cfg/iocmanager
+if [ ! -f "$SCRIPTROOT"/initIOC.hutch ]; then
+    export SCRIPTROOT="$(dirname "$(realpath "${0}")")"
+fi
 
 # Setup our path, so we can find procServ/procmgrd!
 export PSPKG_RELEASE=controls-basic-0.0.1

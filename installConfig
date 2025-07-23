@@ -15,4 +15,7 @@ source $PSPKG_ROOT/etc/set_env.sh
 if [ X$SCRIPTROOT == X ]; then
     export SCRIPTROOT=$PYPS_ROOT/config/$1/iocmanager
 fi
+if [ ! -f "$SCRIPTROOT"/installConfig.py ]; then
+    export SCRIPTROOT="$(dirname "$(realpath "${0}")")"
+fi
 python $SCRIPTROOT/installConfig.py "$@"
