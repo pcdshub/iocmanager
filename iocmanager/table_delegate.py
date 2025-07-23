@@ -195,9 +195,14 @@ class IOCTableDelegate(QStyledItemDelegate):
                 # Clear the host from last time
                 self.hostdialog.ui.hostname.setText("")
             case TableColumn.VERSION:
-                # Reset to index 0 (the last one the user picked)
+                # Backup: reset to index 0 (the one in the config file)
                 # Often not needed except if resetting the widget later
                 editor.setCurrentIndex(0)
+                # Override with a set of the currentText as in HOST above
+                # This makes it so after we complete the dialog the value sticks
+                # Note: this is a no-op of there is no matching string,
+                # one must be added in setModelData
+                editor.setCurrentText(str(self.model.data(index)))
 
     def setModelData(
         self, editor: QWidget, model: QAbstractItemModel, index: QModelIndex
