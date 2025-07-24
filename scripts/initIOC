@@ -64,7 +64,19 @@ launchProcMgrD()
     ctrlport=$3
     logport=$(( ctrlport + 1 ))
     PROCMGRD_LOGFILE=$PROCMGRD_LOG_DIR/$2.log
-    su "${cfgduser}" -s /bin/sh -c "${PROCMGRD_BIN} ${PROCMGRD_ARGS} -l ${logport} --logfile ${PROCMGRD_LOGFILE} ${ctrlport} ${PROCMGRD_SHELL}"
+    for slp in 2 5 10 30 60 end; do
+        if su "${cfgduser}" -s /bin/sh -c "${PROCMGRD_BIN} ${PROCMGRD_ARGS} -l ${logport} --logfile ${PROCMGRD_LOGFILE} ${ctrlport} ${PROCMGRD_SHELL}"; then
+            echo "Successfully started $2"
+            break
+        elif [[ "${slp}" == "end" ]]; then
+            echo "Ran out of tries, skip $2"
+            # Exit early, fixTelnet will error out anyway with a traceback
+            return
+        else
+            echo "Failed to start $2, retry in $slp seconds"
+            sleep $slp
+        fi
+    done
     fixTelnet "${ctrlport}"
 }
 
