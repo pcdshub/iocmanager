@@ -278,11 +278,12 @@ class IOCMainWindow(QMainWindow):
                         "This may require you to kinit and/or aklog for kerberos auth "
                         "or source ssh-agent-helper for key-based auth. Continuing..."
                     ),
+                    self,
                     critical=False,
                 )
             else:
                 # Generic issue
-                raise_to_operator(exc)
+                raise_to_operator(exc, self)
         return did_write
 
     def action_revert_all(self):
