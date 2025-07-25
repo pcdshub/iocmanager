@@ -226,7 +226,7 @@ class EnvPaths:
 
         It will contain one file per host, with filename matching that host's hostname,
         that simply contains the target architecture of that host.
-        These files are created during initIOC.hutch when we start the procmgrd process.
+        These files are created during initIOC when we start the procmgrd process.
         """
         return f"{self.CONFIG_DIR}/.host"
 
