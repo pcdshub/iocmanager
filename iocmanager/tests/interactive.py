@@ -21,6 +21,7 @@ from pytest import MonkeyPatch
 from qtpy.QtWidgets import QApplication, QDialog
 
 from ..cli import main as cli_main
+from ..commit import commit_config
 from ..config import Config, IOCProc, IOCStatusFile
 from ..dialog_add_ioc import AddIOCDialog
 from ..dialog_apply_verify import verify_dialog
@@ -147,6 +148,14 @@ def main() -> int:
                 case "xterm_terminal":
                     proc = run_in_xterm(title="Test run_in_xterm", args=args, out=None)
                     return proc.wait()
+                case "ssh_for_commit":
+                    return commit_config(
+                        hutch="commit_test",
+                        comment="test comment",
+                        show_output=True,
+                        ssh_verbose=1,
+                        script="echo",
+                    ).returncode
                 case other:
                     raise RuntimeError(f"Unhandled command {other}")
 

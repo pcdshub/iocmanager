@@ -27,7 +27,11 @@ COMMIT_SCRIPT = str(Path(__file__).parent / "commit.sh")
 
 
 def commit_config(
-    hutch: str, comment: str, show_output=True
+    hutch: str,
+    comment: str,
+    show_output: bool = True,
+    ssh_verbose: int = 0,
+    script: str = "",
 ) -> subprocess.CompletedProcess:
     """
     Open a connection to COMMITHOST and commit the iocmanager.cfg file.
@@ -35,6 +39,8 @@ def commit_config(
     Runs locally if COMMITHOST is localhost.
 
     May raise if e.g. there is an auth or connection error.
+    Requires the user to be able to ssh without further user input,
+    such as by using kerberos or ssh keys.
 
     Parameters
     ----------
@@ -44,6 +50,10 @@ def commit_config(
         The commit message
     show_output : bool
         If True, show the command output in terminal. Otherwise, hide it.
+    ssh_verbose: int
+        The number of -v args to pass to ssh for more verbose output.
+    script: str
+        If provided, an alternate script to use. Useful for testing.
 
     Returns
     -------
@@ -52,17 +62,35 @@ def commit_config(
     """
     commit_host = get_commithost(hutch=hutch)
     config_file = env_paths.CONFIG_FILE % hutch
+    commit_script = script or COMMIT_SCRIPT
 
     if commit_host in ("localhost", gethostname()):
-        cmd = [COMMIT_SCRIPT, config_file, comment]
+        cmd = [commit_script, config_file, comment]
     else:
-        cmd = ["ssh", commit_host, f"{COMMIT_SCRIPT} {config_file} '{comment}'"]
+        cmd = ["ssh"]
+        if ssh_verbose:
+            cmd.append("-" + "v" * ssh_verbose)
+        cmd.extend(
+            [
+                "-o",
+                "BatchMode=yes",
+                commit_host,
+                f"{commit_script} {config_file} '{comment}'",
+            ]
+        )
     if show_output:
         output_opt = None
     else:
         output_opt = subprocess.DEVNULL
+    if show_output:
+        print("Running ", " ".join(cmd))
     return subprocess.run(
-        cmd, universal_newlines=True, check=True, stdout=output_opt, stderr=output_opt
+        cmd,
+        universal_newlines=True,
+        check=True,
+        stdin=subprocess.DEVNULL,
+        stdout=output_opt,
+        stderr=output_opt,
     )
 
 

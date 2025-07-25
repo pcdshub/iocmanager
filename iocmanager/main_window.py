@@ -226,11 +226,15 @@ class IOCMainWindow(QMainWindow):
 
         Returns True if the save was successfull and False otherwise, e.g.
         if the user cancelled the save or if something went wrong.
+
+        Note that this will still return True if the commit failed.
         """
+        did_write = False
+        did_commit = False
+        comment = ""
         try:
             ensure_auth(hutch=self.hutch, ioc_name="", special_ok=False)
             self.commit_dialog.reset()
-            comment = ""
             while not comment:
                 self.commit_dialog.exec_()
                 match self.commit_dialog.result():
@@ -251,15 +255,32 @@ class IOCMainWindow(QMainWindow):
                         QMessageBox.Ok,
                     )
             write_config(cfgname=self.hutch, config=self.model.get_next_config())
+            did_write = True
             self.model.reset_edits()
             if comment:
                 commit_config(
-                    hutch=self.hutch, comment=comment, show_output=bool(self.verbose)
+                    hutch=self.hutch,
+                    comment=comment,
+                    show_output=bool(self.verbose),
+                    ssh_verbose=max(0, self.verbose - 1),
                 )
-            return True
+                did_commit = True
         except Exception as exc:
-            raise_to_operator(exc)
-            return False
+            if did_write and comment and not did_commit:
+                # We know what went wrong
+                raise_to_operator(
+                    RuntimeError(
+                        "Write succeeded, but commit failed.\n"
+                        "Please check that you are able to ssh to "
+                        f"{self.model.config.commithost} without a password!\n"
+                        "This may require you to kinit and/or aklog for kerberos auth "
+                        "or source ssh-agent-helper for key-based auth. Continuing..."
+                    )
+                )
+            else:
+                # Generic issue
+                raise_to_operator(exc)
+        return did_write
 
     def action_revert_all(self):
         """

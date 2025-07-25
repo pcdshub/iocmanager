@@ -32,7 +32,7 @@ from .hioc_tools import get_hard_ioc_dir_for_display
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_COMMITHOST = "psbuild-rhel7"
+DEFAULT_COMMITHOST = "psbuild-rhel7-01"
 
 
 @dataclass(eq=True)

@@ -188,6 +188,7 @@ def test_find_iocs():
 def test_get_hutch_list():
     # See folders in pyps_root/config
     assert sorted(get_hutch_list()) == [
+        "commit_test",
         "pytest",
         "second_hutch",
     ]
