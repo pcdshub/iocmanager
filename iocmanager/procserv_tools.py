@@ -561,7 +561,7 @@ def start_proc(cfg: str, ioc_proc: IOCProc, local: bool = False) -> None:
             "which sometimes is written erroneously to skip initIOC entirely. "
             "Other common issues include ioc.service not being enabled or installed, "
             "or something going wrong at host boot, "
-            f"such as {ctrlport} being used by some other process."
+            f"such as port {ctrlport} being used by some other process."
         ) from exc
     # telnet succeeded
     with tn:
