@@ -5,13 +5,14 @@ It will be launched via the cli parser in gui.py.
 """
 
 import getpass
+import io
 import logging
 import threading
+import traceback
 from functools import partial
 
 import pydm.config
 import pydm.data_plugins
-from pydm.exception import raise_to_operator
 from qtpy.QtCore import (
     QItemSelection,
     QItemSelectionModel,
@@ -25,6 +26,7 @@ from qtpy.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QWidget,
 )
 
 from .commit import commit_config
@@ -216,7 +218,7 @@ class IOCMainWindow(QMainWindow):
                 cfg=self.hutch, verify=partial(verify_dialog, parent=self), ioc=ioc_name
             )
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_write_config(self) -> bool:
         """
@@ -258,7 +260,9 @@ class IOCMainWindow(QMainWindow):
                 )
             return True
         except Exception as exc:
-            raise_to_operator(exc)
+            # TODO update the config warning from the other PR to have
+            # the warning icon
+            raise_to_operator(exc, self)
             return False
 
     def action_revert_all(self):
@@ -300,7 +304,7 @@ class IOCMainWindow(QMainWindow):
                 reboot_mode=reboot_mode,
             )
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def _check_selected(self) -> bool:
         """
@@ -345,7 +349,7 @@ class IOCMainWindow(QMainWindow):
                         all_names.append(ioc_name)
                 self._sioc_server_reboot(host=this_proc.host, ioc_names=all_names)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def _hioc_server_reboot(self, host: str):
         """
@@ -413,7 +417,7 @@ class IOCMainWindow(QMainWindow):
                 cmd=f"tail -1000lf {env_paths.LOGBASE % self.current_ioc}",
             )
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_show_console(self):
         """
@@ -430,7 +434,7 @@ class IOCMainWindow(QMainWindow):
                 cmd=f"telnet {ioc_proc.host} {ioc_proc.port}",
             )
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_help(self):
         """
@@ -458,7 +462,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.save_all_versions()
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_quit(self):
         """
@@ -475,7 +479,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.find_pv_dialog.find_pv_and_exec(self.ui.findpv.text())
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def on_table_select(self, selected: QItemSelection, deselected: QItemSelection):
         """
@@ -532,7 +536,7 @@ class IOCMainWindow(QMainWindow):
             except KeyError:
                 self.ui.description.setText("")
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def show_context_menu(self, pos: QPoint):
         """
@@ -624,7 +628,7 @@ class IOCMainWindow(QMainWindow):
         try:
             ioc_name = self.model.add_ioc_dialog()
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
             return
         if ioc_name:
             self.scroll_to_ioc(ioc=ioc_name)
@@ -639,7 +643,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.add_ioc(ioc_proc=self.model.get_ioc_proc(ioc=ioc))
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_set_from_running(self, ioc: IOCModelIdentifier):
         """
@@ -651,7 +655,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.set_from_running(ioc=ioc)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_remember_one_version(self, ioc: IOCModelIdentifier):
         """
@@ -663,7 +667,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.save_version(ioc=ioc)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_revert_one(self, ioc: IOCModelIdentifier):
         """
@@ -675,7 +679,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.revert_ioc(ioc=ioc)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def scroll_to_ioc(self, ioc: IOCModelIdentifier):
         """
@@ -688,4 +692,32 @@ class IOCMainWindow(QMainWindow):
             selection_model.select(idx, QItemSelectionModel.SelectCurrent)
             self.ui.tableView.scrollTo(idx, QAbstractItemView.PositionAtCenter)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
+
+
+def raise_to_operator(
+    exc: Exception, parent: QWidget, critical: bool = True
+) -> QMessageBox:
+    """
+    Utility function to show an Exception to the operator.
+
+    Vendored from pydm and modified:
+    - Allow us to pass a parent widget so that the message box
+      appears in the bounds of the parent instead of possibly
+      elsewhere on the screen.
+    - Allow us to differentiate between Critical errors and
+      Warning-level errors
+    """
+    err_msg = QMessageBox(parent)
+    err_msg.setText("{}: {}".format(exc.__class__.__name__, exc))
+    err_msg.setWindowTitle(type(exc).__name__)
+    if critical:
+        err_msg.setIcon(QMessageBox.Critical)
+    else:
+        err_msg.setIcon(QMessageBox.Warning)
+    handle = io.StringIO()
+    traceback.print_tb(exc.__traceback__, file=handle)
+    handle.seek(0)
+    err_msg.setDetailedText(handle.read())
+    err_msg.exec_()
+    return err_msg
