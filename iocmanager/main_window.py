@@ -246,7 +246,7 @@ class IOCMainWindow(QMainWindow):
                         raise RuntimeError(f"Invalid commit option {other}")
                 if not comment:
                     QMessageBox.critical(
-                        None,
+                        self,
                         "Error",
                         "Must have a comment to commit",
                         QMessageBox.Ok,
@@ -316,7 +316,7 @@ class IOCMainWindow(QMainWindow):
         """
         if not self.current_ioc:
             QMessageBox.warning(
-                None,
+                self,
                 "Error",
                 "No IOC selected.",
                 QMessageBox.Ok,
@@ -358,7 +358,7 @@ class IOCMainWindow(QMainWindow):
         This includes a special confirm dialog for the hard ioc.
         """
         user_choice = QMessageBox.question(
-            None,
+            self,
             f"Reboot Hard IOC {host}",
             f"Confirm: reboot hard IOC {host}?",
             QMessageBox.Cancel | QMessageBox.Ok,
@@ -386,7 +386,7 @@ class IOCMainWindow(QMainWindow):
         else:
             msg += f" There are no IOCs running on {host}."
         user_choice = QMessageBox.question(
-            None,
+            self,
             f"Reboot IOC Server {host}",
             msg,
             QMessageBox.Cancel | QMessageBox.Ok,
@@ -396,7 +396,7 @@ class IOCMainWindow(QMainWindow):
             return
         if not reboot_server(host=host):
             QMessageBox.critical(
-                None,
+                self,
                 "Error",
                 f"Failed to reboot host {host}!",
                 QMessageBox.Ok,
@@ -443,7 +443,7 @@ class IOCMainWindow(QMainWindow):
         This opens a small dialog with a link to the confluence page.
         """
         QMessageBox.information(
-            None,
+            self,
             "IOC Manager Help",
             (
                 "Documentation for the iocmanager can be found on confluence:\n"

@@ -134,7 +134,7 @@ class AddIOCDialog(QFileDialog):
         host = self.host_edit.text().strip()
         if not host:
             QMessageBox.warning(
-                None,
+                self,
                 "Host not selected!",
                 "Selecting a port requires the host field to be populated.",
                 QMessageBox.Ok,

@@ -258,6 +258,7 @@ class IOCTableModel(QAbstractTableModel):
         self.config = config
         self.hutch = hutch
         # Dialogs
+        self.dialog_parent = parent
         self.dialog_add = AddIOCDialog(hutch=hutch, model=self, parent=parent)
         self.dialog_details = DetailsDialog(parent=parent)
         # Local changes (not applied yet)
@@ -1188,7 +1189,7 @@ class IOCTableModel(QAbstractTableModel):
             return (False, "")
         if not self.dialog_add.port_is_valid:
             QMessageBox.critical(
-                None,
+                self.dialog_parent,
                 "Error",
                 (
                     "Invalid port selected! "
@@ -1206,7 +1207,7 @@ class IOCTableModel(QAbstractTableModel):
             and (not ioc_proc.host or not ioc_proc.port or not ioc_proc.path)
         ):
             QMessageBox.critical(
-                None,
+                self.dialog_parent,
                 "Error",
                 "Failed to set required parameters for new IOC!",
                 QMessageBox.Ok,
@@ -1215,7 +1216,7 @@ class IOCTableModel(QAbstractTableModel):
             return (True, "")
         if ioc_proc.name in self.get_next_config().procs:
             QMessageBox.critical(
-                None,
+                self.dialog_parent,
                 "Error",
                 f"IOC {ioc_proc.name} already exists!",
                 QMessageBox.Ok,
