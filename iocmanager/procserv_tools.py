@@ -552,8 +552,16 @@ def start_proc(cfg: str, ioc_proc: IOCProc, local: bool = False) -> None:
         tn = open_telnet(host, ctrlport)
     except Exception as exc:
         raise RuntimeError(
-            f"Telnet to procmgr ({host}:{ctrlport}) failed. "
-            f"Please start the procServ process on host {host}."
+            f"Failed to start {ioc_proc.name}: "
+            f"telnet to procmgr ({host}:{ctrlport}) failed. "
+            "The procmgr processes are supposed to start during host boot via initIOC. "
+            "This can fail for a number of reasons. "
+            f"If {host} is online, the most typical issues involve "
+            f"the host config file at {env_paths.IOC_COMMON}/hosts/{host}/startup.cmd, "
+            "which sometimes is written erroneously to skip initIOC entirely. "
+            "Other common issues include ioc.service not being enabled or installed, "
+            "or something going wrong at host boot, "
+            f"such as port {ctrlport} being used by some other process."
         ) from exc
     # telnet succeeded
     with tn:
