@@ -1,3 +1,3 @@
 #!/usr/bin/bash
-# See initIOC.hutch
+# See initIOC
 /bin/sh --noediting -f
