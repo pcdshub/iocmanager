@@ -13,6 +13,8 @@ from functools import partial
 
 import pydm.config
 import pydm.data_plugins
+from pydm.exception import ExceptionDispatcher
+from pydm.exception import install as install_pydm_excepthook
 from qtpy.QtCore import (
     QItemSelection,
     QItemSelectionModel,
@@ -147,6 +149,10 @@ class IOCMainWindow(QMainWindow):
         )
         self.netconfig_prep_thread.start()
 
+        # Exception Handling: show a dialog if anything in the qt main thread errors out
+        install_pydm_excepthook(use_default_handler=False)
+        self.exception_notifier = IOCExceptionNotifier(self)
+
     def prepare_pydm(self):
         """
         Skip some pydm startup we don't care for, do the rest early and in a thread.
@@ -211,80 +217,63 @@ class IOCMainWindow(QMainWindow):
             ioc_name = None
         else:
             ioc_name = self.model.get_ioc_name(ioc=ioc)
-        try:
-            if not self.action_write_config():
-                return
-            apply_config(
-                cfg=self.hutch, verify=partial(verify_dialog, parent=self), ioc=ioc_name
-            )
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        self.action_write_config()
+        apply_config(
+            cfg=self.hutch, verify=partial(verify_dialog, parent=self), ioc=ioc_name
+        )
 
-    def action_write_config(self) -> bool:
+    def action_write_config(self):
         """
         Action when the user clicks "Save".
 
         Checks auth, then prompts the user with a save/commit dialog.
 
-        Returns True if the save was successfull and False otherwise, e.g.
-        if the user cancelled the save or if something went wrong.
-
-        Note that this will still return True if the commit failed.
+        Raises if unsuccessful.
         """
-        did_write = False
-        did_commit = False
+        ensure_auth(hutch=self.hutch, ioc_name="", special_ok=False)
+        self.commit_dialog.reset()
         comment = ""
-        try:
-            ensure_auth(hutch=self.hutch, ioc_name="", special_ok=False)
-            self.commit_dialog.reset()
-            while not comment:
-                self.commit_dialog.exec_()
-                match self.commit_dialog.result():
-                    case CommitOption.SAVE_AND_COMMIT:
-                        comment = self.commit_dialog.get_comment()
-                    case CommitOption.SAVE_ONLY:
-                        break
-                    case CommitOption.CANCEL:
-                        return False
-                    case other:
-                        raise RuntimeError(f"Invalid commit option {other}")
-                if not comment:
-                    QMessageBox.critical(
-                        self,
-                        "Error",
-                        "Must have a comment to commit",
-                        QMessageBox.Ok,
-                        QMessageBox.Ok,
-                    )
-            write_config(cfgname=self.hutch, config=self.model.get_next_config())
-            did_write = True
-            self.model.reset_edits()
-            if comment:
+        while not comment:
+            self.commit_dialog.exec_()
+            match self.commit_dialog.result():
+                case CommitOption.SAVE_AND_COMMIT:
+                    comment = self.commit_dialog.get_comment()
+                case CommitOption.SAVE_ONLY:
+                    break
+                case CommitOption.CANCEL:
+                    return False
+                case other:
+                    raise RuntimeError(f"Invalid commit option {other}")
+            if not comment:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "Must have a comment to commit",
+                    QMessageBox.Ok,
+                    QMessageBox.Ok,
+                )
+        write_config(cfgname=self.hutch, config=self.model.get_next_config())
+        self.model.reset_edits()
+        if comment:
+            try:
                 commit_config(
                     hutch=self.hutch,
                     comment=comment,
                     show_output=bool(self.verbose),
                     ssh_verbose=max(0, self.verbose - 1),
                 )
-                did_commit = True
-        except Exception as exc:
-            if did_write and comment and not did_commit:
-                # We know what went wrong
-                raise_to_operator(
-                    RuntimeError(
+            except Exception:
+                QMessageBox.warning(
+                    self,
+                    "Commit Failed",
+                    (
                         "Write succeeded, but commit failed.\n"
                         "Please check that you are able to ssh to "
                         f"{self.model.config.commithost} without a password!\n"
                         "This may require you to kinit and/or aklog for kerberos auth "
                         "or source ssh-agent-helper for key-based auth. Continuing..."
                     ),
-                    self,
-                    critical=False,
                 )
-            else:
-                # Generic issue
-                raise_to_operator(exc, self)
-        return did_write
 
     def action_revert_all(self):
         """
@@ -318,14 +307,11 @@ class IOCMainWindow(QMainWindow):
         """
         if not self._check_selected():
             return
-        try:
-            reboot_cmd(
-                config=self.model.get_next_config(),
-                ioc_name=self.current_ioc,
-                reboot_mode=reboot_mode,
-            )
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        reboot_cmd(
+            config=self.model.get_next_config(),
+            ioc_name=self.current_ioc,
+            reboot_mode=reboot_mode,
+        )
 
     def _check_selected(self) -> bool:
         """
@@ -356,21 +342,18 @@ class IOCMainWindow(QMainWindow):
         """
         if not self._check_selected():
             return
-        try:
-            ensure_auth(hutch=self.hutch, ioc_name="", special_ok=False)
-            # Need to figure out which IOCs are on this host
-            config = self.model.get_next_config()
-            this_proc = config.procs[self.current_ioc]
-            if this_proc.hard:
-                self._hioc_server_reboot(host=this_proc.host)
-            else:
-                all_names = []
-                for ioc_name, ioc_proc in config.procs.items():
-                    if ioc_proc.host == this_proc.host and not ioc_proc.disable:
-                        all_names.append(ioc_name)
-                self._sioc_server_reboot(host=this_proc.host, ioc_names=all_names)
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        ensure_auth(hutch=self.hutch, ioc_name="", special_ok=False)
+        # Need to figure out which IOCs are on this host
+        config = self.model.get_next_config()
+        this_proc = config.procs[self.current_ioc]
+        if this_proc.hard:
+            self._hioc_server_reboot(host=this_proc.host)
+        else:
+            all_names = []
+            for ioc_name, ioc_proc in config.procs.items():
+                if ioc_proc.host == this_proc.host and not ioc_proc.disable:
+                    all_names.append(ioc_name)
+            self._sioc_server_reboot(host=this_proc.host, ioc_names=all_names)
 
     def _hioc_server_reboot(self, host: str):
         """
@@ -432,13 +415,10 @@ class IOCMainWindow(QMainWindow):
         """
         if not self._check_selected():
             return
-        try:
-            run_in_floating_terminal(
-                title=f"{self.current_ioc} logfile",
-                cmd=f"tail -1000lf {env_paths.LOGBASE % self.current_ioc}",
-            )
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        run_in_floating_terminal(
+            title=f"{self.current_ioc} logfile",
+            cmd=f"tail -1000lf {env_paths.LOGBASE % self.current_ioc}",
+        )
 
     def action_show_console(self):
         """
@@ -448,14 +428,11 @@ class IOCMainWindow(QMainWindow):
         """
         if not self._check_selected():
             return
-        try:
-            ioc_proc = self.model.get_ioc_proc(ioc=self.current_ioc)
-            run_in_floating_terminal(
-                title=f"{self.current_ioc} telnet session",
-                cmd=f"telnet {ioc_proc.host} {ioc_proc.port}",
-            )
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        ioc_proc = self.model.get_ioc_proc(ioc=self.current_ioc)
+        run_in_floating_terminal(
+            title=f"{self.current_ioc} telnet session",
+            cmd=f"telnet {ioc_proc.host} {ioc_proc.port}",
+        )
 
     def action_help(self):
         """
@@ -480,10 +457,7 @@ class IOCMainWindow(QMainWindow):
 
         For every IOC in the configuration, add the current version to the history.
         """
-        try:
-            self.model.save_all_versions()
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        self.model.save_all_versions()
 
     def action_quit(self):
         """
@@ -497,10 +471,7 @@ class IOCMainWindow(QMainWindow):
 
         This searches through all IOCs in the config for PV names that match the regex.
         """
-        try:
-            self.find_pv_dialog.find_pv_and_exec(self.ui.findpv.text())
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        self.find_pv_dialog.find_pv_and_exec(self.ui.findpv.text())
 
     def on_table_select(self, selected: QItemSelection, deselected: QItemSelection):
         """
@@ -514,50 +485,47 @@ class IOCMainWindow(QMainWindow):
         dataclass getters.
         """
         try:
-            try:
-                proxy_index = selected.indexes()[0]
-            except IndexError:
-                # Nothing selected
-                return
-            source_index = self.sort_model.mapToSource(proxy_index)
-            ioc_proc = self.model.get_ioc_proc(ioc=source_index)
-            ioc_name = ioc_proc.name
-            host = ioc_proc.host
-            if ioc_name == self.current_ioc:
-                return
-            self.current_ioc = ioc_name
-            self.ui.iocname.setText(ioc_name)
-            try:
-                base = get_base_name(ioc=ioc_name)
-            except Exception:
-                self.ui.heartbeat.set_channel("")
-                self.ui.tod.set_channel("")
-                self.ui.boottime.set_channel("")
-                self.ui.heartbeat.setText("")
-                self.ui.tod.setText("")
-                self.ui.boottime.setText("")
-            else:
-                self.ui.heartbeat.setText("")
-                self.ui.tod.setText("")
-                self.ui.boottime.setText("")
-                self.pydm_ready.wait(timeout=1.0)
-                self.ui.heartbeat.set_channel(f"ca://{base}:HEARTBEAT")
-                self.ui.tod.set_channel(f"ca://{base}:TOD")
-                self.ui.boottime.set_channel(f"ca://{base}:STARTTOD")
-            try:
-                host_info = self._get_netconfig(host)
-            except Exception:
-                host_info = {}
-            try:
-                self.ui.location.setText(host_info["location"])
-            except KeyError:
-                self.ui.location.setText("")
-            try:
-                self.ui.description.setText(host_info["description"])
-            except KeyError:
-                self.ui.description.setText("")
-        except Exception as exc:
-            raise_to_operator(exc, self)
+            proxy_index = selected.indexes()[0]
+        except IndexError:
+            # Nothing selected
+            return
+        source_index = self.sort_model.mapToSource(proxy_index)
+        ioc_proc = self.model.get_ioc_proc(ioc=source_index)
+        ioc_name = ioc_proc.name
+        host = ioc_proc.host
+        if ioc_name == self.current_ioc:
+            return
+        self.current_ioc = ioc_name
+        self.ui.iocname.setText(ioc_name)
+        try:
+            base = get_base_name(ioc=ioc_name)
+        except Exception:
+            self.ui.heartbeat.set_channel("")
+            self.ui.tod.set_channel("")
+            self.ui.boottime.set_channel("")
+            self.ui.heartbeat.setText("")
+            self.ui.tod.setText("")
+            self.ui.boottime.setText("")
+        else:
+            self.ui.heartbeat.setText("")
+            self.ui.tod.setText("")
+            self.ui.boottime.setText("")
+            self.pydm_ready.wait(timeout=1.0)
+            self.ui.heartbeat.set_channel(f"ca://{base}:HEARTBEAT")
+            self.ui.tod.set_channel(f"ca://{base}:TOD")
+            self.ui.boottime.set_channel(f"ca://{base}:STARTTOD")
+        try:
+            host_info = self._get_netconfig(host)
+        except Exception:
+            host_info = {}
+        try:
+            self.ui.location.setText(host_info["location"])
+        except KeyError:
+            self.ui.location.setText("")
+        try:
+            self.ui.description.setText(host_info["description"])
+        except KeyError:
+            self.ui.description.setText("")
 
     def show_context_menu(self, pos: QPoint):
         """
@@ -646,11 +614,7 @@ class IOCMainWindow(QMainWindow):
         This will open a dialog that will prompt the user for all the required
         fields and all of the commonly used normal fields needed for an IOC.
         """
-        try:
-            ioc_name = self.model.add_ioc_dialog()
-        except Exception as exc:
-            raise_to_operator(exc, self)
-            return
+        ioc_name = self.model.add_ioc_dialog()
         if ioc_name:
             self.scroll_to_ioc(ioc=ioc_name)
 
@@ -661,10 +625,7 @@ class IOCMainWindow(QMainWindow):
         This takes an IOC that is running without being tracked by IOC manager
         and adds it to IOC manager.
         """
-        try:
-            self.model.add_ioc(ioc_proc=self.model.get_ioc_proc(ioc=ioc))
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        self.model.add_ioc(ioc_proc=self.model.get_ioc_proc(ioc=ioc))
 
     def action_set_from_running(self, ioc: IOCModelIdentifier):
         """
@@ -673,10 +634,7 @@ class IOCMainWindow(QMainWindow):
         This will make pending edits to the selected IOC config such that the
         selected IOC config matches the live IOC status.
         """
-        try:
-            self.model.set_from_running(ioc=ioc)
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        self.model.set_from_running(ioc=ioc)
 
     def action_remember_one_version(self, ioc: IOCModelIdentifier):
         """
@@ -685,10 +643,7 @@ class IOCMainWindow(QMainWindow):
         This will make a pending history edit where the IOC's current version
         will be added to the history.
         """
-        try:
-            self.model.save_version(ioc=ioc)
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        self.model.save_version(ioc=ioc)
 
     def action_revert_one(self, ioc: IOCModelIdentifier):
         """
@@ -697,45 +652,53 @@ class IOCMainWindow(QMainWindow):
         This will undo all pending edits for the selected IOC, e.g.
         pending deletions, additions, and changes will be removed.
         """
-        try:
-            self.model.revert_ioc(ioc=ioc)
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        self.model.revert_ioc(ioc=ioc)
 
     def scroll_to_ioc(self, ioc: IOCModelIdentifier):
         """
         Helper to scroll the view to an IOC.
         """
-        try:
-            row = self.model.get_ioc_row(ioc=ioc)
-            selection_model = self.ui.tableView.selectionModel()
-            idx = self.sort_model.mapFromSource(self.model.index(row, 0))
-            selection_model.select(idx, QItemSelectionModel.SelectCurrent)
-            self.ui.tableView.scrollTo(idx, QAbstractItemView.PositionAtCenter)
-        except Exception as exc:
-            raise_to_operator(exc, self)
+        row = self.model.get_ioc_row(ioc=ioc)
+        selection_model = self.ui.tableView.selectionModel()
+        idx = self.sort_model.mapFromSource(self.model.index(row, 0))
+        selection_model.select(idx, QItemSelectionModel.SelectCurrent)
+        self.ui.tableView.scrollTo(idx, QAbstractItemView.PositionAtCenter)
+
+
+class IOCExceptionNotifier:
+    """
+    Similar to the default PyDM exception handler, but with a parent.
+
+    This can't subclass the default exception handler because that
+    does some hard-coding of the class singleton.
+    """
+
+    def __init__(self, main_window: IOCMainWindow):
+        self.main_window = main_window
+        ExceptionDispatcher().newException.connect(self.recieve_new_exception)
+
+    def recieve_new_exception(
+        self, exc_info: tuple[type[BaseException], BaseException, tuple]
+    ):
+        raise_to_operator(exc_info[1], self.main_window)
 
 
 def raise_to_operator(
-    exc: Exception, parent: QWidget, critical: bool = True
+    exc: BaseException,
+    parent: QWidget,
 ) -> QMessageBox:
     """
     Utility function to show an Exception to the operator.
 
     Vendored from pydm and modified:
     - Allow us to pass a parent widget so that the message box
-      appears in the bounds of the parent instead of possibly
-      elsewhere on the screen.
-    - Allow us to differentiate between Critical errors and
-      Warning-level errors
+    appears in the bounds of the parent instead of possibly
+    elsewhere on the screen.
     """
     err_msg = QMessageBox(parent)
     err_msg.setText("{}: {}".format(exc.__class__.__name__, exc))
     err_msg.setWindowTitle(type(exc).__name__)
-    if critical:
-        err_msg.setIcon(QMessageBox.Critical)
-    else:
-        err_msg.setIcon(QMessageBox.Warning)
+    err_msg.setIcon(QMessageBox.Critical)
     handle = io.StringIO()
     traceback.print_tb(exc.__traceback__, file=handle)
     handle.seek(0)
