@@ -28,8 +28,8 @@ fi
 # This should override settings, e.g. IOC_USER as needed.
 CFG_ENV="${IOC_COMMON}/All/${cfg}_env.sh"
 if [ ! -f "${CFG_ENV}" ]; then
-	echo "${CFG_ENV}"  not found!
-	exit 1
+    echo "${CFG_ENV}"  not found!
+    exit 1
 fi
 source "${CFG_ENV}"
 if [ -z "${IOC_USER}" ]; then
@@ -44,7 +44,7 @@ PROCMGRD_DIR="$(dirname "${PROCSERV_EXE}")"
 
 # Make sure we have a procmgrd log directory
 if [ ! -d "${PROCMGRD_LOG_DIR}" ]; then
-	su "${IOC_USER}" -s /bin/sh -c "mkdir -p ${PROCMGRD_LOG_DIR}"
+    su "${IOC_USER}" -s /bin/sh -c "mkdir -p ${PROCMGRD_LOG_DIR}"
 fi
 su "${IOC_USER}" -s /bin/sh -c "chmod g+rwx ${PROCMGRD_LOG_DIR}"
 
@@ -59,18 +59,18 @@ PROCMGRD_SHELL="/bin/sh --noediting -f"
 
 launchProcMgrD()
 {
-	cfgduser=$1
+    cfgduser=$1
     PROCMGRD_BIN=$PROCMGRD_DIR/$2
     ctrlport=$3
     logport=$(( ctrlport + 1 ))
-	PROCMGRD_LOGFILE=$PROCMGRD_LOG_DIR/$2.log
+    PROCMGRD_LOGFILE=$PROCMGRD_LOG_DIR/$2.log
     su "${cfgduser}" -s /bin/sh -c "${PROCMGRD_BIN} ${PROCMGRD_ARGS} -l ${logport} --logfile ${PROCMGRD_LOGFILE} ${ctrlport} ${PROCMGRD_SHELL}"
     fixTelnet "${ctrlport}"
 }
 
 # Start up the procmgrd for the hutch IOC_USER
 if [ "$cfg" != "xrt" ] && [ "$cfg" != "las" ]; then
-	launchProcMgrD "${IOC_USER}" "${PROCMGRD_ROOT}0" $(( BASEPORT ))
+    launchProcMgrD "${IOC_USER}" "${PROCMGRD_ROOT}0" $(( BASEPORT ))
 fi
 
 # Start up the procmgrd for feeioc
