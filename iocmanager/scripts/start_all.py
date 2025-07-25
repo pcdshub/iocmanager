@@ -12,7 +12,7 @@ if __name__ == "__main__":
         description=(
             "Start all the IOCs in a hutch. "
             "This is meant to be run once per server boot "
-            "as part of initIOC.hutch."
+            "as part of initIOC."
         ),
     )
     parser.add_argument("hutch", help="The name of the hutch to start all IOCs for.")
