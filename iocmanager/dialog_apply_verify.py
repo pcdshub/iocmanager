@@ -29,7 +29,7 @@ def verify_dialog(
     """
     if not any((plan.kill_list, plan.restart_list, plan.start_list)):
         QMessageBox.critical(
-            None, "Warning", "Nothing to apply!", QMessageBox.Ok, QMessageBox.Ok
+            parent, "Warning", "Nothing to apply!", QMessageBox.Ok, QMessageBox.Ok
         )
         return VerifyPlan(kill_list=[], start_list=[], restart_list=[])
     dialog = ApplyVerifyDialog(context=context, plan=plan, parent=parent)

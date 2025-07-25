@@ -5,13 +5,14 @@ It will be launched via the cli parser in gui.py.
 """
 
 import getpass
+import io
 import logging
 import threading
+import traceback
 from functools import partial
 
 import pydm.config
 import pydm.data_plugins
-from pydm.exception import raise_to_operator
 from qtpy.QtCore import (
     QItemSelection,
     QItemSelectionModel,
@@ -25,6 +26,7 @@ from qtpy.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QWidget,
 )
 
 from .commit import commit_config
@@ -216,7 +218,7 @@ class IOCMainWindow(QMainWindow):
                 cfg=self.hutch, verify=partial(verify_dialog, parent=self), ioc=ioc_name
             )
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_write_config(self) -> bool:
         """
@@ -248,7 +250,7 @@ class IOCMainWindow(QMainWindow):
                         raise RuntimeError(f"Invalid commit option {other}")
                 if not comment:
                     QMessageBox.critical(
-                        None,
+                        self,
                         "Error",
                         "Must have a comment to commit",
                         QMessageBox.Ok,
@@ -275,11 +277,13 @@ class IOCMainWindow(QMainWindow):
                         f"{self.model.config.commithost} without a password!\n"
                         "This may require you to kinit and/or aklog for kerberos auth "
                         "or source ssh-agent-helper for key-based auth. Continuing..."
-                    )
+                    ),
+                    self,
+                    critical=False,
                 )
             else:
                 # Generic issue
-                raise_to_operator(exc)
+                raise_to_operator(exc, self)
         return did_write
 
     def action_revert_all(self):
@@ -321,7 +325,7 @@ class IOCMainWindow(QMainWindow):
                 reboot_mode=reboot_mode,
             )
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def _check_selected(self) -> bool:
         """
@@ -333,7 +337,7 @@ class IOCMainWindow(QMainWindow):
         """
         if not self.current_ioc:
             QMessageBox.warning(
-                None,
+                self,
                 "Error",
                 "No IOC selected.",
                 QMessageBox.Ok,
@@ -366,7 +370,7 @@ class IOCMainWindow(QMainWindow):
                         all_names.append(ioc_name)
                 self._sioc_server_reboot(host=this_proc.host, ioc_names=all_names)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def _hioc_server_reboot(self, host: str):
         """
@@ -375,7 +379,7 @@ class IOCMainWindow(QMainWindow):
         This includes a special confirm dialog for the hard ioc.
         """
         user_choice = QMessageBox.question(
-            None,
+            self,
             f"Reboot Hard IOC {host}",
             f"Confirm: reboot hard IOC {host}?",
             QMessageBox.Cancel | QMessageBox.Ok,
@@ -403,7 +407,7 @@ class IOCMainWindow(QMainWindow):
         else:
             msg += f" There are no IOCs running on {host}."
         user_choice = QMessageBox.question(
-            None,
+            self,
             f"Reboot IOC Server {host}",
             msg,
             QMessageBox.Cancel | QMessageBox.Ok,
@@ -413,7 +417,7 @@ class IOCMainWindow(QMainWindow):
             return
         if not reboot_server(host=host):
             QMessageBox.critical(
-                None,
+                self,
                 "Error",
                 f"Failed to reboot host {host}!",
                 QMessageBox.Ok,
@@ -434,7 +438,7 @@ class IOCMainWindow(QMainWindow):
                 cmd=f"tail -1000lf {env_paths.LOGBASE % self.current_ioc}",
             )
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_show_console(self):
         """
@@ -451,7 +455,7 @@ class IOCMainWindow(QMainWindow):
                 cmd=f"telnet {ioc_proc.host} {ioc_proc.port}",
             )
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_help(self):
         """
@@ -460,7 +464,7 @@ class IOCMainWindow(QMainWindow):
         This opens a small dialog with a link to the confluence page.
         """
         QMessageBox.information(
-            None,
+            self,
             "IOC Manager Help",
             (
                 "Documentation for the iocmanager can be found on confluence:\n"
@@ -479,7 +483,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.save_all_versions()
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_quit(self):
         """
@@ -496,7 +500,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.find_pv_dialog.find_pv_and_exec(self.ui.findpv.text())
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def on_table_select(self, selected: QItemSelection, deselected: QItemSelection):
         """
@@ -553,7 +557,7 @@ class IOCMainWindow(QMainWindow):
             except KeyError:
                 self.ui.description.setText("")
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def show_context_menu(self, pos: QPoint):
         """
@@ -645,7 +649,7 @@ class IOCMainWindow(QMainWindow):
         try:
             ioc_name = self.model.add_ioc_dialog()
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
             return
         if ioc_name:
             self.scroll_to_ioc(ioc=ioc_name)
@@ -660,7 +664,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.add_ioc(ioc_proc=self.model.get_ioc_proc(ioc=ioc))
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_set_from_running(self, ioc: IOCModelIdentifier):
         """
@@ -672,7 +676,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.set_from_running(ioc=ioc)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_remember_one_version(self, ioc: IOCModelIdentifier):
         """
@@ -684,7 +688,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.save_version(ioc=ioc)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def action_revert_one(self, ioc: IOCModelIdentifier):
         """
@@ -696,7 +700,7 @@ class IOCMainWindow(QMainWindow):
         try:
             self.model.revert_ioc(ioc=ioc)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
 
     def scroll_to_ioc(self, ioc: IOCModelIdentifier):
         """
@@ -709,4 +713,32 @@ class IOCMainWindow(QMainWindow):
             selection_model.select(idx, QItemSelectionModel.SelectCurrent)
             self.ui.tableView.scrollTo(idx, QAbstractItemView.PositionAtCenter)
         except Exception as exc:
-            raise_to_operator(exc)
+            raise_to_operator(exc, self)
+
+
+def raise_to_operator(
+    exc: Exception, parent: QWidget, critical: bool = True
+) -> QMessageBox:
+    """
+    Utility function to show an Exception to the operator.
+
+    Vendored from pydm and modified:
+    - Allow us to pass a parent widget so that the message box
+      appears in the bounds of the parent instead of possibly
+      elsewhere on the screen.
+    - Allow us to differentiate between Critical errors and
+      Warning-level errors
+    """
+    err_msg = QMessageBox(parent)
+    err_msg.setText("{}: {}".format(exc.__class__.__name__, exc))
+    err_msg.setWindowTitle(type(exc).__name__)
+    if critical:
+        err_msg.setIcon(QMessageBox.Critical)
+    else:
+        err_msg.setIcon(QMessageBox.Warning)
+    handle = io.StringIO()
+    traceback.print_tb(exc.__traceback__, file=handle)
+    handle.seek(0)
+    err_msg.setDetailedText(handle.read())
+    err_msg.exec_()
+    return err_msg
