@@ -94,6 +94,24 @@ def commit_config(
     )
 
 
+def check_commit_possible(hutch: str) -> bool:
+    """
+    Returns True if an ssh to the commithost is possible, False otherwise.
+
+    This can be called before we prompt a user to make a commit to save
+    them the trouble of figuring out their commit message.
+
+    It can also help us disambiguate issues relating to commiting: is the
+    ssh failing, or is the commit itself failing?
+    """
+    try:
+        # : is a built-in command that does nothing with exit status 0
+        commit_config(hutch=hutch, comment="", show_output=False, script=":")
+    except Exception:
+        return False
+    return True
+
+
 def get_commithost(hutch: str) -> str:
     """
     For a specific hutch, get the server we're supposed to commit on.

@@ -9,6 +9,7 @@ import io
 import logging
 import threading
 import traceback
+from enum import Enum
 from functools import partial
 
 import pydm.config
@@ -31,8 +32,8 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from .commit import commit_config
-from .config import check_auth, read_config, write_config
+from .commit import check_commit_possible, commit_config
+from .config import check_auth, check_ssh, read_config, write_config
 from .dialog_apply_verify import verify_dialog
 from .dialog_commit import CommitDialog, CommitOption
 from .dialog_find_pv import FindPVDialog
@@ -68,11 +69,6 @@ class IOCMainWindow(QMainWindow):
 
         # Not sure how to do this in designer, so we put it randomly and move it now.
         self.ui.statusbar.addWidget(self.ui.userLabel)
-        user = getpass.getuser()
-        if check_auth(user=user, hutch=hutch):
-            self.ui.userLabel.setText(f"User: {user}  (Full Auth)")
-        else:
-            self.ui.userLabel.setText(f"User: {user}  (Limited Auth)")
 
         # Init args
         self.hutch = hutch
@@ -92,6 +88,10 @@ class IOCMainWindow(QMainWindow):
 
         # User state
         self.current_ioc = ""
+        self.user = getpass.getuser()
+        self.auth = check_auth(user=self.user, hutch=self.hutch)
+        self.commit_host_status = CommitHostStatus.UNKNOWN
+        self.update_user_label()
 
         # Set up all the qt objects we'll need
         # Helpful title: which hutch and iocmanager version we're using
@@ -148,10 +148,32 @@ class IOCMainWindow(QMainWindow):
             target=self.prepare_netconfig, daemon=True
         )
         self.netconfig_prep_thread.start()
+        # Checking if we can ssh can take a few seconds for kerberos
+        self.commit_check_thread = threading.Thread(
+            target=self.prepare_commit_host_status, daemon=True
+        )
+        self.commit_check_thread.start()
 
         # Exception Handling: show a dialog if anything in the qt main thread errors out
         install_pydm_excepthook(use_default_handler=False)
         self.exception_notifier = IOCExceptionNotifier(self)
+
+    def update_user_label(self):
+        text = f"User: {self.user}"
+        if self.auth:
+            text += " (full auth)"
+        else:
+            text += " (limited auth)"
+        match self.commit_host_status:
+            case CommitHostStatus.UNKNOWN:
+                text += " (ssh/git checking...)"
+            case CommitHostStatus.READY:
+                text += " (ssh/git ready)"
+            case CommitHostStatus.ERROR:
+                text += " (ssh/git error)"
+            case CommitHostStatus.DISABLED:
+                text += " (ssh/git disabled)"
+        self.ui.userLabel.setText(text)
 
     def prepare_pydm(self):
         """
@@ -186,6 +208,22 @@ class IOCMainWindow(QMainWindow):
                 self.netconfig_cache[host] = {}
         return self.netconfig_cache[host]
 
+    def prepare_commit_host_status(self):
+        """
+        Check if we can ssh for a commit or not.
+
+        Update the cached value for this and the user label.
+        Note that this can take several seconds in the worst case.
+        """
+        if check_ssh(user=self.user, hutch=self.hutch):
+            if check_commit_possible(self.hutch):
+                self.commit_host_status = CommitHostStatus.READY
+            else:
+                self.commit_host_status = CommitHostStatus.ERROR
+        else:
+            self.commit_host_status = CommitHostStatus.DISABLED
+        self.update_user_label()
+
     def closeEvent(self, a0: QCloseEvent):
         """
         Override base closeEvent to also stop polling.
@@ -217,41 +255,75 @@ class IOCMainWindow(QMainWindow):
             ioc_name = None
         else:
             ioc_name = self.model.get_ioc_name(ioc=ioc)
-        self.action_write_config()
+        if not self.action_write_config():
+            return
         apply_config(
             cfg=self.hutch, verify=partial(verify_dialog, parent=self), ioc=ioc_name
         )
 
-    def action_write_config(self):
+    def action_write_config(self) -> bool:
         """
         Action when the user clicks "Save".
 
         Checks auth, then prompts the user with a save/commit dialog.
 
         Raises if unsuccessful.
+        Returns True if successful.
+        Returns False if cancelled by the user.
         """
         ensure_auth(hutch=self.hutch, ioc_name="", special_ok=False)
-        self.commit_dialog.reset()
         comment = ""
-        while not comment:
-            self.commit_dialog.exec_()
-            match self.commit_dialog.result():
-                case CommitOption.SAVE_AND_COMMIT:
-                    comment = self.commit_dialog.get_comment()
-                case CommitOption.SAVE_ONLY:
-                    break
-                case CommitOption.CANCEL:
+        match self.commit_host_status:
+            case CommitHostStatus.UNKNOWN | CommitHostStatus.ERROR:
+                if (
+                    QMessageBox.warning(
+                        self,
+                        "Commits broken for user",
+                        "You will not be able to commit in this session.\n\n"
+                        "In order to commit, you must be able to ssh to "
+                        f"{self.model.config.commithost} without a password.\n\n"
+                        "This may require you to kinit and/or aklog for kerberos auth "
+                        "or source ssh-agent-helper for key-based auth."
+                        "\n\nSave anyway?",
+                        QMessageBox.Yes | QMessageBox.Cancel,
+                        QMessageBox.Yes,
+                    )
+                    != QMessageBox.Yes
+                ):
                     return False
-                case other:
-                    raise RuntimeError(f"Invalid commit option {other}")
-            if not comment:
-                QMessageBox.critical(
-                    self,
-                    "Error",
-                    "Must have a comment to commit",
-                    QMessageBox.Ok,
-                    QMessageBox.Ok,
-                )
+            case CommitHostStatus.DISABLED:
+                if (
+                    QMessageBox.information(
+                        self,
+                        "Commits disabled for user",
+                        f"Commits are disabled for {self.user}.\n\nSave anyway?",
+                        QMessageBox.Yes | QMessageBox.Cancel,
+                        QMessageBox.Yes,
+                    )
+                    != QMessageBox.Yes
+                ):
+                    return False
+            case CommitHostStatus.READY:
+                self.commit_dialog.reset()
+                while not comment:
+                    self.commit_dialog.exec_()
+                    match self.commit_dialog.result():
+                        case CommitOption.SAVE_AND_COMMIT:
+                            comment = self.commit_dialog.get_comment()
+                        case CommitOption.SAVE_ONLY:
+                            break
+                        case CommitOption.CANCEL:
+                            return False
+                        case other:
+                            raise RuntimeError(f"Invalid commit option {other}")
+                    if not comment:
+                        QMessageBox.warning(
+                            self,
+                            "Error",
+                            "Must have a comment to commit",
+                            QMessageBox.Ok,
+                            QMessageBox.Ok,
+                        )
         write_config(cfgname=self.hutch, config=self.model.get_next_config())
         self.model.reset_edits()
         if comment:
@@ -263,17 +335,22 @@ class IOCMainWindow(QMainWindow):
                     ssh_verbose=max(0, self.verbose - 1),
                 )
             except Exception:
-                QMessageBox.warning(
-                    self,
-                    "Commit Failed",
-                    (
-                        "Write succeeded, but commit failed.\n"
-                        "Please check that you are able to ssh to "
-                        f"{self.model.config.commithost} without a password!\n"
-                        "This may require you to kinit and/or aklog for kerberos auth "
-                        "or source ssh-agent-helper for key-based auth. Continuing..."
-                    ),
-                )
+                # Likely a git error since we ruled out ssh config issue
+                if (
+                    QMessageBox.warning(
+                        self,
+                        "Commit Failed",
+                        "Git commit failed (after successfully saving file).\n\n"
+                        "Possibly the new file was the same as the old file, "
+                        "or maybe there was a network hiccup.\n\n"
+                        "Would you like to continue?",
+                        QMessageBox.Yes | QMessageBox.Cancel,
+                        QMessageBox.Yes,
+                    )
+                    != QMessageBox.Yes
+                ):
+                    return False
+        return True
 
     def action_revert_all(self):
         """
@@ -705,3 +782,24 @@ def raise_to_operator(
     err_msg.setDetailedText(handle.read())
     err_msg.exec_()
     return err_msg
+
+
+class CommitHostStatus(Enum):
+    """
+    Enum to express how the GUI should interact with the commit host.
+
+    The commit host is a host we ssh to for commits in order to
+    avoid issues associated with NFS git repo file synchronization.
+
+    The possible values are:
+    - UNKNOWN: we haven't checked yet
+    - READY: last time we checked, we could ssh to the commit host
+    - ERROR: last time we checked, we could not ssh to the commit host
+    - DISABLED: this user is not allowed to ssh to the commit host
+        (usually, this is for opr users that can't ssh without password)
+    """
+
+    UNKNOWN = 0
+    READY = 1
+    ERROR = 2
+    DISABLED = 3
