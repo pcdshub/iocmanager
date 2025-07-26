@@ -284,7 +284,7 @@ class IOCMainWindow(QMainWindow):
                         f"{self.model.config.commithost} without a password.\n\n"
                         "This may require you to kinit and/or aklog for kerberos auth "
                         "or source ssh-agent-helper for key-based auth."
-                        "\n\nSave anyway?",
+                        "\n\nContinue anyway?",
                         QMessageBox.Yes | QMessageBox.Cancel,
                         QMessageBox.Yes,
                     )
@@ -296,7 +296,7 @@ class IOCMainWindow(QMainWindow):
                     QMessageBox.information(
                         self,
                         "Commits disabled for user",
-                        f"Commits are disabled for {self.user}.\n\nSave anyway?",
+                        f"Commits are disabled for {self.user}.\n\nContinue anyway?",
                         QMessageBox.Yes | QMessageBox.Cancel,
                         QMessageBox.Yes,
                     )
