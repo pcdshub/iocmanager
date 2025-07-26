@@ -95,7 +95,7 @@ class IOCMainWindow(QMainWindow):
 
         # Set up all the qt objects we'll need
         # Helpful title: which hutch and iocmanager version we're using
-        self.setWindowTitle(f"{hutch.upper()} iocmanager {version_str}")
+        self.setWindowTitle(f"{hutch.upper()} iocmanager R{version_str}")
         # Re-usable dialogs
         self.commit_dialog = CommitDialog(hutch=hutch, parent=self)
         self.find_pv_dialog = FindPVDialog(

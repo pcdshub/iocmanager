@@ -24,6 +24,7 @@ file = "LICENSE.md"
 
 [tool.setuptools_scm]
 write_to = "iocmanager/_version.py"
+tag_regex = '^R(\d+\.\d+\.\d+)$'
 
 [tool.setuptools.packages.find]
 where = [ ".",]
