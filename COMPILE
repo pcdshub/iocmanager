@@ -13,3 +13,6 @@ echo "(re-)build .py files from .ui"
 "${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ui_find_pv.py ui/find_pv.ui
 "${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ui_hostname.py ui/hostname.ui
 "${IOCMAN_PY_BIN}"/pyuic5 -o iocmanager/ui_ioc.py ui/ioc.ui
+
+echo "Update static version number"
+"${IOCMAN_PY_BIN}"/python -m setuptools_scm --force-write-version-files
