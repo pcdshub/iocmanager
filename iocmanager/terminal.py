@@ -26,7 +26,11 @@ logger = logging.getLogger(__name__)
 
 
 def run_in_floating_terminal(
-    title: str, cmd: str, out: int | None = subprocess.DEVNULL
+    title: str,
+    cmd: str,
+    out: int | None = subprocess.DEVNULL,
+    xpos: int = 0,
+    ypos: int = 0,
 ) -> subprocess.Popen:
     """
     Helper function for running a command in a compatible floating terminal.
@@ -55,7 +59,7 @@ def run_in_floating_terminal(
     """
     args = cmd.split(" ")
     if shutil.which("xterm") is not None:
-        return run_in_xterm(title, args, out)
+        return run_in_xterm(title, args, out, xpos, ypos)
     elif os.path.exists(env_paths.GNOME_TERMINAL_SERVER):
         return run_in_gnome_terminal(title, args, out)
     else:
@@ -99,7 +103,11 @@ def run_in_gnome_terminal(
 
 
 def run_in_xterm(
-    title: str, args: list[str], out: int | None = subprocess.DEVNULL
+    title: str,
+    args: list[str],
+    out: int | None = subprocess.DEVNULL,
+    xpos: int = 0,
+    ypos: int = 0,
 ) -> subprocess.Popen:
     """
     Subfunction of run_in_floating_terminal implemented for xterm.
@@ -117,7 +125,8 @@ def run_in_xterm(
         "-title",
         title,
         "-geometry",
-        "160x40",
+        f"160x40+{xpos}+{ypos}",
+        "-si",
         "-e",
     ]
     # A trick: if the process crashes, keep xterm open
