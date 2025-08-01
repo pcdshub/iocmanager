@@ -492,9 +492,12 @@ class IOCMainWindow(QMainWindow):
         """
         if not self._check_selected():
             return
+        pos = self.ui.menuIOC_Control.pos()
         run_in_floating_terminal(
             title=f"{self.current_ioc} logfile",
             cmd=f"tail -1000lf {env_paths.LOGBASE % self.current_ioc}",
+            xpos=pos.x(),
+            ypos=pos.y(),
         )
 
     def action_show_console(self):
@@ -506,9 +509,12 @@ class IOCMainWindow(QMainWindow):
         if not self._check_selected():
             return
         ioc_proc = self.model.get_ioc_proc(ioc=self.current_ioc)
+        pos = self.ui.menuIOC_Control.pos()
         run_in_floating_terminal(
             title=f"{self.current_ioc} telnet session",
             cmd=f"telnet {ioc_proc.host} {ioc_proc.port}",
+            xpos=pos.x(),
+            ypos=pos.y(),
         )
 
     def action_help(self):
