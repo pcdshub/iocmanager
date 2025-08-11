@@ -528,10 +528,7 @@ def start_proc(cfg: str, ioc_proc: IOCProc, local: bool = False) -> None:
     port = ioc_proc.port
     cmd = ioc_proc.cmd or "./st.cmd"
 
-    sr = os.getenv("SCRIPTROOT") or env_paths.STARTUP_DIR % cfg
-    if sr[-1] != "/":
-        sr += "/"
-    cmd = f"{sr}startProc {name} {port} {cfg} {cmd}"
+    cmd = f"startProc {name} {port} {cfg} {cmd}"
     log = env_paths.LOGBASE % name
     ctrlport = BASEPORT + 2 * (int(platform) - 1)
     logger.info(
@@ -542,7 +539,7 @@ def start_proc(cfg: str, ioc_proc: IOCProc, local: bool = False) -> None:
         platform,
     )
     cmd = (
-        f"{env_paths.PROCSERV_EXE} "
+        f"procServ "
         f"--logfile {log} "
         f"--name {name} "
         "--allow --coresize 0 --savelog "
