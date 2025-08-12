@@ -16,8 +16,11 @@ fi
 if [ -z "${PACKAGE_SITE_TOP}" ]; then
     export PACKAGE_SITE_TOP=/cds/group/pcds/package
 fi
+if [ -z "${EPICS_SITE_TOP}" ]; then
+    export EPICS_SITE_TOP=/cds/group/pcds/epics
+fi
 if [ -z "${IOC_ROOT}" ]; then
-    export IOC_ROOT="${PACKAGE_SITE_TOP}"/epics/ioc
+    export IOC_ROOT="${EPICS_SITE_TOP}"/ioc
 fi
 if [ -z "${CAMRECORD_ROOT}" ]; then
     export CAMRECORD_ROOT=/cds/group/pcds/controls/camrecord

@@ -42,6 +42,9 @@ export PROCSERV_EXE
 PROCSERV_EXE="$(echo "${PROCSERV}" | cut -d ' ' -f 1)"
 PROCMGRD_DIR="$(dirname "${PROCSERV_EXE}")"
 
+# Make sure the procServ directory is on our path
+export PATH="${PROCMGRD_DIR}:${PATH}"
+
 # Make sure we have a procmgrd log directory
 if [ ! -d "${PROCMGRD_LOG_DIR}" ]; then
     su "${IOC_USER}" -s /bin/sh -c "mkdir -p ${PROCMGRD_LOG_DIR}"

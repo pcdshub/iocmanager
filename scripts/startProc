@@ -9,24 +9,23 @@ ioc=$1
 port=$2
 cfg=$3
 shift;shift;shift
-if test X"$SCRIPTROOT" == X; then export SCRIPTROOT=$PYPS_ROOT/config/$cfg/iocmanager; fi
 
 # Start a new log if running procServ-2.6.0-SLAC.
-if test X"$PROCSERVPID" != X; then kill -HUP "$PROCSERVPID"; fi
+if [ -n "$PROCSERVPID" ]; then
+	kill -HUP "$PROCSERVPID"
+fi
 
 # Setup the IOC user environment.
 export IOC="$ioc"
-# source "$IOC_COMMON"/All/"${cfg}"_env.sh
-source /cds/group/pcds/epics-dev/zlentz/iocCommon-All/"${cfg}_env.sh"
+source "$IOC_COMMON"/All/"${cfg}"_env.sh
 
 dir="$("$SCRIPTROOT"/getDirectory "$ioc" "$cfg")"
-if test "$dir" == NO_DIRECTORY; then
-    if test X"$PROCSERVPID" != X; then
-        kill -9 "$PROCSERVPID";
-	exit 0;
-    else
-        while test 1 == 1; do sleep 3600; done;
-    fi
+if [ "$dir" == "NO_DIRECTORY" ]; then
+	echo "No directory for ${ioc} in ${cfg}, exiting"
+    if [ -n "$PROCSERVPID" ]; then
+        kill -9 "$PROCSERVPID"
+	fi
+	exit 1
 fi
 cd "$IOC_ROOT"/..
 if test -d "$dir"; then cd "$dir"; fi
