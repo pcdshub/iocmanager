@@ -1,0 +1,212 @@
+<p>This page contains live information about the current status of rocky9 releases and deployments at LCLS.</p>
+<p>The source of this page's information is the iocmanager config files and the layout of the deployed ioc files on the filesystem.</p>
+<p>This page will be updated daily. If there is no update, there was no change from the previous day.</p>
+<p>
+  <ac:structured-macro ac:macro-id="4ce6b49a-8124-4b82-97ed-7041971533ad" ac:name="toc" ac:schema-version="1"/>
+</p>
+<h1>Hutch Status</h1>
+<p>This table is a general dashboard overview of our progress in each area and overall.</p>
+<table class="wrapped">
+  <colgroup>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <th scope="row">Hutch</th>
+      <th scope="col">total ioc count</th>
+      <th scope="col">rocky9 ioc count</th>
+      <th scope="col">rhel7 ioc count</th>
+      <th scope="col">rhel5 ioc count</th>
+      <th scope="col">Other OS ioc count</th>
+      <th scope="col">Error checking OS ioc count</th>
+      <th scope="col">Common ioc ready count</th>
+      <th scope="col">Common ioc not ready count</th>
+      <th scope="col">No common ioc count</th>
+    </tr>
+{% for info in summary_objs %}
+    <tr>
+      <th scope="row">{{ info.hutch }}</th>
+      <td>{{ info.total_count }}</td>
+      <td>{{ info.rocky9_count }}</td>
+      <td>{{ info.rhel7_count }}</td>
+      <td>{{ info.rhel5_count }}</td>
+      <td>{{ info.other_count }}</td>
+      <td>{{ info.error_count }}</td>
+      <td>{{ info.common_ready_count }}</td>
+      <td>{{ info.common_not_ready_count }}</td>
+      <td>{{ info.no_common_count }}</td>
+    </tr>
+{% endfor %}
+  </tbody>
+</table>
+{% for info in hutch_dicts %}
+<h2>{{ info["hutch"] }}</h2>
+<p>This table is the current status of every IOC in {{ info["hutch"] }}. It can be used to understand which IOCs can be updated for {{ info["hutch"] }} and which common release to update them to.</p>
+<table class="wrapped">
+  <colgroup>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <th scope="col">IOC Name</th>
+      <th scope="col">Enabled</th>
+      <th scope="col">Current OS</th>
+      <th scope="col">Host</th>
+      <th scope="col">Common IOC Status</th>
+      <th scope="col">Common IOC Name</th>
+      <th scope="col">Using Common Release</th>
+      <th scope="col">Latest Common Release</th>
+    </tr>
+{% for ioc in info["iocs"] %}
+    <tr>
+      <td>{{ ioc.name }}</td>
+      <td>{{ ioc.enabled }}</td>
+      <td>{{ ioc.host_os }}</td>
+      <td>{{ ioc.hostname }}</td>
+      <td>{{ ioc.common_status }}</td>
+      <td>{{ ioc.common_name }}</td>
+      <td>{{ ioc.using_release }}</td>
+      <td>{{ ioc.latest_release }}</td>
+    </tr>
+{% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+<h1>Host Status</h1>
+<p>This table is the per-host overview of ioc migration and possibility of migration. It can be used to identify hosts globally that are ready or nearly ready for an OS update.</p>
+<table class="wrapped">
+  <colgroup>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <th scope="col">Hostname</th>
+      <th scope="col">Hutch</th>
+      <th scope="col">Current OS</th>
+      <th scope="col">Total ioc count</th>
+      <th scope="col">Common ioc ready count</th>
+      <th scope="col">Common ioc not ready count</th>
+      <th scope="col">No common ioc count</th>
+    </tr>
+{% for info in host_objs %}
+    <tr>
+      <td>{{ info.hostname }}</td>
+      <td>{{ ", ".join(info.hutches) }}</td>
+      <td>{{ info.host_os }}</td>
+      <td>{{ info.total_count }}</td>
+      <td>{{ info.common_ready_count }}</td>
+      <td>{{ info.common_not_ready_count }}</td>
+      <td>{{ info.no_common_count }}</td>
+    </tr>
+{% endfor %}
+  </tbody>
+</table>
+{% for info in host_dicts %}
+<h2>{{ info["hostname"] }}</h2>
+<p>This table is the list of IOCs on {{ info["hostname"] }}. It can be used to plan work that would be needed to migrate this specific sever.</p>
+<table class="wrapped">
+  <colgroup class="">
+    <col class=""/>
+    <col class=""/>
+    <col class=""/>
+    <col class=""/>
+    <col class=""/>
+    <col class=""/>
+    <col class=""/>
+    <col class=""/>
+  </colgroup>
+  <tbody class="">
+    <tr class="">
+      <th>IOC Name</th>
+      <th>Enabled</th>
+      <th>Current OS</th>
+      <th>Hutch</th>
+      <th>Common IOC Status</th>
+      <th>Common IOC Name</th>
+      <th>Using Common Release</th>
+      <th>Latest Common Release</th>
+    </tr>
+{% for ioc in info["iocs"] %}
+    <tr class="">
+      <td>{{ ioc.name }}</td>
+      <td>{{ ioc.enabled }}</td>
+      <td>{{ ioc.host_os }}</td>
+      <td>{{ ioc.hutch }}</td>
+      <td>{{ ioc.common_status }}</td>
+      <td>{{ ioc.common_name }}</td>
+      <td>{{ ioc.using_release }}</td>
+      <td>{{ ioc.latest_release }}</td>
+    </tr>
+{% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+<h1>Common IOC Status</h1>
+<p>This table is the per-common-ioc overview. It includes only common IOCs that are configured in iocmanager. It can be used to understand which common IOCs have been deployed with rocky9 support and which have not been. It can also be used to check which version to update your IOCs to.</p>
+<table class="wrapped">
+  <colgroup>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <th scope="col">Common IOC Repo</th>
+      <th scope="col">Deploy Path</th>
+      <th scope="col">Supported OS</th>
+      <th scope="col">Number of IOCs Supported</th>
+      <th scope="col">Latest Deployed Version</th>
+    </tr>
+{% for info in common_ioc_objs %}
+    <tr>
+      <td>
+        <a href="https://github.com/pcdshub/{{ info.name }}">{{ info.name }}</a>
+      </td>
+      <td>{{ info.deploy_path }}</td>
+      <td>{{ info.supported_os }}</td>
+      <td>{{ info.total_deploy_count }}</td>
+      <td>{{ info.latest_version }}</td>
+    </tr>
+{% endfor %}
+  </tbody>
+</table>
+<h1>Big Paste</h1>
+<p>For people who like pure cli text</p>
+<ac:structured-macro ac:macro-id="17109988-8ac3-4e98-94e2-907374238786" ac:name="expand" ac:schema-version="1">
+  <ac:rich-text-body>
+    <ac:structured-macro ac:macro-id="df5f6888-2156-412c-b3a1-a12169b07d4e" ac:name="code" ac:schema-version="1">
+      <ac:parameter ac:name="language">text</ac:parameter>
+      <ac:plain-text-body><![CDATA[{{ plain_text_output }}]]></ac:plain-text-body>
+    </ac:structured-macro>
+    <p>
+      <br/>
+    </p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+<p>
+  <br/>
+</p>
