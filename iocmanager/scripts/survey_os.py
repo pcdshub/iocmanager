@@ -750,7 +750,11 @@ class ConfluenceStatsPage:
 
 @functools.lru_cache(maxsize=1024)
 def get_common_status(common_ioc: str) -> CommonStatus:
-    if common_ioc == UNKNOWN or "/cds/group/pcds/epics/ioc/" not in common_ioc:
+    if (
+        common_ioc == UNKNOWN
+        or "/cds/group/pcds/epics/ioc/" not in common_ioc
+        or "/common/" not in common_ioc
+    ):
         return CommonStatus.NO_COMMON
     supp_os = get_supported_os(common_ioc=common_ioc)
     if supp_os == GOAL_OS:
@@ -810,6 +814,7 @@ def build_rocky9_table(hutches: list[str]) -> str:
         local_iocs = [stats_page.host_tables[host][ioc] for ioc in local_ioc_order]
         host_dicts.append({"hostname": host, "iocs": local_iocs})
     common_ioc_objs = list(stats_page.common_ioc_summary_table.values())
+    common_ioc_objs.sort(key=lambda obj: obj.name)
     common_ioc_objs.sort(key=lambda obj: obj.total_deploy_count, reverse=True)
     # Run the old survey too for plain text output
     if "all" in hutches:
