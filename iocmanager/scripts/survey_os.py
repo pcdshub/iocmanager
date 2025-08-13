@@ -788,11 +788,12 @@ def get_common_latest(common_ioc: str) -> str:
 
 
 def build_rocky9_table(hutches: list[str]) -> str:
-    stats_page = ConfluenceStatsPage.from_hutch_list(hutch_list=hutches)
+    confluence_hutches = [hutch for hutch in hutches if hutch != "all"]
+    stats_page = ConfluenceStatsPage.from_hutch_list(hutch_list=confluence_hutches)
     with open(Path(__file__).parent / "rocky9_table.html.j2", "r") as fd:
         template = jinja2.Template(fd.read())
     # Put things into the table orders
-    hutch_order = sorted(hutch for hutch in hutches if hutch != "all")
+    hutch_order = sorted(confluence_hutches)
     summary_objs = [stats_page.hutch_summary_table["all"]]
     hutch_dicts = []
     for hutch in hutch_order:
@@ -811,7 +812,11 @@ def build_rocky9_table(hutches: list[str]) -> str:
     common_ioc_objs = list(stats_page.common_ioc_summary_table.values())
     common_ioc_objs.sort(key=lambda obj: obj.total_deploy_count, reverse=True)
     # Run the old survey too for plain text output
-    results = SurveyResult.from_hutch_list(hutch_list=hutches)
+    if "all" in hutches:
+        survey_hutches = ["all"]
+    else:
+        survey_hutches = hutches
+    results = SurveyResult.from_hutch_list(hutch_list=survey_hutches)
     with contextlib.redirect_stdout(io.StringIO()) as fd:
         for hutch_res in results.hutch_results:
             stats = SurveyStats.from_results(hutch_res.ioc_results)
