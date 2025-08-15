@@ -3,9 +3,12 @@ This script uses IOC manager to survey the state of operating system update effo
 """
 
 import argparse
+import contextlib
 import dataclasses
 import datetime
+import enum
 import functools
+import io
 import logging
 import os
 import re
@@ -14,6 +17,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
 
+import jinja2
 from packaging.version import InvalidVersion, Version
 
 from ..config import IOCProc, get_host_os, read_config
@@ -96,6 +100,14 @@ def get_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--confluence-table",
+        action="store_true",
+        help=(
+            "Ignore other arguments and create the confluence table html. "
+            "This always includes disabled IOCs."
+        ),
+    )
+    parser.add_argument(
         "--debug-ioc",
         default="",
         help=(
@@ -133,6 +145,7 @@ class IOCResult:
     enabled: bool
     hostname: str
     snowflake: bool
+    parent_ioc: str
 
     @classmethod
     def from_ioc_proc[T: IOCResult](cls: type[T], ioc_proc: IOCProc) -> T:
@@ -171,6 +184,7 @@ class IOCResult:
             enabled=not ioc_proc.disable,
             hostname=ioc_proc.host,
             snowflake=snowflake,
+            parent_ioc=ioc_proc.parent,
         )
 
 
@@ -535,6 +549,294 @@ def get_one_host_os(hostname: str) -> str:
         return UNKNOWN
 
 
+class CommonStatus(enum.StrEnum):
+    READY = "ready"
+    NOT_READY = "not ready"
+    NOT_MIGRATING = "not migrating"
+    NO_COMMON = "no common IOC"
+
+
+@dataclasses.dataclass
+class ConfluenceIOCInfo:
+    name: str
+    enabled: bool
+    host_os: str
+    hostname: str
+    hutch: str
+    common_status: CommonStatus
+    common_name: str
+    using_release: str
+    latest_release: str
+
+
+@dataclasses.dataclass
+class ConfluenceHutchSummaryRow:
+    hutch: str
+    total_count: int = 0
+    rocky9_count: int = 0
+    rhel7_count: int = 0
+    rhel5_count: int = 0
+    other_count: int = 0
+    error_count: int = 0
+    common_ready_count: int = 0
+    common_not_ready_count: int = 0
+    no_common_count: int = 0
+
+    def add_ioc(self, info: ConfluenceIOCInfo):
+        self.total_count += 1
+        if info.host_os == "rhel9":
+            self.rocky9_count += 1
+        elif info.host_os == "rhel7":
+            self.rhel7_count += 1
+        elif info.host_os == "rhel5":
+            self.rhel5_count += 1
+        elif info.host_os == UNKNOWN:
+            self.error_count += 1
+        else:
+            self.other_count += 1
+        match info.common_status:
+            case CommonStatus.READY:
+                self.common_ready_count += 1
+            case CommonStatus.NOT_READY:
+                self.common_not_ready_count += 1
+            case _:
+                self.no_common_count += 1
+
+
+@dataclasses.dataclass
+class ConfluenceHostSummaryRow:
+    hostname: str
+    host_os: str
+    hutches: list[str] = dataclasses.field(default_factory=list)
+    total_count: int = 0
+    common_ready_count: int = 0
+    common_not_ready_count: int = 0
+    no_common_count: int = 0
+
+    def add_ioc(self, info: ConfluenceIOCInfo):
+        if info.hutch not in self.hutches:
+            self.hutches.append(info.hutch)
+            self.hutches.sort()
+        self.total_count += 1
+        match info.common_status:
+            case CommonStatus.READY:
+                self.common_ready_count += 1
+            case CommonStatus.NOT_READY:
+                self.common_not_ready_count += 1
+            case _:
+                self.no_common_count += 1
+
+
+@dataclasses.dataclass
+class ConfluenceCommonIOCRow:
+    name: str
+    deploy_path: str
+    supported_os: str
+    latest_version: str
+    total_deploy_count: int = 0
+
+    @classmethod
+    def from_pathname[T: ConfluenceCommonIOCRow](cls: type[T], pathname: str) -> T:
+        # Real name starts at /ioc/
+        name = "ioc-" + pathname.split("/ioc/")[1].replace("/", "-")
+        deploy_path = pathname
+        supported_os = get_supported_os(pathname)
+        latest_version = get_common_latest(pathname)
+        total_deploy_count = 0
+        return cls(
+            name=name,
+            deploy_path=deploy_path,
+            supported_os=supported_os,
+            latest_version=latest_version,
+            total_deploy_count=total_deploy_count,
+        )
+
+
+@dataclasses.dataclass
+class ConfluenceStatsPage:
+    # Key by hutch
+    hutch_summary_table: dict[str, ConfluenceHutchSummaryRow]
+    # Key by host
+    host_summary_table: dict[str, ConfluenceHostSummaryRow]
+    # Key by hutch, then by ioc name
+    hutch_tables: dict[str, dict[str, ConfluenceIOCInfo]]
+    # Key by host, then by ioc name
+    host_tables: dict[str, dict[str, ConfluenceIOCInfo]]
+    # Key by deploy path
+    common_ioc_summary_table: dict[str, ConfluenceCommonIOCRow]
+
+    @classmethod
+    def from_hutch_list[T: ConfluenceStatsPage](
+        cls: type[T], hutch_list: list[str]
+    ) -> T:
+        hutch_results = []
+        for hutch in hutch_list:
+            if hutch == "all":
+                procs = []
+                for hutch_name in ALL_HUTCHES:
+                    if hutch_name == "all":
+                        continue
+                    cfg = read_config(hutch_name)
+                    procs.extend(cfg.procs.values())
+            else:
+                config = read_config(hutch)
+                procs = config.procs.values()
+            hutch_results.append(HutchResult.from_procs(hutch=hutch, procs=procs))
+        return cls.from_results(hutch_results)
+
+    @classmethod
+    def from_results[T: ConfluenceStatsPage](
+        cls: type[T], results: Iterable[HutchResult]
+    ) -> T:
+        stats_page = cls(
+            hutch_summary_table={"all": ConfluenceHutchSummaryRow(hutch="all")},
+            host_summary_table={},
+            hutch_tables={},
+            host_tables={},
+            common_ioc_summary_table={},
+        )
+        for res in results:
+            stats_page.add_hutch_result(res)
+        return stats_page
+
+    def add_hutch_result(self, hutch_result: HutchResult):
+        for ioc_result in hutch_result.ioc_results:
+            self.add_ioc_result(hutch_result.hutch, ioc_result)
+
+    def add_ioc_result(self, hutch: str, ioc_result: IOCResult):
+        common_status = get_common_status(ioc_result.common_ioc)
+        if common_status == CommonStatus.NO_COMMON:
+            common_name = "None"
+            using_release = "None"
+            latest_release = "None"
+        else:
+            common_name = ioc_result.common_ioc.removeprefix("/cds/group/pcds/epics/")
+            using_release = get_parent_version(ioc_result.parent_ioc)
+            latest_release = get_common_latest(ioc_result.common_ioc)
+        info = ConfluenceIOCInfo(
+            name=ioc_result.name,
+            enabled=ioc_result.enabled,
+            host_os=get_one_host_os(ioc_result.hostname),
+            hostname=ioc_result.hostname,
+            hutch=hutch,
+            common_status=common_status,
+            common_name=common_name,
+            using_release=using_release,
+            latest_release=latest_release,
+        )
+        self.hutch_summary_table["all"].add_ioc(info)
+        if hutch not in self.hutch_summary_table:
+            self.hutch_summary_table[hutch] = ConfluenceHutchSummaryRow(hutch=hutch)
+        self.hutch_summary_table[hutch].add_ioc(info)
+        if ioc_result.hostname not in self.host_summary_table:
+            self.host_summary_table[ioc_result.hostname] = ConfluenceHostSummaryRow(
+                ioc_result.hostname, get_one_host_os(ioc_result.hostname)
+            )
+        self.host_summary_table[ioc_result.hostname].add_ioc(info)
+        if hutch not in self.hutch_tables:
+            self.hutch_tables[hutch] = {}
+        self.hutch_tables[hutch][ioc_result.name] = info
+        if ioc_result.hostname not in self.host_tables:
+            self.host_tables[ioc_result.hostname] = {}
+        self.host_tables[ioc_result.hostname][ioc_result.name] = info
+
+        if common_status in (CommonStatus.READY, CommonStatus.NOT_READY):
+            if ioc_result.common_ioc not in self.common_ioc_summary_table:
+                self.common_ioc_summary_table[ioc_result.common_ioc] = (
+                    ConfluenceCommonIOCRow.from_pathname(pathname=ioc_result.common_ioc)
+                )
+            self.common_ioc_summary_table[ioc_result.common_ioc].total_deploy_count += 1
+
+
+@functools.lru_cache(maxsize=1024)
+def get_common_status(common_ioc: str) -> CommonStatus:
+    if (
+        common_ioc == UNKNOWN
+        or "/cds/group/pcds/epics/ioc/" not in common_ioc
+        or "/common/" not in common_ioc
+    ):
+        return CommonStatus.NO_COMMON
+    supp_os = get_supported_os(common_ioc=common_ioc)
+    if supp_os == GOAL_OS:
+        return CommonStatus.READY
+    elif supp_os in NEEDS_UPGRADE:
+        return CommonStatus.NOT_READY
+    else:
+        return CommonStatus.NOT_MIGRATING
+
+
+@functools.lru_cache(maxsize=1024)
+def get_parent_version(parent_ioc: str) -> str:
+    version_str = Path(parent_ioc).name
+    try:
+        Version(version_str.removeprefix("R"))
+    except InvalidVersion:
+        return "dev"
+    return version_str
+
+
+@functools.lru_cache(maxsize=1024)
+def get_common_latest(common_ioc: str) -> str:
+    highest_ver_str = "R0.0.0"
+    highest_version = Version("0.0.0")
+    for ver_path in Path(common_ioc).glob("*"):
+        ver_str = ver_path.name
+        try:
+            this_version = Version(ver_str.removeprefix("R"))
+        except Exception:
+            continue
+        if this_version > highest_version:
+            highest_version = this_version
+            highest_ver_str = ver_str
+    return highest_ver_str
+
+
+def build_rocky9_table(hutches: list[str]) -> str:
+    confluence_hutches = [hutch for hutch in hutches if hutch != "all"]
+    stats_page = ConfluenceStatsPage.from_hutch_list(hutch_list=confluence_hutches)
+    with open(Path(__file__).parent / "rocky9_table.html.j2", "r") as fd:
+        template = jinja2.Template(fd.read())
+    # Put things into the table orders
+    hutch_order = sorted(confluence_hutches)
+    summary_objs = [stats_page.hutch_summary_table["all"]]
+    hutch_dicts = []
+    for hutch in hutch_order:
+        summary_objs.append(stats_page.hutch_summary_table[hutch])
+        local_ioc_order = sorted(ioc for ioc in stats_page.hutch_tables[hutch])
+        local_iocs = [stats_page.hutch_tables[hutch][ioc] for ioc in local_ioc_order]
+        hutch_dicts.append({"hutch": hutch, "iocs": local_iocs})
+    host_order = sorted(host for host in stats_page.host_summary_table)
+    host_objs = []
+    host_dicts = []
+    for host in host_order:
+        host_objs.append(stats_page.host_summary_table[host])
+        local_ioc_order = sorted(ioc for ioc in stats_page.host_tables[host])
+        local_iocs = [stats_page.host_tables[host][ioc] for ioc in local_ioc_order]
+        host_dicts.append({"hostname": host, "iocs": local_iocs})
+    common_ioc_objs = list(stats_page.common_ioc_summary_table.values())
+    common_ioc_objs.sort(key=lambda obj: obj.name)
+    common_ioc_objs.sort(key=lambda obj: obj.total_deploy_count, reverse=True)
+    # Run the old survey too for plain text output
+    if "all" in hutches:
+        survey_hutches = ["all"]
+    else:
+        survey_hutches = hutches
+    results = SurveyResult.from_hutch_list(hutch_list=survey_hutches)
+    with contextlib.redirect_stdout(io.StringIO()) as fd:
+        for hutch_res in results.hutch_results:
+            stats = SurveyStats.from_results(hutch_res.ioc_results)
+            stats.print_data()
+    plain_text_output = fd.getvalue()
+    return template.render(
+        summary_objs=summary_objs,
+        hutch_dicts=hutch_dicts,
+        host_objs=host_objs,
+        host_dicts=host_dicts,
+        common_ioc_objs=common_ioc_objs,
+        plain_text_output=plain_text_output,
+    )
+
+
 def main(sys_argv: list[str] | None = None) -> int:
     parser = get_parser()
     args = parser.parse_args(sys_argv)
@@ -543,6 +845,9 @@ def main(sys_argv: list[str] | None = None) -> int:
         hutches = ALL_HUTCHES
     else:
         hutches = [args.hutch]
+    if args.confluence_table:
+        print(build_rocky9_table(hutches))
+        return 0
     if args.debug_ioc:
         config = read_config(args.hutch)
         ioc_proc = config.procs[args.debug_ioc]
