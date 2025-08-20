@@ -15,6 +15,6 @@ if [ X$SCRIPTROOT == X ]; then
     export SCRIPTROOT=$PYPS_ROOT/config/$2/iocmanager
 fi
 if [ ! -f "$SCRIPTROOT"/applyConfig.py ]; then
-    export SCRIPTROOT="$(dirname "$(realpath "${0}")")"
+    export SCRIPTROOT="$(dirname "$(readlink -f "${0}")")"
 fi
 python $SCRIPTROOT/applyConfig.py "$@"

@@ -17,7 +17,7 @@ cfg=$3
 shift;shift;shift
 if test X$SCRIPTROOT == X; then export SCRIPTROOT=$PYPS_ROOT/config/$cfg/iocmanager; fi
 if [ ! -f "$SCRIPTROOT"/getDirectory.py ]; then
-    export SCRIPTROOT="$(dirname "$(realpath "${0}")")"
+    export SCRIPTROOT="$(dirname "$(readlink -f "${0}")")"
 fi
 
 # Start a new log if running procServ-2.6.0-SLAC.

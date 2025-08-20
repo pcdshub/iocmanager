@@ -17,6 +17,6 @@ if [ X$SCRIPTROOT == X ]; then
     export SCRIPTROOT=/reg/g/pcds/pyps/config/$1/iocmanager
 fi
 if [ ! -f "$SCRIPTROOT"/startAll.py ]; then
-    export SCRIPTROOT="$(dirname "$(realpath "${0}")")"
+    export SCRIPTROOT="$(dirname "$(readlink -f "${0}")")"
 fi
 python $SCRIPTROOT/startAll.py "$@"
