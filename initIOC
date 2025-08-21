@@ -19,7 +19,7 @@ echo Using configuration $cfg.
 
 export SCRIPTROOT=$PYPS_ROOT/config/$cfg/iocmanager
 if [ ! -f "$SCRIPTROOT"/initIOC.hutch ]; then
-    export SCRIPTROOT="$(dirname "$(realpath "${0}")")"
+    export SCRIPTROOT="$(dirname "$(readlink -f "${0}")")"
 fi
 
 # Setup our path, so we can find procServ/procmgrd!
