@@ -10,7 +10,7 @@ if __name__ == "__main__":
             "Find IOCs with the given name in any hutch and show basic information."
         ),
     )
-    parser.add_argument("name", help="The IOC name to find.")
+    parser.add_argument("--name", help="The IOC name to find.")
     add_verbose_arg(parser)
     args = parser.parse_args()
     iocmanager_log_config(args)
