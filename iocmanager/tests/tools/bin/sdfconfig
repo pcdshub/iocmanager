@@ -1,0 +1,5 @@
+#!/usr/bin/bash
+# Fake sdfconfig stuff intentionally omitted here
+# Unlike power and psipmi, we need to separately check inputs and parse outputs
+# Much easier to emulate in the test
+echo sdfconfig "$@"

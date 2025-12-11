@@ -45,6 +45,7 @@ def setup_test_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("TOOLS_SITE_TOP", str(TESTS_PATH / "tools"))
     monkeypatch.setenv("EPICS_SITE_TOP", str(TESTS_PATH))
     monkeypatch.setenv("SCRIPTROOT", str(TESTS_PATH / "script_root"))
+    monkeypatch.setenv("SDFCONFIG_ROOT", str(TESTS_PATH / "tools" / "bin"))
 
     # Verify that the env_paths object is doing "something"
     assert env_paths.PYPS_ROOT == str(temp_pyps_root)
