@@ -42,7 +42,7 @@ from .hioc_tools import reboot_hioc
 from .imgr import ensure_auth, reboot_cmd
 from .ioc_info import get_base_name
 from .procserv_tools import apply_config
-from .server_tools import netconfig, reboot_server
+from .server_tools import reboot_server, sdfconfig
 from .table_delegate import IOCTableDelegate
 from .table_model import IOCModelIdentifier, IOCTableModel
 from .terminal import run_in_floating_terminal
@@ -142,12 +142,12 @@ class IOCMainWindow(QMainWindow):
         self.pydm_ready = threading.Event()
         self.pydm_prep_thread = threading.Thread(target=self.prepare_pydm, daemon=True)
         self.pydm_prep_thread.start()
-        # Pre-loading the netconfig info makes the table snappier
-        self.netconfig_cache = {}
-        self.netconfig_prep_thread = threading.Thread(
-            target=self.prepare_netconfig, daemon=True
+        # Pre-loading the sdfconfig info makes the table snappier
+        self.sdfconfig_cache = {}
+        self.sdfconfig_prep_thread = threading.Thread(
+            target=self.prepare_sdfconfig, daemon=True
         )
-        self.netconfig_prep_thread.start()
+        self.sdfconfig_prep_thread.start()
         # Checking if we can ssh can take a few seconds for kerberos
         self.commit_check_thread = threading.Thread(
             target=self.prepare_commit_host_status, daemon=True
@@ -190,23 +190,23 @@ class IOCMainWindow(QMainWindow):
         pydm.data_plugins.initialize_plugins_if_needed()
         self.pydm_ready.set()
 
-    def prepare_netconfig(self):
+    def prepare_sdfconfig(self):
         """
-        Load netconfig info in the background to make the table feel snappier
+        Load sdfconfig info in the background to make the table feel snappier
         """
         for host in self.model.config.hosts:
-            self._get_netconfig(host)
+            self._get_sdfconfig(host)
 
-    def _get_netconfig(self, host: str) -> dict[str, str]:
+    def _get_sdfconfig(self, host: str) -> dict[str, str]:
         """
-        Return the cached netconfig information if available, otherwise get it.
+        Return the cached sdfconfig information if available, otherwise get it.
         """
-        if host not in self.netconfig_cache:
+        if host not in self.sdfconfig_cache:
             try:
-                self.netconfig_cache[host] = netconfig(host=host)
+                self.sdfconfig_cache[host] = sdfconfig(host=host)
             except Exception:
-                self.netconfig_cache[host] = {}
-        return self.netconfig_cache[host]
+                self.sdfconfig_cache[host] = {}
+        return self.sdfconfig_cache[host]
 
     def prepare_commit_host_status(self):
         """
@@ -414,8 +414,8 @@ class IOCMainWindow(QMainWindow):
         Action when the user clicks "Reboot Server".
 
         For SIOCs, this uses ipmi to turn power off, then back on again.
-        For HIOCs, this finds a PDU in netconfig to turn off and back on.
-        This action requires full authorization and confirmation.
+        For HIOCs, this fails because the legacy behavior cannot be
+        implemented with sdfconfig.
         """
         if not self._check_selected():
             return
@@ -598,11 +598,11 @@ class IOCMainWindow(QMainWindow):
             self.ui.tod.set_channel(f"ca://{base}:TOD")
             self.ui.boottime.set_channel(f"ca://{base}:STARTTOD")
         try:
-            host_info = self._get_netconfig(host)
+            host_info = self._get_sdfconfig(host)
         except Exception:
             host_info = {}
         try:
-            self.ui.location.setText(host_info["location"])
+            self.ui.location.setText(host_info["foreman_location"])
         except KeyError:
             self.ui.location.setText("")
         try:

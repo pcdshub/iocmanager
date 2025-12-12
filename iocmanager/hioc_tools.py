@@ -6,6 +6,13 @@ as part of a particular hardware's boot process, as opposed to
 soft IOCs (SIOC for short) which run on the OS some time after boot.
 
 HIOCs are nominally run real-time and on specialized hardware.
+
+Warning: some of these tools no longer work because netconfig is deprecated
+and sdfconfig doesn't have the information required to implement them.
+
+Any function that no longer works will now raise NotImplementedError,
+though the original implementation will be preserved here
+preceded by a leading underscore.
 """
 
 import copy
@@ -54,6 +61,12 @@ def get_hard_ioc_dir_for_display(host: str) -> str:
 
 
 def restart_hioc(host: str):
+    raise NotImplementedError(
+        "restart_hioc cannot be implemented with sdfconfig, and netconfig is disabled."
+    )
+
+
+def _restart_hioc(host: str):
     """
     Console into a HIOC and reboot it via the shell.
 
@@ -93,6 +106,12 @@ def restart_hioc(host: str):
 
 
 def reboot_hioc(host: str):
+    raise NotImplementedError(
+        "reboot_hioc cannot be implemented with sdfconfig, and netconfig is disabled."
+    )
+
+
+def _reboot_hioc(host: str):
     """
     Power cycle a HIOC via the PDU entry in netconfig.
 
