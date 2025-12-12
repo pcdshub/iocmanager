@@ -205,7 +205,14 @@ class IOCMainWindow(QMainWindow):
             try:
                 self.sdfconfig_cache[host] = sdfconfig(host=host)
             except Exception:
-                self.sdfconfig_cache[host] = {}
+                self.sdfconfig_cache[host] = {
+                    "foreman_location": "Please configure sdfconfig"
+                }
+            if not self.sdfconfig_cache[host]:
+                # Invalid hostname
+                self.sdfconfig_cache[host] = {
+                    "foreman_location": "Server not in sdfconfig"
+                }
         return self.sdfconfig_cache[host]
 
     def prepare_commit_host_status(self):
