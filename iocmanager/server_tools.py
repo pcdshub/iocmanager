@@ -73,6 +73,11 @@ def sdfconfig(host: str, domain: str = "pcdsn") -> dict[str, str]:
     host : str
         The hostname
 
+    domain : str, optional
+        The domain in which the host lives.
+        In sdfconfig view we need to provide a fully qualified domain name,
+        of which the domain is the last part of.
+
     Returns
     -------
     info : dict of str
