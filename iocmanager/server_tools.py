@@ -7,7 +7,6 @@ network or e.g. rebooting the whole server can useful.
 
 import copy
 import os
-import re
 import subprocess
 
 from .env_paths import env_paths
@@ -85,11 +84,13 @@ def sdfconfig(host: str, domain: str = "pcdsn") -> dict[str, str]:
         or an empty dict if there was no information.
     """
     output = {}
-    pattern = re.compile(r"^(\S.+?):\s+(\S.+)$")
     for line in _sdfconfig(host=host, domain=domain).split("\n"):
-        match = pattern.match(line)
-        if match is not None:
-            output[match.group(1).lower().replace(" ", "_")] = match.group(2)
+        parts = line.strip().split(":")
+        if len(parts) < 2:
+            continue
+        key = parts[0].lower().replace(" ", "_").strip()
+        value = ":".join(parts[1:]).strip()
+        output[key] = value
     return output
 
 
