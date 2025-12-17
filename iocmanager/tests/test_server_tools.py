@@ -35,29 +35,41 @@ def test_netconfig_call():
 
 
 _example_sdfconfig_text = """
-Hostname:            ctl-pytest-cam-01.pytest
-Organization:        PYTEST
-Subnet Name:         PYTEST1
-IP:                  10.0.0.1
-MAC:                 00:00:00:00:00:00
-Hostgroup:           LinuxGroup
-OS:                  Test: Linux
-Architecture:        x86_64
-Owner:               People
-PC:                  PC99999
-Power:
-Foreman Location:    SLAC-FM
-Nlyte Location:      SLAC-NL
-Cabinet:             Cab
-Elevation:           42
-Mounting Side:       Front
-Type:                Specific Model Server
-Serial Number:       N/A
-Interfaces:
-Type       MAC                  IP          Subnet Name          FQDN
-primary    00:00:00:00:00:00    10.0.0.1    PYTEST1          ctl-pytest-cam-01.pytest
-bmc        00:00:00:00:00:00    10.0.0.1    PYTEST2          ctl-pytest-cam-01b.pytest
-interface  00:00:00:00:00:00    10.0.0.1    PYTEST3          ctl-pytest-cam-01c.pytest
+{"Hostname": "ctl-pytest-cam-01.pytest",
+"Organization": "PYTEST",
+"Subnet Name": "PYTEST1",
+"IP": "10.0.0.1",
+"MAC": "00:00:00:00:00:00",
+"Hostgroup": "LinuxGroup",
+"OS": "Test: Linux",
+"Architecture": "x86_64",
+"Owner": "People",
+"PC": "PC99999",
+"Power": "",
+"Foreman Location": "SLAC-FM",
+"Nlyte Location": "SLAC-NL",
+"Cabinet": "Cab",
+"Elevation": "42",
+"Mounting Side": "Front",
+"Type": "Specific Model Server",
+"Serial Number": "N/A",
+"Interfaces": [
+{"Type": "primary",
+"MAC": "00:00:00:00:00:00",
+"IP": "10.0.0.1",
+"Subnet Name": "PYTEST1",
+"FQDN": "ctl-pytest-cam-01.pytest"},
+{"Type": "bmc",
+"MAC": "00:00:00:00:00:00",
+"IP": "10.0.1.1",
+"Subnet Name": "PYTEST2",
+"FQDN": "ctl-pytest-cam-01b.pytest"},
+{"Type": "interface",
+"MAC": "00:00:00:00:00:00",
+"IP": "10.0.2.1",
+"Subnet Name": "PYTEST3",
+"FQDN": "ctl-pytest-cam-01c.pytest"}]
+}
 """
 
 
@@ -67,16 +79,16 @@ def test_sdfconfig_text_processing(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(server_tools, "_sdfconfig", fake_sdfconfig)
     info = sdfconfig("ctl-pytest-cam-01", domain="pytest")
-    assert info["hostname"] == "ctl-pytest-cam-01.pytest"
-    assert info["subnet_name"] == "PYTEST1"
-    assert info["pc"] == "PC99999"
-    assert info["os"] == "Test: Linux"
-    assert info["mac"] == "00:00:00:00:00:00"
+    assert info["Hostname"] == "ctl-pytest-cam-01.pytest"
+    assert info["Subnet Name"] == "PYTEST1"
+    assert info["PC"] == "PC99999"
+    assert info["OS"] == "Test: Linux"
+    assert info["MAC"] == "00:00:00:00:00:00"
 
 
 def test_sdfconfig_call():
     host = "asdfsdf"
-    assert _sdfconfig(host, "domain").strip() == f"sdfconfig view {host}.domain"
+    assert _sdfconfig(host, "domain").strip() == f"sdfconfig view --json {host}.domain"
 
 
 def test_reboot_server(capfd: pytest.CaptureFixture):

@@ -206,12 +206,12 @@ class IOCMainWindow(QMainWindow):
                 self.sdfconfig_cache[host] = sdfconfig(host=host)
             except Exception:
                 self.sdfconfig_cache[host] = {
-                    "foreman_location": "Please configure sdfconfig"
+                    "Foreman Location": "Please configure sdfconfig"
                 }
             if not self.sdfconfig_cache[host]:
                 # Invalid hostname
                 self.sdfconfig_cache[host] = {
-                    "foreman_location": "Server not in sdfconfig"
+                    "Foreman Location": "Server not in sdfconfig"
                 }
         return self.sdfconfig_cache[host]
 
@@ -609,11 +609,11 @@ class IOCMainWindow(QMainWindow):
         except Exception:
             host_info = {}
         try:
-            self.ui.location.setText(host_info["foreman_location"])
+            self.ui.location.setText(host_info["Foreman Location"])
         except KeyError:
             self.ui.location.setText("")
         try:
-            self.ui.description.setText(host_info["description"])
+            self.ui.description.setText(host_info["Metadata"])
         except KeyError:
             self.ui.description.setText("")
 

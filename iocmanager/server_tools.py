@@ -6,6 +6,7 @@ network or e.g. rebooting the whole server can useful.
 """
 
 import copy
+import json
 import os
 import subprocess
 
@@ -83,15 +84,8 @@ def sdfconfig(host: str, domain: str = "pcdsn") -> dict[str, str]:
         The information about the hostname from sdfconfig,
         or an empty dict if there was no information.
     """
-    output = {}
-    for line in _sdfconfig(host=host, domain=domain).split("\n"):
-        parts = line.strip().split(":")
-        if len(parts) < 2:
-            continue
-        key = parts[0].lower().replace(" ", "_").strip()
-        value = ":".join(parts[1:]).strip()
-        output[key] = value
-    return output
+    text = _sdfconfig(host=host, domain=domain)
+    return json.loads(text)
 
 
 def _sdfconfig(host: str, domain="pcdsn") -> str:
@@ -111,7 +105,7 @@ def _sdfconfig(host: str, domain="pcdsn") -> str:
         The raw text output from sdfconfig.
     """
     return subprocess.check_output(
-        [env_paths.SDFCONFIG, "view", f"{host}.{domain}"],
+        [env_paths.SDFCONFIG, "view", "--json", f"{host}.{domain}"],
         universal_newlines=True,
     )
 
