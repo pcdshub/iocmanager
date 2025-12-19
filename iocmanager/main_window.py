@@ -613,7 +613,7 @@ class IOCMainWindow(QMainWindow):
         except KeyError:
             self.ui.location.setText("")
         try:
-            self.ui.description.setText(host_info["Metadata"])
+            self.ui.description.setText(host_info["Description"])
         except KeyError:
             self.ui.description.setText("")
 
