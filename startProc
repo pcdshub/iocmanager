@@ -2,7 +2,7 @@
 # Backwards compatibility script
 # Delete me once everything is rocky9
 
-# If we got here, we might be rhel5 or we might be rhel7
+# If we got here, we might be rhel5, rhel7 or apalis
 # Redirect scriptroot to the py2 version and launch from there
 export SCRIPTROOT=/cds/group/pcds/pyps/apps/iocmanager/latest
 $SCRIPTROOT/startProc "$@"
