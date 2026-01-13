@@ -293,6 +293,13 @@ class EnvPaths:
         return f"{self.TOOLS_SITE_TOP}/bin/netconfig"
 
     @property
+    def SDFCONFIG(self) -> str:
+        sdfcfg_root = os.getenv("SDFCONFIG_ROOT", "")
+        if sdfcfg_root:
+            return f"{sdfcfg_root}/sdfconfig"
+        return "sdfconfig"
+
+    @property
     def PSIPMI(self) -> str:
         """
         The location of the psipmi executable.

@@ -6,10 +6,10 @@ import pytest
 
 from .. import server_tools
 from ..hioc_tools import (
+    _reboot_hioc,
+    _restart_hioc,
     get_hard_ioc_dir,
     get_hard_ioc_dir_for_display,
-    reboot_hioc,
-    restart_hioc,
 )
 from ..server_tools import netconfig
 
@@ -93,15 +93,15 @@ def test_restart_hioc(monkeypatch: pytest.MonkeyPatch):
     # Invalid host -> RuntimeError, netconfig should have no info for us
     assert not netconfig("asdfsdf")
     with pytest.raises(RuntimeError):
-        restart_hioc("asdfsdf")
+        _restart_hioc("asdfsdf")
 
     # Host without port should also raise RuntimeError
     assert netconfig("ioc-pytest-hioc1")
     with pytest.raises(RuntimeError):
-        restart_hioc("ioc-pytest-hioc1")
+        _restart_hioc("ioc-pytest-hioc1")
 
     # Host with proper info should create the correct Telnet and use it appropriately
-    restart_hioc("ioc-pytest-hioc2")
+    _restart_hioc("ioc-pytest-hioc2")
     assert len(FakeTelnet.registry) == 1
     tn = FakeTelnet.registry[0]
     assert tn.host == "digi-pytest-01"
@@ -121,7 +121,7 @@ def test_restart_hioc(monkeypatch: pytest.MonkeyPatch):
 def test_reboot_hioc(capfd: pytest.CaptureFixture):
     # Fake reboot script tools/bin/power just echoes our command
     host = "asdfsdfasdf"
-    reboot_hioc(host)
+    _reboot_hioc(host)
     captured = capfd.readouterr()
     assert captured.out.strip() == f"power {host} cycle"
     assert captured.err == ""

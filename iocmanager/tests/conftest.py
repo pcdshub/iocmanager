@@ -32,8 +32,10 @@ def setup_test_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """
     monkeypatch.setenv("CAMRECORD_ROOT", str(tmp_path))
     try:
-        monkeypatch.setenv("PROCSERV_EXE", str(get_procserv_bin_path()))
+        procserv_path = get_procserv_bin_path()
+        monkeypatch.setenv("PROCSERV_EXE", str(procserv_path))
     except RuntimeError:
+        procserv_path = None
         monkeypatch.delenv("PROCSERV_EXE")
     # PYPS_ROOT must be on temp path because we write to it as part of the test
     local_pyps_root = TESTS_PATH / "pyps_root"
@@ -44,8 +46,14 @@ def setup_test_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("IOC_COMMON", str(TESTS_PATH / "ioc_common"))
     monkeypatch.setenv("TOOLS_SITE_TOP", str(TESTS_PATH / "tools"))
     monkeypatch.setenv("EPICS_SITE_TOP", str(TESTS_PATH))
-    monkeypatch.setenv("SCRIPTROOT", str(TESTS_PATH / "script_root"))
-
+    scriptroot = str(TESTS_PATH / "script_root")
+    monkeypatch.setenv("SCRIPTROOT", scriptroot)
+    monkeypatch.setenv("SDFCONFIG_ROOT", str(TESTS_PATH / "tools" / "bin"))
+    if procserv_path is not None:
+        path = os.getenv("PATH")
+        monkeypatch.setenv(
+            "PATH", os.pathsep.join((f"{procserv_path.parent}", scriptroot, f"{path}"))
+        )
     # Verify that the env_paths object is doing "something"
     assert env_paths.PYPS_ROOT == str(temp_pyps_root)
 

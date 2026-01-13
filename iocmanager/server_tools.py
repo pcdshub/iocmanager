@@ -6,6 +6,7 @@ network or e.g. rebooting the whole server can useful.
 """
 
 import copy
+import json
 import os
 import subprocess
 
@@ -59,6 +60,52 @@ def _netconfig(host: str) -> str:
     return subprocess.check_output(
         [env_paths.NETCONFIG, "view", host],
         env=env,
+        universal_newlines=True,
+    )
+
+
+def sdfconfig(host: str, domain: str = "pcdsn") -> dict[str, str]:
+    """
+    Return the sdfconfig information for a host.
+
+    Parameters
+    ----------
+    host : str
+        The hostname
+
+    domain : str, optional
+        The domain in which the host lives.
+        In sdfconfig view we need to provide a fully qualified domain name,
+        of which the domain is the last part of.
+
+    Returns
+    -------
+    info : dict of str
+        The information about the hostname from sdfconfig,
+        or an empty dict if there was no information.
+    """
+    text = _sdfconfig(host=host, domain=domain)
+    return json.loads(text)
+
+
+def _sdfconfig(host: str, domain="pcdsn") -> str:
+    """
+    Part of the sdfconfig helper that shells out to sdfconfig.
+
+    Keep this separate to test sdfconfig helper logic without foreman.
+
+    Parameters
+    ----------
+    host : str
+        The hostname
+
+    Returns
+    -------
+    text : str
+        The raw text output from sdfconfig.
+    """
+    return subprocess.check_output(
+        [env_paths.SDFCONFIG, "view", "--json", f"{host}.{domain}"],
         universal_newlines=True,
     )
 
