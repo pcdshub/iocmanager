@@ -100,7 +100,7 @@ class FindPVDialog(QDialog):
             self.ui.found_pvs.appendPlainText(text)
         if results:
             self.last_ioc_found = ioc_name
-            self.found_count += len(results)
+            self.found_count += 1
         self.process_next.emit(index + 1)
 
     def _finish_find_pv(self):
