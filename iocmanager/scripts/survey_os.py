@@ -565,6 +565,7 @@ class ConfluenceIOCInfo:
     hostname: str
     hutch: str
     common_status: CommonStatus
+    common_deployed_in_prod_count: int
     common_name: str
     common_full_path: str
     using_release: str
@@ -728,6 +729,7 @@ class ConfluenceStatsPage:
             hostname=ioc_result.hostname,
             hutch=hutch,
             common_status=common_status,
+            common_deployed_in_prod_count=0,
             common_name=common_name,
             common_full_path=ioc_result.common_ioc,
             using_release=using_release,
@@ -772,15 +774,19 @@ class ConfluenceStatsPage:
         incremented
         """
         # Iterate through the iocs- these are stored two ways, arbitrarily pick
-        # The first time, we're just looking to collect names of common iocs
-        common_iocs_with_rocky9_deployments = set()
+        # The first time, collect names of common iocs
+        # and how many hutch IOCs use them at rocky9
+        rocky9_deployed_common_to_hutch_iocs: dict[str, int] = {}
         for hutch_dict in self.hutch_tables.values():
             for ioc_info in hutch_dict.values():
                 if (
                     ioc_info.common_status == CommonStatus.BUILT_IN_PROD
                     and ioc_info.host_os == "rhel9"
                 ):
-                    common_iocs_with_rocky9_deployments.add(ioc_info.common_name)
+                    try:
+                        rocky9_deployed_common_to_hutch_iocs[ioc_info.common_name] += 1
+                    except KeyError:
+                        rocky9_deployed_common_to_hutch_iocs[ioc_info.common_name] = 0
                     # For the common ioc table, get a smaller count
                     # Just the number of real deployments
                     self.common_ioc_summary_table[
@@ -790,15 +796,20 @@ class ConfluenceStatsPage:
         # If ANY ioc of this type is on rocky9, it's deployed in prod!
         for hutch_dict in self.hutch_tables.values():
             for ioc_info in hutch_dict.values():
-                if ioc_info.common_name in common_iocs_with_rocky9_deployments:
-                    ioc_info.common_status = CommonStatus.DEPLOYED_IN_PROD
-                    self.hutch_summary_table[
-                        ioc_info.hutch
-                    ].common_deployed_in_prod_count += 1
-                    self.host_summary_table[
-                        ioc_info.hostname
-                    ].common_deployed_in_prod_count += 1
-                    self.hutch_summary_table["all"].common_deployed_in_prod_count += 1
+                try:
+                    ioc_info.common_deployed_in_prod_count = (
+                        rocky9_deployed_common_to_hutch_iocs[ioc_info.common_name]
+                    )
+                except KeyError:
+                    continue
+                ioc_info.common_status = CommonStatus.DEPLOYED_IN_PROD
+                self.hutch_summary_table[
+                    ioc_info.hutch
+                ].common_deployed_in_prod_count += 1
+                self.host_summary_table[
+                    ioc_info.hostname
+                ].common_deployed_in_prod_count += 1
+                self.hutch_summary_table["all"].common_deployed_in_prod_count += 1
 
 
 @functools.lru_cache(maxsize=1024)
