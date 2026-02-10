@@ -20,6 +20,7 @@
     <col/>
     <col/>
     <col/>
+    <col/>
   </colgroup>
   <tbody>
     <tr>
@@ -30,8 +31,9 @@
       <th scope="col">rhel5 ioc count</th>
       <th scope="col">Other OS ioc count</th>
       <th scope="col">Error checking OS ioc count</th>
-      <th scope="col">Common ioc ready count</th>
-      <th scope="col">Common ioc not ready count</th>
+      <th scope="col">Common ioc deployed on rocky9 somewhere</th>
+      <th scope="col">Common ioc built for rocky9</th>
+      <th scope="col">Common ioc not built for rocky9</th>
       <th scope="col">No common ioc count</th>
     </tr>
 {% for info in summary_objs %}
@@ -43,8 +45,9 @@
       <td>{{ info.rhel5_count }}</td>
       <td>{{ info.other_count }}</td>
       <td>{{ info.error_count }}</td>
-      <td>{{ info.common_ready_count }}</td>
-      <td>{{ info.common_not_ready_count }}</td>
+      <td>{{ info.common_deployed_in_prod_count }}</td>
+      <td>{{ info.common_has_build_count }}</td>
+      <td>{{ info.common_not_built_count }}</td>
       <td>{{ info.no_common_count }}</td>
     </tr>
 {% endfor %}
@@ -101,6 +104,7 @@
     <col/>
     <col/>
     <col/>
+    <col/>
   </colgroup>
   <tbody>
     <tr>
@@ -108,8 +112,9 @@
       <th scope="col">Hutch</th>
       <th scope="col">Current OS</th>
       <th scope="col">Total ioc count</th>
-      <th scope="col">Common ioc ready count</th>
-      <th scope="col">Common ioc not ready count</th>
+      <th scope="col">Common ioc deployed on rocky9 somewhere</th>
+      <th scope="col">Common ioc built for rocky9</th>
+      <th scope="col">Common ioc not built for rocky9</th>
       <th scope="col">No common ioc count</th>
     </tr>
 {% for info in host_objs %}
@@ -118,8 +123,9 @@
       <td>{{ ", ".join(info.hutches) }}</td>
       <td>{{ info.host_os }}</td>
       <td>{{ info.total_count }}</td>
-      <td>{{ info.common_ready_count }}</td>
-      <td>{{ info.common_not_ready_count }}</td>
+      <td>{{ info.common_deployed_in_prod_count }}</td>
+      <td>{{ info.common_has_build_count }}</td>
+      <td>{{ info.common_not_built_count }}</td>
       <td>{{ info.no_common_count }}</td>
     </tr>
 {% endfor %}
@@ -174,6 +180,7 @@
     <col/>
     <col/>
     <col/>
+    <col/>
   </colgroup>
   <tbody>
     <tr>
@@ -181,6 +188,7 @@
       <th scope="col">Deploy Path</th>
       <th scope="col">Supported OS</th>
       <th scope="col">Number of IOCs Supported</th>
+      <th scope="col">Number of IOCs Deployed on Rocky9</th>
       <th scope="col">Latest Deployed Version</th>
     </tr>
 {% for info in common_ioc_objs %}
@@ -190,7 +198,8 @@
       </td>
       <td>{{ info.deploy_path }}</td>
       <td>{{ info.supported_os }}</td>
-      <td>{{ info.total_deploy_count }}</td>
+      <td>{{ info.any_os_deployed_count }}</td>
+      <td>{{ info.rocky9_deployed_count }}</td>
       <td>{{ info.latest_version }}</td>
     </tr>
 {% endfor %}
