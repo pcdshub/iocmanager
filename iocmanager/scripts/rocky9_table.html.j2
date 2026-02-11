@@ -21,10 +21,22 @@
     <col/>
     <col/>
     <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
+    <col/>
   </colgroup>
   <tbody>
     <tr>
       <th scope="row">Hutch</th>
+      <th scope="col">total host count</th>
+      <th scope="col">rocky9 host count</th>
+      <th scope="col">rhel7 host count</th>
+      <th scope="col">rhel5 host count</th>
+      <th scope="col">Other OS host count</th>
+      <th scope="col">Error checking OS host count</th>
       <th scope="col">total ioc count</th>
       <th scope="col">rocky9 ioc count</th>
       <th scope="col">rhel7 ioc count</th>
@@ -39,12 +51,18 @@
 {% for info in summary_objs %}
     <tr>
       <th scope="row">{{ info.hutch }}</th>
-      <td>{{ info.total_count }}</td>
-      <td>{{ info.rocky9_count }}</td>
-      <td>{{ info.rhel7_count }}</td>
-      <td>{{ info.rhel5_count }}</td>
-      <td>{{ info.other_count }}</td>
-      <td>{{ info.error_count }}</td>
+      <td>{{ info.total_host_count }}</td>
+      <td>{{ info.rocky9_host_count }}</td>
+      <td>{{ info.rhel7_host_count }}</td>
+      <td>{{ info.rhel5_host_count }}</td>
+      <td>{{ info.other_host_count }}</td>
+      <td>{{ info.error_host_count }}</td>
+      <td>{{ info.total_host_count }}</td>
+      <td>{{ info.rocky9_host_count }}</td>
+      <td>{{ info.rhel7_host_count }}</td>
+      <td>{{ info.rhel5_host_count }}</td>
+      <td>{{ info.other_host_count }}</td>
+      <td>{{ info.error_host_count }}</td>
       <td>{{ info.common_deployed_in_prod_count }}</td>
       <td>{{ info.common_has_build_count }}</td>
       <td>{{ info.common_not_built_count }}</td>

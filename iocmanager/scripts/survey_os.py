@@ -576,29 +576,55 @@ class ConfluenceIOCInfo:
 @dataclasses.dataclass
 class ConfluenceHutchSummaryRow:
     hutch: str
-    total_count: int = 0
-    rocky9_count: int = 0
-    rhel7_count: int = 0
-    rhel5_count: int = 0
-    other_count: int = 0
-    error_count: int = 0
+    total_host_count: int = 0
+    rocky9_host_count: int = 0
+    rhel7_host_count: int = 0
+    rhel5_host_count: int = 0
+    other_host_count: int = 0
+    error_host_count: int = 0
+    total_ioc_count: int = 0
+    rocky9_ioc_count: int = 0
+    rhel7_ioc_count: int = 0
+    rhel5_ioc_count: int = 0
+    other_ioc_count: int = 0
+    error_ioc_count: int = 0
     common_deployed_in_prod_count: int = 0
     common_has_build_count: int = 0
     common_not_built_count: int = 0
     no_common_count: int = 0
 
+    def __post_init__(self):
+        self._hosts_added = set()
+
     def add_ioc(self, info: ConfluenceIOCInfo):
-        self.total_count += 1
-        if info.host_os == "rhel9":
-            self.rocky9_count += 1
-        elif info.host_os == "rhel7":
-            self.rhel7_count += 1
-        elif info.host_os == "rhel5":
-            self.rhel5_count += 1
-        elif info.host_os == UNKNOWN:
-            self.error_count += 1
+        if info.hostname in self._hosts_added:
+            new_host = False
         else:
-            self.other_count += 1
+            new_host = True
+            self._hosts_added.add(info.hostname)
+        self.total_ioc_count += 1
+        if new_host:
+            self.total_host_count += 1
+        if info.host_os == "rhel9":
+            self.rocky9_ioc_count += 1
+            if new_host:
+                self.rocky9_host_count += 1
+        elif info.host_os == "rhel7":
+            self.rhel7_ioc_count += 1
+            if new_host:
+                self.rhel7_host_count += 1
+        elif info.host_os == "rhel5":
+            self.rhel5_ioc_count += 1
+            if new_host:
+                self.rhel5_host_count += 1
+        elif info.host_os == UNKNOWN:
+            self.error_ioc_count += 1
+            if new_host:
+                self.error_host_count += 1
+        else:
+            self.other_ioc_count += 1
+            if new_host:
+                self.other_host_count += 1
         match info.common_status:
             case CommonStatus.DEPLOYED_IN_PROD:
                 self.common_deployed_in_prod_count += 1
