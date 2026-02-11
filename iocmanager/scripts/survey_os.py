@@ -816,7 +816,7 @@ class ConfluenceStatsPage:
                     try:
                         rocky9_deployed_common_to_hutch_iocs[ioc_info.common_name] += 1
                     except KeyError:
-                        rocky9_deployed_common_to_hutch_iocs[ioc_info.common_name] = 0
+                        rocky9_deployed_common_to_hutch_iocs[ioc_info.common_name] = 1
                     # For the common ioc table, get a smaller count
                     # Just the number of real deployments
                     common_ioc = self.common_ioc_summary_table[
