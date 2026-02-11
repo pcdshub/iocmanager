@@ -237,19 +237,23 @@
 {% endfor %}
   </tbody>
 </table>
-<h1>Big Paste</h1>
-<p>For people who like pure cli text</p>
-<ac:structured-macro ac:macro-id="17109988-8ac3-4e98-94e2-907374238786" ac:name="expand" ac:schema-version="1">
-  <ac:rich-text-body>
-    <ac:structured-macro ac:macro-id="df5f6888-2156-412c-b3a1-a12169b07d4e" ac:name="code" ac:schema-version="1">
-      <ac:parameter ac:name="language">text</ac:parameter>
-      <ac:plain-text-body><![CDATA[{{ plain_text_output }}]]></ac:plain-text-body>
-    </ac:structured-macro>
-    <p>
-      <br/>
-    </p>
-  </ac:rich-text-body>
-</ac:structured-macro>
-<p>
-  <br/>
-</p>
+<h1>Hutch Workstation Status</h1>
+<p>This table is the overview of hutch workstation migration.</p>
+<table class="wrapped">
+  <colgroup>
+    <col/>
+    <col/>
+  </colgroup>
+  <tbody>
+    <tr>
+      <th scope="col">Workstation Hostname</th>
+      <th scope="col">Current OS</th>
+    </tr>
+{% for info in workstation_objs %}
+    <tr>
+      <td>{{ info.hostname }}</td>
+      <td>{{ info.host_os }}</td>
+    </tr>
+{% endfor %}
+  </tbody>
+</table>

@@ -3,15 +3,15 @@ This script uses IOC manager to survey the state of operating system update effo
 """
 
 import argparse
-import contextlib
 import dataclasses
 import datetime
 import enum
 import functools
-import io
+import json
 import logging
 import os
 import re
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -895,6 +895,31 @@ def get_common_latest(common_ioc: str) -> str:
     return highest_ver_str
 
 
+@dataclasses.dataclass
+class WorkStationStatus:
+    hostname: str
+    host_os: str
+
+
+def get_workstation_objs(hutches: list[str]) -> list[WorkStationStatus]:
+    objs: list[WorkStationStatus] = []
+    suffix = ["-daq*", "-control*", "-monitor*", "-console*", "-hutch*"]
+    for hutch in hutches:
+        for suff in suffix:
+            host_info_json = subprocess.check_output(
+                ["sdfconfig", "search", "--json", f"{hutch}{suff}"],
+                universal_newlines=True,
+            )
+            host_info_list = json.loads(host_info_json)
+            for info in host_info_list:
+                status = WorkStationStatus(
+                    hostname=info["Hostname"], host_os=info["OS"]
+                )
+                objs.append(status)
+    objs.sort(key=lambda obj: obj.hostname)
+    return objs
+
+
 def build_rocky9_table(hutches: list[str]) -> str:
     confluence_hutches = [hutch for hutch in hutches if hutch != "all"]
     stats_page = ConfluenceStatsPage.from_hutch_list(hutch_list=confluence_hutches)
@@ -920,24 +945,14 @@ def build_rocky9_table(hutches: list[str]) -> str:
     common_ioc_objs = list(stats_page.common_ioc_summary_table.values())
     common_ioc_objs.sort(key=lambda obj: obj.name)
     common_ioc_objs.sort(key=lambda obj: obj.any_os_deployed_count, reverse=True)
-    # Run the old survey too for plain text output
-    if "all" in hutches:
-        survey_hutches = ["all"]
-    else:
-        survey_hutches = hutches
-    results = SurveyResult.from_hutch_list(hutch_list=survey_hutches)
-    with contextlib.redirect_stdout(io.StringIO()) as fd:
-        for hutch_res in results.hutch_results:
-            stats = SurveyStats.from_results(hutch_res.ioc_results)
-            stats.print_data()
-    plain_text_output = fd.getvalue()
+    workstation_objs = get_workstation_objs(hutches=confluence_hutches)
     return template.render(
         summary_objs=summary_objs,
         hutch_dicts=hutch_dicts,
         host_objs=host_objs,
         host_dicts=host_dicts,
         common_ioc_objs=common_ioc_objs,
-        plain_text_output=plain_text_output,
+        workstation_objs=workstation_objs,
     )
 
 
