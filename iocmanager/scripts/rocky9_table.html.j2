@@ -1,11 +1,31 @@
 <p>This page contains live information about the current status of rocky9 releases and deployments at LCLS.</p>
-<p>The source of this page's information is the iocmanager config files and the layout of the deployed ioc files on the filesystem.</p>
+<p>The source of this page's information is the iocmanager config files, the deployed ioc files on the filesystem, and the information in sdfconfig.</p>
 <p>This page will be updated daily. If there is no update, there was no change from the previous day.</p>
 <p>
   <ac:structured-macro ac:macro-id="4ce6b49a-8124-4b82-97ed-7041971533ad" ac:name="toc" ac:schema-version="1">
     <ac:parameter ac:name="maxLevel">1</ac:parameter>
   </ac:structured-macro>
 </p>
+<h1>Overall Progress</h1>
+{% for bar in progress_bars %}
+<h2>{{ bar.header }}: {{ bar.pct }}%</h2>
+<table class="fixed-width wrapped" style="width: 80%;">
+  <colgroup class="">
+    <col class="" style="width: {{ bar.pct }}%;"/>
+    <col class="" style="width: {{ 100 - bar.pct }}%;"/>
+  </colgroup>
+  <tbody class="">
+    <tr class="">
+      <td class="highlight-{{ bar.color }}" data-highlight-colour="{{ bar.color }}">
+        <br/>
+      </td>
+      <td>
+        <br/>
+      </td>
+    </tr>
+  </tbody>
+</table>
+{% endfor %}
 <h1>Hutch Status</h1>
 <p>This table is a general dashboard overview of our progress in each area and overall.</p>
 <table class="wrapped">

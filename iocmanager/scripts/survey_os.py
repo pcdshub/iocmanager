@@ -920,6 +920,31 @@ def get_workstation_objs(hutches: list[str]) -> list[WorkStationStatus]:
     return objs
 
 
+@dataclasses.dataclass
+class Progress:
+    header: str
+    pct: int
+    color: str
+
+
+def frac_to_color(frac: float) -> str:
+    """
+    Convert a fraction from 0.0 to 1.0 to a suitable progress hex color.
+
+    0.0 to 0.33 will be red
+    0.33 to 0.66 will be yellow
+    0.66 to 1.0 will be green
+
+    Strangely: only a small subset of these are supported for table backgrounds
+    in confluence, so these numbers are picked very specifically
+    """
+    if frac < 0.33:
+        return "#ff8f73"
+    if frac < 0.66:
+        return "#ffc400"
+    return "#79f2c0"
+
+
 def build_rocky9_table(hutches: list[str]) -> str:
     confluence_hutches = [hutch for hutch in hutches if hutch != "all"]
     stats_page = ConfluenceStatsPage.from_hutch_list(hutch_list=confluence_hutches)
@@ -946,6 +971,42 @@ def build_rocky9_table(hutches: list[str]) -> str:
     common_ioc_objs.sort(key=lambda obj: obj.name)
     common_ioc_objs.sort(key=lambda obj: obj.any_os_deployed_count, reverse=True)
     workstation_objs = get_workstation_objs(hutches=confluence_hutches)
+    progress_bars = []
+    host_frac = stats_page.hutch_summary_table["all"].rocky9_host_count / (
+        stats_page.hutch_summary_table["all"].rocky9_host_count
+        + stats_page.hutch_summary_table["all"].rhel7_host_count
+        + stats_page.hutch_summary_table["all"].rhel5_host_count
+    )
+    ioc_frac = stats_page.hutch_summary_table["all"].rocky9_ioc_count / (
+        stats_page.hutch_summary_table["all"].rocky9_ioc_count
+        + stats_page.hutch_summary_table["all"].rhel7_ioc_count
+        + stats_page.hutch_summary_table["all"].rhel5_ioc_count
+    )
+    workstation_at_rocky9 = len(
+        [st for st in workstation_objs if "rocky" in st.host_os.lower()]
+    )
+    workstation_frac = workstation_at_rocky9 / len(workstation_objs)
+    progress_bars.append(
+        Progress(
+            header="Host upgrade progress",
+            pct=int(100 * host_frac),
+            color=frac_to_color(host_frac),
+        )
+    )
+    progress_bars.append(
+        Progress(
+            header="IOC upgrade progress",
+            pct=int(100 * ioc_frac),
+            color=frac_to_color(ioc_frac),
+        )
+    )
+    progress_bars.append(
+        Progress(
+            header="Hutch workstation upgrade progress",
+            pct=int(100 * workstation_frac),
+            color=frac_to_color(workstation_frac),
+        )
+    )
     return template.render(
         summary_objs=summary_objs,
         hutch_dicts=hutch_dicts,
@@ -953,6 +1014,7 @@ def build_rocky9_table(hutches: list[str]) -> str:
         host_dicts=host_dicts,
         common_ioc_objs=common_ioc_objs,
         workstation_objs=workstation_objs,
+        progress_bars=progress_bars,
     )
 
 
