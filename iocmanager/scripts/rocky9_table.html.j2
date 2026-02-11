@@ -67,6 +67,7 @@
     <col/>
     <col/>
     <col/>
+    <col/>
   </colgroup>
   <tbody>
     <tr>
@@ -76,6 +77,7 @@
       <th scope="col">Host</th>
       <th scope="col">Common IOC Status</th>
       <th scope="col">Common IOC Deployed in Prod Rocky9 Count</th>
+      <th scope="col">Hutches that Deployed this Common IOC on Rocky9</th>
       <th scope="col">Common IOC Name</th>
       <th scope="col">Using Common Release</th>
       <th scope="col">Latest Common Release</th>
@@ -88,6 +90,7 @@
       <td>{{ ioc.hostname }}</td>
       <td>{{ ioc.common_status }}</td>
       <td>{{ ioc.common_deployed_in_prod_count }}</td>
+      <td>{{ ", ".join(ioc.common_deployed_in_hutch_names) }}</td>
       <td>{{ ioc.common_name }}</td>
       <td>{{ ioc.using_release }}</td>
       <td>{{ ioc.latest_release }}</td>
@@ -157,6 +160,7 @@
       <th>Hutch</th>
       <th>Common IOC Status</th>
       <th>Common IOC Deployed in Prod Rocky9 Count</th>
+      <th>Hutches that Deployed this Common IOC on Rocky9</th>
       <th>Common IOC Name</th>
       <th>Using Common Release</th>
       <th>Latest Common Release</th>
@@ -169,6 +173,7 @@
       <td>{{ ioc.hutch }}</td>
       <td>{{ ioc.common_status }}</td>
       <td>{{ ioc.common_deployed_in_prod_count }}</td>
+      <td>{{ ", ".join(ioc.common_deployed_in_hutch_names) }}</td>
       <td>{{ ioc.common_name }}</td>
       <td>{{ ioc.using_release }}</td>
       <td>{{ ioc.latest_release }}</td>
@@ -187,6 +192,7 @@
     <col/>
     <col/>
     <col/>
+    <col/>
   </colgroup>
   <tbody>
     <tr>
@@ -195,6 +201,7 @@
       <th scope="col">Supported OS</th>
       <th scope="col">Number of IOCs Supported</th>
       <th scope="col">Number of IOCs Deployed on Rocky9</th>
+      <th scope="col">Hutches that Deployed this Common IOC on Rocky9</th>
       <th scope="col">Latest Deployed Version</th>
     </tr>
 {% for info in common_ioc_objs %}
@@ -206,6 +213,7 @@
       <td>{{ info.supported_os }}</td>
       <td>{{ info.any_os_deployed_count }}</td>
       <td>{{ info.rocky9_deployed_count }}</td>
+      <td>{{ ", ".join(info.rocky9_hutch_names) }}</td>
       <td>{{ info.latest_version }}</td>
     </tr>
 {% endfor %}

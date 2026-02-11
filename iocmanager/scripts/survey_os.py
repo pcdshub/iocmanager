@@ -566,6 +566,7 @@ class ConfluenceIOCInfo:
     hutch: str
     common_status: CommonStatus
     common_deployed_in_prod_count: int
+    common_deployed_in_hutch_names: list[str]
     common_name: str
     common_full_path: str
     using_release: str
@@ -644,6 +645,7 @@ class ConfluenceCommonIOCRow:
     latest_version: str
     any_os_deployed_count: int = 0
     rocky9_deployed_count: int = 0
+    rocky9_hutch_names: list[str] = dataclasses.field(default_factory=list)
 
     @classmethod
     def from_pathname[T: ConfluenceCommonIOCRow](cls: type[T], pathname: str) -> T:
@@ -730,6 +732,7 @@ class ConfluenceStatsPage:
             hutch=hutch,
             common_status=common_status,
             common_deployed_in_prod_count=0,
+            common_deployed_in_hutch_names=[],
             common_name=common_name,
             common_full_path=ioc_result.common_ioc,
             using_release=using_release,
@@ -776,6 +779,7 @@ class ConfluenceStatsPage:
         # Iterate through the iocs- these are stored two ways, arbitrarily pick
         # The first time, collect names of common iocs
         # and how many hutch IOCs use them at rocky9
+        # and which hutches use them at rocky9
         rocky9_deployed_common_to_hutch_iocs: dict[str, int] = {}
         for hutch_dict in self.hutch_tables.values():
             for ioc_info in hutch_dict.values():
@@ -789,9 +793,14 @@ class ConfluenceStatsPage:
                         rocky9_deployed_common_to_hutch_iocs[ioc_info.common_name] = 0
                     # For the common ioc table, get a smaller count
                     # Just the number of real deployments
-                    self.common_ioc_summary_table[
+                    common_ioc = self.common_ioc_summary_table[
                         ioc_info.common_full_path
-                    ].rocky9_deployed_count += 1
+                    ]
+                    common_ioc.rocky9_deployed_count += 1
+                    if ioc_info.hutch not in common_ioc.rocky9_hutch_names:
+                        common_ioc.rocky9_hutch_names.append(ioc_info.hutch)
+                        common_ioc.rocky9_hutch_names.sort()
+
         # The second time, we're looking to update status and counts
         # If ANY ioc of this type is on rocky9, it's deployed in prod!
         for hutch_dict in self.hutch_tables.values():
@@ -803,6 +812,9 @@ class ConfluenceStatsPage:
                 except KeyError:
                     continue
                 ioc_info.common_status = CommonStatus.DEPLOYED_IN_PROD
+                ioc_info.common_deployed_in_hutch_names = self.common_ioc_summary_table[
+                    ioc_info.common_full_path
+                ].rocky9_hutch_names
                 self.hutch_summary_table[
                     ioc_info.hutch
                 ].common_deployed_in_prod_count += 1
