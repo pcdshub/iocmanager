@@ -923,8 +923,20 @@ def get_workstation_objs(hutches: list[str]) -> list[WorkStationStatus]:
 @dataclasses.dataclass
 class Progress:
     header: str
-    pct: int
-    color: str
+    numerator: int
+    denominator: int
+
+    def get_pct(self) -> int:
+        return int(100 * self.numerator / self.denominator)
+
+    def get_color(self) -> str:
+        return frac_to_color(self.numerator / self.denominator)
+
+
+@dataclasses.dataclass
+class ProgressGroup:
+    header: str
+    progress_data: list[Progress]
 
 
 def frac_to_color(frac: float) -> str:
@@ -949,7 +961,7 @@ def build_rocky9_table(hutches: list[str]) -> str:
     confluence_hutches = [hutch for hutch in hutches if hutch != "all"]
     stats_page = ConfluenceStatsPage.from_hutch_list(hutch_list=confluence_hutches)
     with open(Path(__file__).parent / "rocky9_table.html.j2", "r") as fd:
-        template = jinja2.Template(fd.read())
+        template = jinja2.Template(fd.read(), trim_blocks=True)
     # Put things into the table orders
     hutch_order = sorted(confluence_hutches)
     summary_objs = [stats_page.hutch_summary_table["all"]]
@@ -971,42 +983,67 @@ def build_rocky9_table(hutches: list[str]) -> str:
     common_ioc_objs.sort(key=lambda obj: obj.name)
     common_ioc_objs.sort(key=lambda obj: obj.any_os_deployed_count, reverse=True)
     workstation_objs = get_workstation_objs(hutches=confluence_hutches)
-    progress_bars = []
-    host_frac = stats_page.hutch_summary_table["all"].rocky9_host_count / (
-        stats_page.hutch_summary_table["all"].rocky9_host_count
-        + stats_page.hutch_summary_table["all"].rhel7_host_count
-        + stats_page.hutch_summary_table["all"].rhel5_host_count
+    progress_groups = []
+    progress_hutches = ["all"] + sorted(
+        hutch for hutch in ALL_HUTCHES if hutch != "all"
     )
-    ioc_frac = stats_page.hutch_summary_table["all"].rocky9_ioc_count / (
-        stats_page.hutch_summary_table["all"].rocky9_ioc_count
-        + stats_page.hutch_summary_table["all"].rhel7_ioc_count
-        + stats_page.hutch_summary_table["all"].rhel5_ioc_count
-    )
-    workstation_at_rocky9 = len(
-        [st for st in workstation_objs if "rocky" in st.host_os.lower()]
-    )
-    workstation_frac = workstation_at_rocky9 / len(workstation_objs)
-    progress_bars.append(
-        Progress(
-            header="Host upgrade progress",
-            pct=int(100 * host_frac),
-            color=frac_to_color(host_frac),
+    for hutch in progress_hutches:
+        if hutch == "all":
+            header = "Overall Progress"
+            hutch_casing = "All"
+        else:
+            hutch_casing = hutch.upper()
+            header = f"{hutch_casing} Progress"
+        progress_bars = []
+        host_numerator = stats_page.hutch_summary_table[hutch].rocky9_host_count
+        host_denominator = (
+            stats_page.hutch_summary_table[hutch].rocky9_host_count
+            + stats_page.hutch_summary_table[hutch].rhel7_host_count
+            + stats_page.hutch_summary_table[hutch].rhel5_host_count
         )
-    )
-    progress_bars.append(
-        Progress(
-            header="IOC upgrade progress",
-            pct=int(100 * ioc_frac),
-            color=frac_to_color(ioc_frac),
+        ioc_numerator = stats_page.hutch_summary_table[hutch].rocky9_ioc_count
+        ioc_denominator = (
+            stats_page.hutch_summary_table[hutch].rocky9_ioc_count
+            + stats_page.hutch_summary_table[hutch].rhel7_ioc_count
+            + stats_page.hutch_summary_table[hutch].rhel5_ioc_count
         )
-    )
-    progress_bars.append(
-        Progress(
-            header="Hutch workstation upgrade progress",
-            pct=int(100 * workstation_frac),
-            color=frac_to_color(workstation_frac),
+        if hutch == "all":
+            hutch_workstation = workstation_objs
+        else:
+            hutch_workstation = [
+                st for st in workstation_objs if st.hostname.startswith(hutch + "-")
+            ]
+        workstation_numerator = len(
+            [st for st in hutch_workstation if "rocky" in st.host_os.lower()]
         )
-    )
+        workstation_denominator = len(hutch_workstation)
+        if host_denominator > 0:
+            progress_bars.append(
+                Progress(
+                    header=f"{hutch_casing} host upgrade progress",
+                    numerator=host_numerator,
+                    denominator=host_denominator,
+                )
+            )
+        if ioc_denominator > 0:
+            progress_bars.append(
+                Progress(
+                    header=f"{hutch_casing} IOC upgrade progress",
+                    numerator=ioc_numerator,
+                    denominator=ioc_denominator,
+                )
+            )
+        if workstation_denominator > 0:
+            progress_bars.append(
+                Progress(
+                    header=f"{hutch_casing} workstation upgrade progress",
+                    numerator=workstation_numerator,
+                    denominator=workstation_denominator,
+                )
+            )
+        if progress_bars:
+            group = ProgressGroup(header=header, progress_data=progress_bars)
+            progress_groups.append(group)
     return template.render(
         summary_objs=summary_objs,
         hutch_dicts=hutch_dicts,
@@ -1014,7 +1051,7 @@ def build_rocky9_table(hutches: list[str]) -> str:
         host_dicts=host_dicts,
         common_ioc_objs=common_ioc_objs,
         workstation_objs=workstation_objs,
-        progress_bars=progress_bars,
+        progress_groups=progress_groups,
     )
 
 
