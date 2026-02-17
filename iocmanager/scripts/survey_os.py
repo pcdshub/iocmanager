@@ -927,9 +927,13 @@ class Progress:
     denominator: int
 
     def get_pct(self) -> int:
+        if self.denominator == 0:
+            return 0
         return int(100 * self.numerator / self.denominator)
 
     def get_color(self) -> str:
+        if self.denominator == 0:
+            return frac_to_color(0)
         return frac_to_color(self.numerator / self.denominator)
 
 
