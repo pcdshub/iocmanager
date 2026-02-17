@@ -1021,33 +1021,29 @@ def build_rocky9_table(hutches: list[str]) -> str:
             [st for st in hutch_workstation if "rocky" in st.host_os.lower()]
         )
         workstation_denominator = len(hutch_workstation)
-        if host_denominator > 0:
-            progress_bars.append(
-                Progress(
-                    header=f"{hutch_casing} host upgrade progress",
-                    numerator=host_numerator,
-                    denominator=host_denominator,
-                )
+        progress_bars.append(
+            Progress(
+                header=f"{hutch_casing} host upgrade progress",
+                numerator=host_numerator,
+                denominator=host_denominator,
             )
-        if ioc_denominator > 0:
-            progress_bars.append(
-                Progress(
-                    header=f"{hutch_casing} IOC upgrade progress",
-                    numerator=ioc_numerator,
-                    denominator=ioc_denominator,
-                )
+        )
+        progress_bars.append(
+            Progress(
+                header=f"{hutch_casing} IOC upgrade progress",
+                numerator=ioc_numerator,
+                denominator=ioc_denominator,
             )
-        if workstation_denominator > 0:
-            progress_bars.append(
-                Progress(
-                    header=f"{hutch_casing} workstation upgrade progress",
-                    numerator=workstation_numerator,
-                    denominator=workstation_denominator,
-                )
+        )
+        progress_bars.append(
+            Progress(
+                header=f"{hutch_casing} workstation upgrade progress",
+                numerator=workstation_numerator,
+                denominator=workstation_denominator,
             )
-        if progress_bars:
-            group = ProgressGroup(header=header, progress_data=progress_bars)
-            progress_groups.append(group)
+        )
+        group = ProgressGroup(header=header, progress_data=progress_bars)
+        progress_groups.append(group)
     return template.render(
         summary_objs=summary_objs,
         hutch_dicts=hutch_dicts,
