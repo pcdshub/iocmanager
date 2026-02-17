@@ -988,9 +988,7 @@ def build_rocky9_table(hutches: list[str]) -> str:
     common_ioc_objs.sort(key=lambda obj: obj.any_os_deployed_count, reverse=True)
     workstation_objs = get_workstation_objs(hutches=confluence_hutches)
     progress_groups = []
-    progress_hutches = ["all"] + sorted(
-        hutch for hutch in ALL_HUTCHES if hutch != "all"
-    )
+    progress_hutches = ["all"] + sorted(hutch for hutch in hutches if hutch != "all")
     for hutch in progress_hutches:
         if hutch == "all":
             header = "Overall Progress"
