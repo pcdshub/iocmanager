@@ -6,25 +6,34 @@
     <ac:parameter ac:name="maxLevel">1</ac:parameter>
   </ac:structured-macro>
 </p>
-<h1>Overall Progress</h1>
-{% for bar in progress_bars %}
-<h2>{{ bar.header }}: {{ bar.pct }}%</h2>
+<h1>Progress Tracking</h1>
+{% for pgroup in progress_groups %}
+<h2>{{ pgroup.header }}</h2>
+{% for bar in pgroup.progress_data %}
+<h3>{{ bar.header }}: {{ bar.get_pct() }}% ({{ bar.numerator }}/{{ bar.denominator }})</h3>
 <table class="fixed-width wrapped" style="width: 80%;">
+{% if bar.get_pct() > 0 %}
   <colgroup class="">
-    <col class="" style="width: {{ bar.pct }}%;"/>
-    <col class="" style="width: {{ 100 - bar.pct }}%;"/>
+    <col class="" style="width: {{ bar.get_pct() }}%;"/>
+    <col class="" style="width: {{ 100 - bar.get_pct() }}%;"/>
   </colgroup>
+{% endif %}
   <tbody class="">
     <tr class="">
-      <td class="highlight-{{ bar.color }}" data-highlight-colour="{{ bar.color }}">
+{% if bar.get_pct() > 0 %}
+      <td class="highlight-{{ bar.get_color() }}" data-highlight-colour="{{ bar.get_color() }}">
         <br/>
       </td>
+{% endif %}
+{% if bar.get_pct() < 100 %}
       <td>
         <br/>
       </td>
+{% endif %}
     </tr>
   </tbody>
 </table>
+{% endfor %}
 {% endfor %}
 <h1>Hutch Status</h1>
 <p>This table is a general dashboard overview of our progress in each area and overall.</p>
