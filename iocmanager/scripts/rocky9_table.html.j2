@@ -7,7 +7,7 @@
   </ac:structured-macro>
 </p>
 <h1>Progress Tracking</h1>
-{% for pgroup in progress_groups %}
+{% for pgroup in progress_bar_groups %}
 <h2>{{ pgroup.header }}</h2>
 {% for bar in pgroup.progress_data %}
 <h3>{{ bar.header }}: {{ bar.get_pct() }}% ({{ bar.numerator }}/{{ bar.denominator }})</h3>
@@ -35,6 +35,33 @@
 </table>
 {% endfor %}
 {% endfor %}
+<h2>Progress Summary Table</h2>
+<table class="wrapped">
+  <colgroup>
+    <col/>
+{% for pgroup in progress_table_groups %}
+    <col/>
+{% endfor %}
+  </colgroup>
+  <tbody>
+    <tr>
+      <th scope="row"></th>
+{% for pgroup in progress_table_groups %}
+      <th scope="col">{{ pgroup.hutch }}</th>
+{% endfor %}
+    </tr>
+{% for header_text in progress_table_row_headers %}
+    <tr>
+      <th scope="row">{{ header_text }}</th>
+{% set outer_loop = loop %}
+{% for pgroup in progress_table_groups %}
+{% set bar = pgroup.progress_data[outer_loop.index0] %}
+      <td>{{ bar.get_pct() }}% ({{ bar.numerator }}/{{ bar.denominator }})</td>
+{% endfor %}
+    </tr>
+{% endfor %}
+  </tbody>
+</table>
 <h1>Hutch Status</h1>
 <p>This table is a general dashboard overview of our progress in each area and overall.</p>
 <table class="wrapped">

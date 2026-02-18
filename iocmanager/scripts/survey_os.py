@@ -939,6 +939,7 @@ class Progress:
 
 @dataclasses.dataclass
 class ProgressGroup:
+    hutch: str
     header: str
     progress_data: list[Progress]
 
@@ -987,9 +988,11 @@ def build_rocky9_table(hutches: list[str]) -> str:
     common_ioc_objs.sort(key=lambda obj: obj.name)
     common_ioc_objs.sort(key=lambda obj: obj.any_os_deployed_count, reverse=True)
     workstation_objs = get_workstation_objs(hutches=confluence_hutches)
-    progress_groups = []
-    progress_hutches = ["all"] + sorted(hutch for hutch in hutches if hutch != "all")
-    for hutch in progress_hutches:
+    progress_bar_groups = []
+    progress_bar_hutches = ["all"]
+    progress_table_groups = []
+    progress_table_hutches = sorted(hutch for hutch in hutches if hutch != "all")
+    for hutch in progress_bar_hutches + progress_table_hutches:
         if hutch == "all":
             header = "Overall Progress"
             hutch_casing = "All"
@@ -1040,8 +1043,18 @@ def build_rocky9_table(hutches: list[str]) -> str:
                 denominator=workstation_denominator,
             )
         )
-        group = ProgressGroup(header=header, progress_data=progress_bars)
-        progress_groups.append(group)
+        group = ProgressGroup(
+            hutch=hutch_casing, header=header, progress_data=progress_bars
+        )
+        if hutch in progress_bar_hutches:
+            progress_bar_groups.append(group)
+        if hutch in progress_table_hutches:
+            progress_table_groups.append(group)
+    progress_table_row_headers = [
+        "Host upgrade progress",
+        "IOC upgrade progress",
+        "Workstation upgrade progress",
+    ]
     return template.render(
         summary_objs=summary_objs,
         hutch_dicts=hutch_dicts,
@@ -1049,7 +1062,9 @@ def build_rocky9_table(hutches: list[str]) -> str:
         host_dicts=host_dicts,
         common_ioc_objs=common_ioc_objs,
         workstation_objs=workstation_objs,
-        progress_groups=progress_groups,
+        progress_bar_groups=progress_bar_groups,
+        progress_table_groups=progress_table_groups,
+        progress_table_row_headers=progress_table_row_headers,
     )
 
 
