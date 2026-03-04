@@ -366,7 +366,7 @@ class IOCMainWindow(QMainWindow):
 
     def _ensure_auth_special(self) -> None:
         """
-        Ensures that the current user is permitted to save and apply changes 
+        Ensure that the current user is permitted to save and apply changes 
         in iocmanager.
 
         Two types of users are allowed:
@@ -398,8 +398,9 @@ class IOCMainWindow(QMainWindow):
 
     def _special_edits_ok(self) -> bool:
         """
-        Allows users with limited authorization to toggle IOCs between enabled 
-        and disabled.
+        Allow users with limited authorization to toggle IOCs between enabled 
+        and disabled. Prevent limited authorization users from making any 
+        other changes.
 
         Returns
         -------
@@ -408,16 +409,22 @@ class IOCMainWindow(QMainWindow):
             listed in iocmanager.special.
         """
         if self.model.add_iocs or self.model.delete_iocs:
+            # check if any IOCs have been added or deleted
             return False
         if not self.model.edit_iocs:
+            # check there are no pending changes
             return False
 
         for ioc_name, new_proc in self.model.edit_iocs.items():
+            # check the IOC name string and configuration object
             try:
+                # look at the original saved config entry for this IOC
                 old_proc = self.model.config.procs[ioc_name]
             except KeyError:
                 return False
 
+            # If any of these fields change, it's not just a simple
+            # enable/disable toggle. Do not allow.
             if new_proc.host != old_proc.host:
                 return False
             if new_proc.port != old_proc.port:
@@ -436,8 +443,12 @@ class IOCMainWindow(QMainWindow):
                 return False
 
             if new_proc.disable == old_proc.disable:
+                # Check if the disable flag changed (disable=True corresponds
+                # to 'Off', disable=False corresponds to 'Dev/Prod'). If the
+                # disable flag hasn't changed, do nothing.
                 return False
             if not check_special(req_ioc=ioc_name, req_hutch=self.hutch):
+                # returns True only if the IOC is listed in iocmanager.special.
                 return False
 
         return True
