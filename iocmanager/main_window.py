@@ -104,13 +104,15 @@ class IOCMainWindow(QMainWindow):
         )
         self.find_pv_dialog.request_scroll.connect(self.scroll_to_ioc)
         # Configuration menu
-        self.ui.actionApply.triggered.connect(self.action_write_and_apply_config)
+        self.ui.actionApply.triggered.connect(
+            self.action_write_and_apply_config)
         self.ui.actionSave.triggered.connect(self.action_write_config)
         self.ui.actionRevert.triggered.connect(self.action_revert_all)
         # IOC Control menu
         self.ui.actionReboot.triggered.connect(self.action_soft_reboot)
         self.ui.actionHard_Reboot.triggered.connect(self.action_hard_reboot)
-        self.ui.actionReboot_Server.triggered.connect(self.action_server_reboot)
+        self.ui.actionReboot_Server.triggered.connect(
+            self.action_server_reboot)
         self.ui.actionLog.triggered.connect(self.action_view_log)
         self.ui.actionConsole.triggered.connect(self.action_show_console)
         # Utilities menu
@@ -132,7 +134,8 @@ class IOCMainWindow(QMainWindow):
         self.ui.tableView.selectionModel().selectionChanged.connect(
             self.on_table_select
         )
-        self.ui.tableView.customContextMenuRequested.connect(self.show_context_menu)
+        self.ui.tableView.customContextMenuRequested.connect(
+            self.show_context_menu)
 
         # Ready to go! Start checking ioc status!
         self.model.start_poll_thread()
@@ -140,7 +143,8 @@ class IOCMainWindow(QMainWindow):
         # Performance quibbles
         # Doing this in a thread saves a startup second
         self.pydm_ready = threading.Event()
-        self.pydm_prep_thread = threading.Thread(target=self.prepare_pydm, daemon=True)
+        self.pydm_prep_thread = threading.Thread(
+            target=self.prepare_pydm, daemon=True)
         self.pydm_prep_thread.start()
         # Pre-loading the sdfconfig info makes the table snappier
         self.sdfconfig_cache = {}
@@ -322,7 +326,8 @@ class IOCMainWindow(QMainWindow):
                         case CommitOption.CANCEL:
                             return False
                         case other:
-                            raise RuntimeError(f"Invalid commit option {other}")
+                            raise RuntimeError(
+                                f"Invalid commit option {other}")
                     if not comment:
                         QMessageBox.warning(
                             self,
@@ -360,6 +365,26 @@ class IOCMainWindow(QMainWindow):
         return True
 
     def _ensure_auth_special(self) -> None:
+        """
+        Ensures that the current user is permitted to save and apply changes 
+        in iocmanager.
+
+        Two types of users are allowed:
+
+        1) Fully authorized: the user is listed in the hutch's iocmanager.auth 
+        file. All GUI changes are allowed (subject to normal GUI rules).
+
+        2) Limited authorization: the user is not listed in iocmanager.auth.
+        User can only enable and disable IOCs listed in the iocmanager.special 
+        file.
+
+        Raises
+        ------
+        RuntimeError
+            The limited user attempted to make changes beyond just enabling 
+            and disabling IOCs listed in iocmanager.special.
+        """
+
         if check_auth(user=self.user, hutch=self.hutch):
             return
         if self._special_edits_ok():
@@ -372,6 +397,16 @@ class IOCMainWindow(QMainWindow):
         raise RuntimeError(msg)
 
     def _special_edits_ok(self) -> bool:
+        """
+        Allows users with limited authorization to toggle IOCs between enabled 
+        and disabled.
+
+        Returns
+        -------
+        bool
+            True only if all pending changes are to enable/disable IOCs 
+            listed in iocmanager.special.
+        """
         if self.model.add_iocs or self.model.delete_iocs:
             return False
         if not self.model.edit_iocs:
@@ -713,7 +748,8 @@ class IOCMainWindow(QMainWindow):
         if source_index.row() != -1:
             ioc_proc = self.model.get_ioc_proc(ioc=source_index)
             del_ioc = menu.addAction("Delete IOC")
-            del_ioc.triggered.connect(partial(self.model.delete_ioc, ioc=ioc_proc))
+            del_ioc.triggered.connect(
+                partial(self.model.delete_ioc, ioc=ioc_proc))
             if not ioc_proc.hard:
                 desync_info = self.model.get_desync_info(ioc=ioc_proc)
                 if ioc_proc.name in self.model.live_only_iocs:
@@ -737,7 +773,8 @@ class IOCMainWindow(QMainWindow):
                 )
             if self.model.pending_edits(ioc=ioc_proc):
                 rev_ioc = menu.addAction("Revert IOC")
-                rev_ioc.triggered.connect(partial(self.action_revert_one, ioc=ioc_proc))
+                rev_ioc.triggered.connect(
+                    partial(self.action_revert_one, ioc=ioc_proc))
             edit_detail = menu.addAction("Edit Details")
             edit_detail.triggered.connect(
                 partial(self.model.edit_details_dialog, ioc=ioc_proc)
