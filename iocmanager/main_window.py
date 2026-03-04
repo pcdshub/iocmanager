@@ -33,7 +33,7 @@ from qtpy.QtWidgets import (
 )
 
 from .commit import check_commit_possible, commit_config
-from .config import check_auth, check_ssh, read_config, write_config
+from .config import check_auth, check_special, check_ssh, read_config, write_config
 from .dialog_apply_verify import verify_dialog
 from .dialog_commit import CommitDialog, CommitOption
 from .dialog_find_pv import FindPVDialog
@@ -278,7 +278,7 @@ class IOCMainWindow(QMainWindow):
         Returns True if successful.
         Returns False if cancelled by the user.
         """
-        ensure_auth(hutch=self.hutch, ioc_name="", special_ok=False)
+        self._ensure_auth_special()
         comment = ""
         match self.commit_host_status:
             case CommitHostStatus.UNKNOWN | CommitHostStatus.ERROR:
@@ -357,6 +357,54 @@ class IOCMainWindow(QMainWindow):
                     != QMessageBox.Yes
                 ):
                     return False
+        return True
+
+    def _ensure_auth_special(self) -> None:
+        if check_auth(user=self.user, hutch=self.hutch):
+            return
+        if self._special_edits_ok():
+            return
+        msg = (
+            f"Action not permitted for {self.user} in {self.hutch}. "
+            "Request access from the hutch controls system owner, "
+            "or request that the IOC(s) be added to iocmanager.special."
+        )
+        raise RuntimeError(msg)
+
+    def _special_edits_ok(self) -> bool:
+        if self.model.add_iocs or self.model.delete_iocs:
+            return False
+        if not self.model.edit_iocs:
+            return False
+
+        for ioc_name, new_proc in self.model.edit_iocs.items():
+            try:
+                old_proc = self.model.config.procs[ioc_name]
+            except KeyError:
+                return False
+
+            if new_proc.host != old_proc.host:
+                return False
+            if new_proc.port != old_proc.port:
+                return False
+            if new_proc.alias != old_proc.alias:
+                return False
+            if new_proc.cmd != old_proc.cmd:
+                return False
+            if new_proc.delay != old_proc.delay:
+                return False
+            if new_proc.hard != old_proc.hard:
+                return False
+            if new_proc.history != old_proc.history:
+                return False
+            if new_proc.path != old_proc.path:
+                return False
+
+            if new_proc.disable == old_proc.disable:
+                return False
+            if not check_special(req_ioc=ioc_name, req_hutch=self.hutch):
+                return False
+
         return True
 
     def action_revert_all(self):
