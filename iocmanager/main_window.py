@@ -33,10 +33,11 @@ from qtpy.QtWidgets import (
 )
 
 from .commit import check_commit_possible, commit_config
-from .config import check_auth, check_special, check_ssh, read_config, write_config
+from .config import check_auth, check_ssh, read_config, write_config
 from .dialog_apply_verify import verify_dialog
 from .dialog_commit import CommitDialog, CommitOption
 from .dialog_find_pv import FindPVDialog
+from .edit_policy import special_edits_ok
 from .env_paths import env_paths
 from .hioc_tools import reboot_hioc
 from .imgr import ensure_auth, reboot_cmd
@@ -382,16 +383,12 @@ class IOCMainWindow(QMainWindow):
 
         if check_auth(user=self.user, hutch=self.hutch):
             return
-        if self._special_edits_ok():
+        allowed, msg = self._allow_special_edits()
+        if allowed:
             return
-        msg = (
-            f"Action not permitted for {self.user} in {self.hutch}. "
-            "Request access from the hutch controls system owner, "
-            "or request that the IOC(s) be added to iocmanager.special."
-        )
         raise RuntimeError(msg)
 
-    def _special_edits_ok(self) -> bool:
+    def _allow_special_edits(self) -> tuple[bool, str]:
         """
         Allow users with limited authorization to toggle IOCs between enabled
         and disabled. Prevent limited authorization users from making any
@@ -399,54 +396,17 @@ class IOCMainWindow(QMainWindow):
 
         Returns
         -------
-        bool
-            True only if all pending changes are to enable/disable IOCs
-            listed in iocmanager.special.
+        tuple[bool, str]
+            A tuple containing whether the pending changes are allowed and,
+            if not, the reason they were rejected.
         """
-        if self.model.add_iocs or self.model.delete_iocs:
-            # check if any IOCs have been added or deleted
-            return False
-        if not self.model.edit_iocs:
-            # check there are no pending changes
-            return False
-
-        for ioc_name, new_proc in self.model.edit_iocs.items():
-            # check the IOC name string and configuration object
-            try:
-                # look at the original saved config entry for this IOC
-                old_proc = self.model.config.procs[ioc_name]
-            except KeyError:
-                return False
-
-            # If any of these fields change, it's not just a simple
-            # enable/disable toggle. Do not allow.
-            if new_proc.host != old_proc.host:
-                return False
-            if new_proc.port != old_proc.port:
-                return False
-            if new_proc.alias != old_proc.alias:
-                return False
-            if new_proc.cmd != old_proc.cmd:
-                return False
-            if new_proc.delay != old_proc.delay:
-                return False
-            if new_proc.hard != old_proc.hard:
-                return False
-            if new_proc.history != old_proc.history:
-                return False
-            if new_proc.path != old_proc.path:
-                return False
-
-            if new_proc.disable == old_proc.disable:
-                # Check if the disable flag changed (disable=True corresponds
-                # to 'Off', disable=False corresponds to 'Dev/Prod'). If the
-                # disable flag hasn't changed, do nothing.
-                return False
-            if not check_special(req_ioc=ioc_name, req_hutch=self.hutch):
-                # returns True only if the IOC is listed in iocmanager.special.
-                return False
-
-        return True
+        return special_edits_ok(
+            config=self.model.config,
+            add_iocs=self.model.add_iocs,
+            edit_iocs=self.model.edit_iocs,
+            delete_iocs=self.model.delete_iocs,
+            hutch=self.hutch,
+        )
 
     def action_revert_all(self):
         """
