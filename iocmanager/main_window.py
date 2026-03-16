@@ -37,7 +37,7 @@ from .config import check_auth, check_ssh, read_config, write_config
 from .dialog_apply_verify import verify_dialog
 from .dialog_commit import CommitDialog, CommitOption
 from .dialog_find_pv import FindPVDialog
-from .edit_policy import special_edits_ok
+from .special_edits import special_edits_ok
 from .env_paths import env_paths
 from .hioc_tools import reboot_hioc
 from .imgr import ensure_auth, reboot_cmd
