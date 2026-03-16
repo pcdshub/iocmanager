@@ -110,7 +110,7 @@ def special_edits_ok(
         if not _is_special_ioc(ioc_name=ioc_name, hutch=hutch):
             return (
                 False,
-                f"You do not have permission to modify this {ioc_name}. Contact the {hutch} controls administrator if you need permission to toggle this IOC on/off.",
+                f"You do not have permission to modify {ioc_name}. Contact the {hutch} controls administrator if you need permission to toggle this IOC on/off.",
             )
 
     return True, ""
