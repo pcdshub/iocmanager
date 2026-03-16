@@ -100,7 +100,7 @@ def special_edits_ok(
         if has_non_state_changes(new_proc, old_proc):
             return (
                 False,
-                f"Limited-access users can only change IOC state (Off/Dev) for {ioc_name}.",
+                f"Non-authorized users can only change IOC state (Off or Dev/Prod) for {ioc_name}.",
             )
         if not state_changed(new_proc, old_proc):
             return (
