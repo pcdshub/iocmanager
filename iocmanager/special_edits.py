@@ -6,7 +6,7 @@ from dataclasses import fields
 from .config import Config, IOCProc, check_special
 
 
-def changed_iocproc_fields(
+def _changed_iocproc_fields(
     new_proc: IOCProc,
     old_proc: IOCProc,
     ignore_fields: set[str] | None = None,
@@ -39,7 +39,7 @@ def changed_iocproc_fields(
     return changed_fields
 
 
-def has_non_state_changes(new_proc: IOCProc, old_proc: IOCProc) -> bool:
+def _has_non_state_changes(new_proc: IOCProc, old_proc: IOCProc) -> bool:
     """
     If something else other than the IOC's on/off state has changed, return True.
 
@@ -47,7 +47,7 @@ def has_non_state_changes(new_proc: IOCProc, old_proc: IOCProc) -> bool:
     computed automatically and is not considered a user edit.
     """
     return bool(
-        changed_iocproc_fields(
+        _changed_iocproc_fields(
             new_proc,
             old_proc,
             ignore_fields={"disable", "parent"},
@@ -55,14 +55,14 @@ def has_non_state_changes(new_proc: IOCProc, old_proc: IOCProc) -> bool:
     )
 
 
-def state_changed(new_proc: IOCProc, old_proc: IOCProc) -> bool:
+def _state_changed(new_proc: IOCProc, old_proc: IOCProc) -> bool:
     """
     Return True if the IOC on/off state has changed.
     """
     return new_proc.disable != old_proc.disable
 
 
-def is_special_ioc(ioc_name: str, hutch: str) -> bool:
+def _is_special_ioc(ioc_name: str, hutch: str) -> bool:
     """
     Return True if the IOC is listed in `iocmanager.special` for this hutch.
     """
@@ -80,11 +80,11 @@ def special_edits_ok(
     """
     Return whether the pending edits are limited to allowed state changes.
 
-    Limited-access users may only toggle the on/off state of IOCs listed in
+    Non-authorized users may only toggle the on/off state of IOCs listed in
     `iocmanager.special`.
     """
     if add_iocs or delete_iocs:
-        return False, "Limited-access users cannot add or delete IOCs."
+        return False, "Non-authorized users cannot add or delete IOCs."
     if not edit_iocs:
         return False, "No configuration changes to save."
 
@@ -97,17 +97,17 @@ def special_edits_ok(
                 f"Unable to validate pending changes for {ioc_name} against the saved configuration.",
             )
 
-        if has_non_state_changes(new_proc, old_proc):
+        if _has_non_state_changes(new_proc, old_proc):
             return (
                 False,
                 f"Non-authorized users can only change IOC state (Off or Dev/Prod) for {ioc_name}.",
             )
-        if not state_changed(new_proc, old_proc):
+        if not _state_changed(new_proc, old_proc):
             return (
                 False,
                 f"{ioc_name} is unchanged. Nothing to save for this IOC.",
             )
-        if not is_special_ioc(ioc_name=ioc_name, hutch=hutch):
+        if not _is_special_ioc(ioc_name=ioc_name, hutch=hutch):
             return (
                 False,
                 f"{ioc_name} is not listed in iocmanager.special for {hutch}.",

@@ -9,7 +9,7 @@ The files handled here and their main functions are:
 - iocmanager.cfg (rw): defines which IOCs will be run
 - iocmanager.nossh (r): defines which special (opr) users cannot ssh, so we won't try
 - iocmanager.special (r): defines which IOCs can be enabled/disabled
-      or have their variants changed and applied by non-authenticated users.
+    or have their variants changed and applied by non-authorized users.
 
 This module also helps manage the files at
 $PYPS_ROOT/config/.status/$hutch
