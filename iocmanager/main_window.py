@@ -37,7 +37,7 @@ from .config import check_auth, check_ssh, read_config, write_config
 from .dialog_apply_verify import verify_dialog
 from .dialog_commit import CommitDialog, CommitOption
 from .dialog_find_pv import FindPVDialog
-from .special_edits import special_edits_ok
+from .special_edits import SpecialEditDecision, SpecialEditResponse, special_edits_ok
 from .env_paths import env_paths
 from .hioc_tools import reboot_hioc
 from .imgr import ensure_auth, reboot_cmd
@@ -168,7 +168,7 @@ class IOCMainWindow(QMainWindow):
         if self.auth:
             text += " (full auth)"
         else:
-            text += " (non-authorized)"
+            text += " (limited auth)"
         match self.commit_host_status:
             case CommitHostStatus.UNKNOWN:
                 text += " (ssh/git checking...)"
@@ -283,7 +283,8 @@ class IOCMainWindow(QMainWindow):
         Returns True if successful.
         Returns False if cancelled by the user.
         """
-        self._ensure_auth_special()
+        if not self._ensure_auth_special():
+            return False
         comment = ""
         match self.commit_host_status:
             case CommitHostStatus.UNKNOWN | CommitHostStatus.ERROR:
@@ -365,35 +366,55 @@ class IOCMainWindow(QMainWindow):
                     return False
         return True
 
-    def _ensure_auth_special(self) -> None:
+    def _ensure_auth_special(self) -> bool:
         """
-        Ensure that the current user is permitted to save and apply changes
+        Ensure that the current user is allowed to save and apply changes
         in iocmanager.
 
         Two types of users are allowed:
 
-        1) Fully authorized: the user is listed in the hutch's iocmanager.auth
+        1) Fully authorized: the user is listed in the hutch's `iocmanager.auth`
         file. All GUI changes are allowed (subject to normal GUI rules).
 
-        2) Non-authorized: the user is not listed in iocmanager.auth.
-        User can only enable and disable IOCs listed in the iocmanager.special
-        file.
+        2) Non-authorized: the user is not listed in the hutch's 
+        `iocmanager.auth` file. For IOCs listed in `iocmanager.special`, this 
+        user may only change the IOC state to Dev or Off.
+
+        Returns
+        -------
+        bool
+            True if the save/apply operation should continue.
+            False if there is nothing to save.
 
         Raises
         ------
         RuntimeError
-            The non-authorized user attempted to make changes beyond just enabling
-            and disabling IOCs listed in iocmanager.special.
+            The pending changes are not permitted for this user.
         """
 
         if check_auth(user=self.user, hutch=self.hutch):
-            return
-        allowed, msg = self._allow_special_edits()
-        if allowed:
-            return
-        raise RuntimeError(msg)
+            return True
 
-    def _allow_special_edits(self) -> tuple[bool, str]:
+        response = self._allow_special_edits()
+        match response.decision:
+            case SpecialEditDecision.ALLOW:
+                return True
+            case SpecialEditDecision.INFO:
+                QMessageBox.information(
+                    self,
+                    "No changes to save or apply.",
+                    response.message,
+                    QMessageBox.Ok,
+                    QMessageBox.Ok,
+                )
+                return False
+            case SpecialEditDecision.DENY:
+                raise RuntimeError(response.message)
+
+        raise RuntimeError(
+            f"Unexpected special edit decision {response.decision}")
+
+    def _allow_special_edits(self) -> SpecialEditResponse:
         """
         Allow non-authorized users to toggle IOCs between enabled
         and disabled. Prevent non-authorized users from making any
@@ -401,9 +422,9 @@ class IOCMainWindow(QMainWindow):
 
         Returns
         -------
-        tuple[bool, str]
-            A tuple containing whether the pending changes are allowed and,
-            if not, the reason they were rejected.
+        SpecialEditResponse
+            Structured response describing whether to allow the save,
+            deny it, or show an informational message.
         """
         return special_edits_ok(
             config=self.model.config,

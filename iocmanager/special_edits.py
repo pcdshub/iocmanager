@@ -2,8 +2,30 @@
 Functions for validating pending IOC configuration edits.
 """
 
-from dataclasses import fields
+from dataclasses import dataclass, fields
+from enum import Enum
+
 from .config import Config, IOCProc, check_special
+
+
+class SpecialEditDecision(Enum):
+    """
+    Possible outcomes when validating pending special IOC edits.
+    """
+
+    ALLOW = "allow"
+    INFO = "info"
+    DENY = "deny"
+
+
+@dataclass(frozen=True)
+class SpecialEditResponse:
+    """
+    Structured result returned from special IOC edit validation.
+    """
+
+    decision: SpecialEditDecision
+    message: str = ""
 
 
 def _changed_iocproc_fields(
@@ -76,7 +98,7 @@ def special_edits_ok(
     edit_iocs: dict[str, IOCProc],
     delete_iocs,
     hutch: str,
-) -> tuple[bool, str]:
+) -> SpecialEditResponse:
     """
     Return whether the pending edits are limited to allowed state changes.
 
@@ -84,33 +106,50 @@ def special_edits_ok(
     `iocmanager.special`.
     """
     if add_iocs or delete_iocs:
-        return False, "Non-authorized users cannot add or delete IOCs."
+        return SpecialEditResponse(
+            decision=SpecialEditDecision.DENY,
+            message="Non-authorized users cannot add or delete IOCs.",
+        )
     if not edit_iocs:
-        return False, "No configuration changes to save."
+        return SpecialEditResponse(
+            decision=SpecialEditDecision.INFO,
+            message="No configuration changes to save or apply.",
+        )
 
     for ioc_name, new_proc in edit_iocs.items():
         try:
             old_proc = config.procs[ioc_name]
         except KeyError:
-            return (
-                False,
-                f"Unable to validate pending changes for {ioc_name} against the saved configuration.",
+            return SpecialEditResponse(
+                decision=SpecialEditDecision.DENY,
+                message=(
+                    f"Unable to validate pending changes for {ioc_name} "
+                    "against the saved configuration."
+                ),
+            )
+
+        if not _is_special_ioc(ioc_name=ioc_name, hutch=hutch):
+            return SpecialEditResponse(
+                decision=SpecialEditDecision.DENY,
+                message=(
+                    f"You do not have permission to modify {ioc_name}. "
+                    f"Contact the {hutch} controls administrator if you "
+                    "need access to this IOC."
+                ),
             )
 
         if _has_non_state_changes(new_proc, old_proc):
-            return (
-                False,
-                f"Non-authorized users can only change IOC state (Off or Dev/Prod) for {ioc_name}.",
+            return SpecialEditResponse(
+                decision=SpecialEditDecision.DENY,
+                message=(
+                    "Non-authorized users can only change IOC state "
+                    f"(Off or Dev/Prod) for {ioc_name}."
+                ),
             )
         if not _state_changed(new_proc, old_proc):
-            return (
-                False,
-                f"{ioc_name} is unchanged. Nothing to save for this IOC.",
-            )
-        if not _is_special_ioc(ioc_name=ioc_name, hutch=hutch):
-            return (
-                False,
-                f"You do not have permission to modify {ioc_name}. Contact the {hutch} controls administrator if you need permission to toggle this IOC on/off.",
+            return SpecialEditResponse(
+                decision=SpecialEditDecision.INFO,
+                message=f"{ioc_name} is unchanged. Nothing to save or apply for this IOC.",
             )
 
-    return True, ""
+    return SpecialEditResponse(decision=SpecialEditDecision.ALLOW)
