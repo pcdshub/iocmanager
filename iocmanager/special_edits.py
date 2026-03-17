@@ -84,13 +84,6 @@ def _state_changed(new_proc: IOCProc, old_proc: IOCProc) -> bool:
     return new_proc.disable != old_proc.disable
 
 
-def _is_special_ioc(ioc_name: str, hutch: str) -> bool:
-    """
-    Return True if the IOC is listed in `iocmanager.special` for this hutch.
-    """
-    return check_special(req_ioc=ioc_name, req_hutch=hutch)
-
-
 def special_edits_ok(
     *,
     config: Config,
@@ -128,7 +121,7 @@ def special_edits_ok(
                 ),
             )
 
-        if not _is_special_ioc(ioc_name=ioc_name, hutch=hutch):
+        if not check_special(req_ioc=ioc_name, req_hutch=hutch):
             return SpecialEditResponse(
                 decision=SpecialEditDecision.DENY,
                 message=(
@@ -149,7 +142,8 @@ def special_edits_ok(
         if not _state_changed(new_proc, old_proc):
             return SpecialEditResponse(
                 decision=SpecialEditDecision.INFO,
-                message=f"{ioc_name} is unchanged. Nothing to save or apply for this IOC.",
+                message=f"{ioc_name} is unchanged. Nothing to save or apply "
+                f"for this IOC.",
             )
 
     return SpecialEditResponse(decision=SpecialEditDecision.ALLOW)
