@@ -211,7 +211,7 @@ class EnvPaths:
         A template for the location of the iocmanager.special config file.
 
         This file contains ioc specifications, one per line, of IOCs that are
-        permitted to be switched between variants for non-authenticated users.
+        permitted to be switched between variants for non-authorized users.
 
         To complete this template, the %s must be replaced with the 3-letter hutch name.
 
